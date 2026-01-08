@@ -7,8 +7,9 @@ import sys
 # Ideally correct usage: python -m base_pipeline.pipeline
 from .data_loader import DataLoader
 from .gating import GatingManager
+from active_learning.learner import ActiveLearner
 
-def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rename_strategy='folder_name', output_dir='processed_fcs'):
+def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rename_strategy='folder_name', output_dir='processed_fcs', cell_line=None):
     """
     Main entry point for the base pipeline logic.
     """
@@ -42,13 +43,36 @@ def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rena
 
     # 4. Gating Strategy
     gater = GatingManager()
-    
-    # A. Duplicates
-    # Note: Using default channels for now. A UI would let user pick these.
-    # print("Attempting to filter duplicates (Singlet finding)...")
-    # experiment = gater.remove_duplicates(experiment)
+    learner = ActiveLearner()
 
-    # B. Auto Live Gating
+    # Apply Learned Knowledge if available
+    if cell_line:
+        print(f"Checking for learned gates for cell line: {cell_line}...")
+        
+        # Singlet Gate (Learned)
+        singlet_vertices = learner.predict(cell_line, "Singlet")
+        if singlet_vertices:
+            print("Applying learned Singlet gate...")
+            # Note: channel names here are hardcoded for now, but should ideally come from learned metadata too or user config
+            experiment = gater.apply_manual_gate(experiment, "LearnedSinglet", "FSC-A", "FSC-H", singlet_vertices)
+        else:
+             # Fallback to auto
+             # print("Attempting to filter duplicates (Singlet finding)...")
+             # experiment = gater.remove_duplicates(experiment)
+             pass
+
+        # Live Gate (Learned)
+        live_vertices = learner.predict(cell_line, "Live")
+        if live_vertices:
+            print("Applying learned Live gate...")
+            experiment = gater.apply_manual_gate(experiment, "LearnedLive", "FSC-A", "SSC-A", live_vertices)
+            print("Learned Live gate applied.")
+            # Skip Auto Gating if learned gate is applied? 
+            # Or maybe we return both and let user decide in UI.
+            # For pipeline automation, we prefer the learned one.
+            return experiment
+
+    # B. Auto Live Gating (Fallback)
     print("Applying Automatic Live/Dead Gating (GMM)...")
     # Assuming FSC-A and SSC-A are present. This might fail if channels differ.
     try:

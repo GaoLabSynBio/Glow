@@ -513,8 +513,23 @@ if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_stat
                             # Log the acceptance
                             # We use a batch name since 'Sample' might be row-wise. 
                             # We log the configuration.
+                            
+                            # Determine Cell Line for logging
+                            current_cell_line = "Unknown"
+                            if st.session_state.get('loaded_files'):
+                                lines = set()
+                                for f in st.session_state.loaded_files:
+                                    cl = f.get('Cell_Line') or f.get('Cell Line') or 'Unknown'
+                                    lines.add(cl)
+                                
+                                if len(lines) == 1:
+                                    current_cell_line = list(lines)[0]
+                                else:
+                                    current_cell_line = ",".join(list(lines))
+                            
                             logger.log_gate_feedback(
                                 sample_name="Batch_Experiment", 
+                                cell_line=current_cell_line,
                                 x_channel=x_channel, 
                                 y_channel=y_channel, 
                                 gate_type="GMM", 
@@ -573,9 +588,23 @@ if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_stat
                             st.session_state.gated_experiment = manual_exp
                             st.session_state.manual_vertices = vertices # Save for visualization
                             
+                            # Determine Cell Line for logging
+                            current_cell_line = "Unknown"
+                            if st.session_state.get('loaded_files'):
+                                lines = set()
+                                for f in st.session_state.loaded_files:
+                                    cl = f.get('Cell_Line') or f.get('Cell Line') or 'Unknown'
+                                    lines.add(cl)
+                                
+                                if len(lines) == 1:
+                                    current_cell_line = list(lines)[0]
+                                else:
+                                    current_cell_line = ",".join(list(lines))
+                            
                             if logger:
                                 logger.log_gate_feedback(
                                     sample_name="Batch_Experiment", 
+                                    cell_line=current_cell_line,
                                     x_channel=x_channel, 
                                     y_channel=y_channel, 
                                     gate_type="Polygon", 
@@ -860,8 +889,21 @@ if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_stat
                             # Displayed prominently like Live/Dead gate
                             if col_da.button("✅ Accept Auto-Singlets", key="accept_singlets"):
                                 if logger:
+                                    # Determine Cell Line for logging
+                                    current_cell_line = "Unknown"
+                                    if st.session_state.get('loaded_files'):
+                                        lines = set()
+                                        for f in st.session_state.loaded_files:
+                                            cl = f.get('Cell_Line') or f.get('Cell Line') or 'Unknown'
+                                            lines.add(cl)
+                                        if len(lines) == 1:
+                                            current_cell_line = list(lines)[0]
+                                        else:
+                                            current_cell_line = ",".join(list(lines))
+
                                     logger.log_gate_feedback(
-                                        sample_name="Batch_Experiment", 
+                                        sample_name="Batch_Experiment",
+                                        cell_line=current_cell_line, 
                                         x_channel=d_x, 
                                         y_channel=d_y, 
                                         gate_type="GMM_Singlet", 
@@ -922,8 +964,21 @@ if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_stat
                                             else:
                                                 # Log separation
                                                 if logger:
+                                                    # Determine Cell Line for logging
+                                                    current_cell_line = "Unknown"
+                                                    if st.session_state.get('loaded_files'):
+                                                        lines = set()
+                                                        for f in st.session_state.loaded_files:
+                                                            cl = f.get('Cell_Line') or f.get('Cell Line') or 'Unknown'
+                                                            lines.add(cl)
+                                                        if len(lines) == 1:
+                                                            current_cell_line = list(lines)[0]
+                                                        else:
+                                                            current_cell_line = ",".join(list(lines))
+
                                                     logger.log_gate_feedback(
-                                                        sample_name="Batch_Experiment", 
+                                                        sample_name="Batch_Experiment",
+                                                        cell_line=current_cell_line, 
                                                         x_channel=d_x, 
                                                         y_channel=d_y, 
                                                         gate_type="Polygon_Singlet", 
