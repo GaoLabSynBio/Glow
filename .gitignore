@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.fcs
+*.jsonl
+active_learning_data/
+debug_processed/
+debug_processed_v2/
+processed_fcs/
+processed_fcs_ui/
+.venv/
