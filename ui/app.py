@@ -22,63 +22,207 @@ def render_metadata_upload_section(key_prefix=""):
     """
     st.markdown("---")
     st.write("### Bulk Metadata Upload (CSV/Excel)")
-    with st.expander("Upload Metadata File", expanded=False):
+    with st.expander("Upload Metadata File", expanded=True):
         uploaded_file = st.file_uploader("Upload CSV or Excel", type=['csv', 'xlsx', 'xls'], key=f"{key_prefix}_uploader")
         
         if uploaded_file:
-            header_row = st.number_input("Header Row (0-based index)", min_value=0, value=0, key=f"{key_prefix}_header")
-            
             try:
+                # 1. Read Raw (lines)
                 if uploaded_file.name.endswith('.csv'):
-                    df_new = pd.read_csv(uploaded_file, header=header_row)
+                    df_raw = pd.read_csv(uploaded_file, header=None)
                 else:
-                    df_new = pd.read_excel(uploaded_file, header=header_row)
+                    df_raw = pd.read_excel(uploaded_file, header=None)
                 
-                st.write("Preview of Uploaded Data:", df_new.head())
+                st.write("#### 1. File Preview (Raw Content)")
+                st.dataframe(df_raw.head(20), use_container_width=True)
                 
-                if 'preview_meta' not in st.session_state or not st.session_state.preview_meta:
-                    st.warning("No file preview generated yet to merge with.")
-                    return
-
-                df_preview = pd.DataFrame(st.session_state.preview_meta)
-
-                merge_type = st.radio("Merge Strategy", ["Merge by Order (Row 1 -> File 1)", "Merge by Column Key"], key=f"{key_prefix}_merge")
+                # 2. Configuration for Parsing
+                st.write("#### 2. Parse Settings")
+                col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
                 
-                if merge_type == "Merge by Order":
-                    if st.button("Apply Merge by Order", key=f"{key_prefix}_btn_order"):
-                        # reset index
-                        df_preview = df_preview.reset_index(drop=True)
-                        df_new = df_new.reset_index(drop=True)
-                        
-                        # Assign columns
-                        for col in df_new.columns:
-                            df_preview[col] = df_new[col]
-                            
-                        # Update session state
-                        st.session_state.preview_meta = df_preview.to_dict('records')
-                        st.success("Merged by order! Metadata updated.")
-                        st.rerun()
+                header_row_idx = col_cfg1.number_input("Header Row Index (0-based)", min_value=0, value=0, key=f"{key_prefix}_header_idx")
+                data_start_idx = col_cfg2.number_input("Data Start Row Index", min_value=header_row_idx+1, value=header_row_idx+1, key=f"{key_prefix}_data_idx")
+                
+                # Option to grab global experiment name
+                use_global_exp = col_cfg3.checkbox("Extract Experiment Name from Cell?", value=True, key=f"{key_prefix}_use_global")
+                global_exp_name = None
+                
+                if use_global_exp:
+                    g_row = col_cfg3.number_input("Exp Name Row", min_value=0, value=0, key=f"{key_prefix}_g_row")
+                    g_col = col_cfg3.number_input("Exp Name Col", min_value=0, value=2, key=f"{key_prefix}_g_col")
+                    try:
+                        global_exp_name = str(df_raw.iloc[g_row, g_col])
+                        st.info(f"Detected Experiment Name: **{global_exp_name}**")
+                    except:
+                        st.warning("Invalid cell coordinates for Experiment Name")
 
-                else:
-                    col1, col2 = st.columns(2)
-                    key_file = col1.selectbox("File Key (e.g. display_name)", df_preview.columns, key=f"{key_prefix}_key_file")
-                    key_upload = col2.selectbox("Upload Key (e.g. Well)", df_new.columns, key=f"{key_prefix}_key_upload")
+
+                # 3. Process DataFrame
+                # Set headers
+                if header_row_idx < len(df_raw):
+                    # Manual fillna logic to avoid generator error
+                    header_series = df_raw.iloc[header_row_idx]
+                    headers = []
+                    for i, val in enumerate(header_series):
+                        if pd.isna(val) or str(val).strip() == "":
+                             headers.append(f"Untitled_{i}")
+                        else:
+                             headers.append(str(val))
+
+                    # Handle duplicate headers
+                    seen = {}
+                    final_headers = []
+                    for h in headers:
+                        if h in seen:
+                            seen[h] += 1
+                            final_headers.append(f"{h}_{seen[h]}")
+                        else:
+                            seen[h] = 0
+                            final_headers.append(h)
                     
-                    if st.button("Apply Merge by Key", key=f"{key_prefix}_btn_key"):
-                        merged = df_preview.merge(df_new, left_on=key_file, right_on=key_upload, how='left', suffixes=('', '_upload'))
+                    # Slice data
+                    df_parsed = df_raw.iloc[data_start_idx:].copy()
+                    df_parsed.columns = final_headers
+                    df_parsed.reset_index(drop=True, inplace=True)
+                    
+                    # Apply global experiment name if found
+                    if global_exp_name:
+                        # If parsed df doesn't have "Experiment_Name", add it
+                        # If it does, we might overwrite OR fill na. Let's overwrite for consistency if user asked for it.
+                        df_parsed["Experiment_Name"] = global_exp_name
+
+                    st.write("#### 3. Parsed Metadata Preview")
+                    st.dataframe(df_parsed.head(), use_container_width=True)
+                    
+                    # --- NEW SECTION: Column Selection & Renaming ---
+                    st.write("#### 4. Select & Rename Columns")
+                    
+                    all_cols = list(df_parsed.columns)
+                    # Filter out Untitled ones from default selection maybe?
+                    default_cols = [c for c in all_cols if "Untitled" not in c]
+                    
+                    selected_cols = st.multiselect("Select columns to include", all_cols, default=default_cols, key=f"{key_prefix}_sel_cols")
+                    
+                    if not selected_cols:
+                        st.warning("Please select at least one column to proceed.")
+                        # Stop execution here if no columns selected to prevent errors below
+                    else:
+                        # Allow renaming
+                        st.write("Rename columns (edit 'Target Name' column):")
+                        renaming_data = [{"Source Column": c, "Target Name": c} for c in selected_cols]
+                        renaming_df = pd.DataFrame(renaming_data)
                         
-                        # Resolve suffixes
-                        for col in df_new.columns:
-                            if f"{col}_upload" in merged.columns:
-                                merged[col] = merged[f"{col}_upload"].combine_first(merged[col])
-                                merged.drop(columns=[f"{col}_upload"], inplace=True)
+                        mapping_df = st.data_editor(
+                            renaming_df,
+                            column_config={
+                                "Source Column": st.column_config.TextColumn("Source", disabled=True),
+                                "Target Name": st.column_config.TextColumn("Target Name (Edit here)")
+                            },
+                            hide_index=True,
+                            key=f"{key_prefix}_renaming_editor",
+                            use_container_width=True
+                        )
                         
-                        st.session_state.preview_meta = merged.to_dict('records')
-                        st.success("Merged by key! Metadata updated.")
-                        st.rerun()
+                        # Apply selection and renaming
+                        column_map = dict(zip(mapping_df["Source Column"], mapping_df["Target Name"]))
+                        df_to_merge = df_parsed[selected_cols].rename(columns=column_map)
+                        
+                        st.write("#### 5. Final Data Preview")
+                        st.dataframe(df_to_merge.head(), use_container_width=True)
+
+                        # 6. Merge Logic
+                        if 'preview_meta' not in st.session_state or not st.session_state.preview_meta:
+                            st.warning("No file preview generated yet to merge with. Please scan files first.")
+                        else:
+                            df_preview = pd.DataFrame(st.session_state.preview_meta)
+        
+                            st.write("#### 6. Merge Options")
+                            merge_type = st.radio("Merge Strategy", ["Merge by Order (Row 1 -> File 1)", "Merge by Column Key"], key=f"{key_prefix}_merge")
+                            
+                            if merge_type == "Merge by Order":
+                                if st.button("Apply Merge by Order", key=f"{key_prefix}_btn_order"):
+                                    # reset index
+                                    df_preview = df_preview.reset_index(drop=True)
+                                    df_to_merge = df_to_merge.reset_index(drop=True)
+                                    
+                                    # Assign columns
+                                    for col in df_to_merge.columns:
+                                        df_preview[col] = df_to_merge[col]
+                                        
+                                    # Update session state
+                                    st.session_state.preview_meta = df_preview.to_dict('records')
+                                    st.success(f"Merged {len(df_to_merge)} rows by order! Metadata updated.")
+                                    st.rerun()
+        
+                            else:
+                                st.info("Select one or more columns from both datasets to join on. The order matters!")
+                                col1, col2 = st.columns(2)
+                                
+                                # Add option to use Row Index as a join key
+                                file_opts = ["<Row Index>"] + list(df_preview.columns)
+                                upload_opts = ["<Row Index>"] + list(df_to_merge.columns)
+
+                                key_file = col1.multiselect("File Keys (in order)", file_opts, key=f"{key_prefix}_key_file")
+                                key_upload = col2.multiselect("Upload Keys (matching file keys)", upload_opts, key=f"{key_prefix}_key_upload")
+                                
+                                if st.button("Apply Merge by Key", key=f"{key_prefix}_btn_key"):
+                                    if not key_file or not key_upload:
+                                        st.error("Please select at least one key column from both sides.")
+                                    elif len(key_file) != len(key_upload):
+                                        st.error(f"Number of keys must match! File: {len(key_file)}, Upload: {len(key_upload)}")
+                                    else:
+                                        try:
+                                            # Prepare datasets for index matching if needed
+                                            df_preview_merge = df_preview.copy()
+                                            df_upload_merge = df_to_merge.copy()
+                                            
+                                            final_left_on = []
+                                            final_right_on = []
+                                            
+                                            # Process Left Keys
+                                            for k in key_file:
+                                                if k == "<Row Index>":
+                                                    # Create explicit column for index
+                                                    col_name = "__row_index_temp__"
+                                                    df_preview_merge[col_name] = df_preview_merge.index
+                                                    final_left_on.append(col_name)
+                                                else:
+                                                    final_left_on.append(k)
+                                                    
+                                            # Process Right Keys
+                                            for k in key_upload:
+                                                if k == "<Row Index>":
+                                                    col_name = "__row_index_temp__"
+                                                    df_upload_merge[col_name] = df_upload_merge.index
+                                                    final_right_on.append(col_name)
+                                                else:
+                                                    final_right_on.append(k)
+
+                                            merged = df_preview_merge.merge(df_upload_merge, left_on=final_left_on, right_on=final_right_on, how='left', suffixes=('', '_upload'))
+                                            
+                                            # Clean up temp index columns
+                                            if "__row_index_temp__" in merged.columns:
+                                                merged.drop(columns=["__row_index_temp__"], inplace=True)
+
+                                            # Resolve suffixes
+                                            for col in df_to_merge.columns:
+                                                if f"{col}_upload" in merged.columns:
+                                                    merged[col] = merged[f"{col}_upload"].combine_first(merged[col])
+                                                    merged.drop(columns=[f"{col}_upload"], inplace=True)
+                                            
+                                            st.session_state.preview_meta = merged.to_dict('records')
+                                            st.success("Merged by key! Metadata updated.")
+                                            st.rerun()
+                                        except Exception as merge_err:
+                                            st.error(f"Merge failed: {merge_err}")
+                else:
+                    st.error("Header row index out of bounds.")
 
             except Exception as e:
                 st.error(f"Error reading/merging file: {e}")
+                # Print traceback to terminal for debugging
+                import traceback
+                traceback.print_exc()
 
 st.title("Glow Flow Analysis Pipeline")
 
@@ -145,6 +289,12 @@ if upload_option == "Enter Directory Path":
                      if col not in df_preview.columns:
                          df_preview[col] = "" # Default to empty string
                  
+                 # Fix types for Editor (Streamlit is strict about types)
+                 # Force string type for TextColumn fields to avoid Arrow/Streamlit errors with NaN/Float
+                 for col in ["Experiment_Name", "Cell_Line", "Replicate", "condition", "display_name", "original_path"]:
+                     if col in df_preview.columns:
+                         df_preview[col] = df_preview[col].fillna("").astype(str)
+
                  # Reorder/Select columns for editor
                  display_cols = ['display_name', 'condition'] + cols_to_use + ['original_path']
                  
@@ -218,6 +368,11 @@ elif upload_option == "Upload File Paths List":
                          else:
                              df_preview[col] = "" 
                  
+                 # Fix types for Editor (Streamlit is strict about types)
+                 for col in ["Experiment_Name", "Cell_Line", "Replicate", "condition", "display_name", "original_path"]:
+                     if col in df_preview.columns:
+                         df_preview[col] = df_preview[col].fillna("").astype(str)
+
                  display_cols = ['display_name', 'condition'] + cols_to_use + ['original_path']
                  
                  # User requested: Input a new cell line name (free text), copy paste support (standard).

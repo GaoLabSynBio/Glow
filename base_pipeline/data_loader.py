@@ -2,6 +2,7 @@ import cytoflow
 import os
 import shutil
 import pandas as pd
+import re
 
 class DataLoader:
     def __init__(self):
@@ -11,9 +12,16 @@ class DataLoader:
         """
         self.loaded_files_metadata = []
 
+    def _natural_sort_key(self, text):
+        """
+        Helper key function for natural sorting (e.g., A1, A2, A10 instead of A1, A10, A2).
+        """
+        return [int(c) if c.isdigit() else c.lower() for c in re.split('([0-9]+)', str(text))]
+
     def scan_directory(self, directory_path):
         """
         Recursively finds all .fcs files in a directory.
+        Returns them naturally sorted.
         """
         paths = []
         if not os.path.isdir(directory_path):
@@ -25,6 +33,9 @@ class DataLoader:
                 if file.lower().endswith('.fcs'):
                     full_path = os.path.join(root, file)
                     paths.append(full_path)
+        
+        # Apply natural sort
+        paths.sort(key=self._natural_sort_key)
         return paths
 
     def parse_file_paths_from_text(self, file_path_list_file):
@@ -48,6 +59,11 @@ class DataLoader:
                         paths.append({'path': path, 'name': custom_name})
                     else:
                         print(f"Warning: File not found at {path}")
+        
+        # Apply natural sort to user provided paths as well
+        # We sort based on the file path string
+        paths.sort(key=lambda x: self._natural_sort_key(x['path']))
+        
         return paths
 
     def generate_preview_metadata(self, paths, rename_strategy='folder_name'):
