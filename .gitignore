@@ -10,3 +10,4 @@ processed_fcs_ui/
 .venv/
 my_test_env/
 test_venv/
+.pytest_cache/

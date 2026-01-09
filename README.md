@@ -48,4 +48,24 @@ The system records your "Accept" or "Manual Override" decisions.
 ## Known Issues / Limitations
 *   **Real-time Learning Update**: The Active Learning model currently updates its weights based on logs but may not immediately apply learned gates to the *current* running session if the metadata was just entered. You may need to restart the pipeline or ensure the model training trigger runs to see the effect on new files.
 *   **Concurrent Learning**: If multiple users or sessions are providing feedback simultaneously, the "latest" feedback might overwrite previous weights for a specific cell line during the training step.
+
+## Repository Architecture
+
+The project is organized into modular components to separate core logic, user interface, and data management.
+
+```text
+Glow/
+├── glow/                       # Core Python Package
+│   ├── base_pipeline/          # Backend logic (Cytoflow wrappers, Gating algos)
+│   └── active_learning/        # Learning system (Feedback logging, Model weights)
+├── ui/                         # Streamlit Frontend
+│   ├── app.py                  # Main Application Entry Point
+│   └── modules/                # Modular UI Components
+│       ├── ui_file_loader.py   # File scanning & loading widgets
+│       ├── ui_metadata.py      # Metadata parsing & merging widgets
+│       └── ui_gating.py        # Gating visuals & interaction logic
+├── tests/                      # Unit and integration tests
+├── data/                       # Data storage (Active Learning logs, processed files)
+└── debug/                      # Prototyping notebooks
+```
 *   **Cell Line Naming**: Ensure consistent naming of Cell Lines (case-sensitive handling is normalized, but typos will create new entries).
