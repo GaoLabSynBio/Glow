@@ -8,3 +8,5 @@ debug_processed_v2/
 processed_fcs/
 processed_fcs_ui/
 .venv/
+my_test_env/
+test_venv/
