@@ -52,6 +52,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
             use_outliers = st.checkbox("Remove Outliers before Estimation", value=False, help="Removes sparse outliers before calculating the gate to improve robustness.")
 
+            # Boundary Percentile (User Request: Toggle bar 50-100, step 1)
+            # This controls the contour tightness for the final Polygon gate
+            boundary_percentile = st.slider("Boundary Confidence (Percentile)", 50, 100, 90, 1, help="Adjust the tightness of the auto-generated boundary contour.")
+
             # --- Reactive Auto-Gating ---
             # Detect parameter changes to trigger re-calculation automatically.
             current_gating_params = {
@@ -191,8 +195,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     
                     # --- Auto-Gating Visualization (Centroids & Ellipses) ---
                     # ALWAYS overlay Auto-Gating if available
-                    if 'AutoLiveGate' in df.columns:
+                    # Optimization: Do not re-compute contour if gate is already accepted (User Request)
+                    if 'AutoLiveGate' in df.columns and not st.session_state.get('gate_accepted'):
                         unique_labels = df['AutoLiveGate'].unique()
+                        
+                        # Reset stored boundary to prevent stale state
+                        st.session_state.current_auto_boundary = None
                         
                         # Heuristic: Identify the "Live" population
                         # The population with the higher Mean FSC (x_channel) is usually the cells, not debris.
@@ -247,7 +255,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         
                                         # Compute Density Boundary in Log Space
                                         # Percentile 90-95 gives a good tight bound for "Live"
-                                        bx, by = compute_density_boundary(log_points, percentile=90.0, smoothing=1.5)
+                                        bx, by = compute_density_boundary(log_points, percentile=float(boundary_percentile), smoothing=1.5)
                                         
                                         if bx is not None:
                                              # Transform back to Linear
@@ -261,11 +269,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     hull_points = subset_df[valid_mask].values
 
                                     if len(hull_points) > 10:
-                                         bx, by = compute_density_boundary(hull_points, percentile=90.0, smoothing=1.5)
+                                         bx, by = compute_density_boundary(hull_points, percentile=float(boundary_percentile), smoothing=1.5)
                                          if bx is not None:
                                              boundary_x, boundary_y = bx, by
 
                                 if boundary_x is not None:
+                                    # Save to session state for application (User Request)
+                                    st.session_state.current_auto_boundary = list(zip(boundary_x, boundary_y))
+                                    
                                     # Add boundary trace. 
                                     fig.add_trace(go.Scatter(x=boundary_x, y=boundary_y, mode='lines', 
                                                             line=dict(color='red', width=4), # Red Line, Thicker
@@ -307,7 +318,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                         fig_val = px.scatter(val_df, x=x_channel, y=y_channel, 
                                             color='AutoLiveGate',
-                                            title="Live Cell Classification (Green = Selected)",
+                                            title="Live Cell Classification (Green=Preprocessed, Line=Actual Boundary)",
                                             color_discrete_map=color_map_val,
                                             opacity=0.6,
                                             log_x=is_log, log_y=is_log,
@@ -475,7 +486,33 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 )
                             
                             # Apply the Auto-Gate (Filter the experiment)
-                            if 'suggested_live_label' in st.session_state and CYTOFLOW_AVAILABLE:
+                            # User Request: Use the Contour (Polygon) as the gate, not just the label
+                            total_cells = len(base_exp.data)
+                            
+                            if st.session_state.get('current_auto_boundary') and CYTOFLOW_AVAILABLE:
+                                verts = st.session_state.current_auto_boundary
+                                gater = GatingManager()
+                                
+                                # Apply Manual Gate (Polygon) using the computed contour
+                                # Apply to BASE experiment so we get a clean cut
+                                exp = gater.apply_manual_gate(base_exp, "LiveBoundaryGate", x_channel, y_channel, verts)
+                                
+                                # Filter to keep only the cell inside the contour
+                                if "LiveBoundaryGate" in exp.data.columns:
+                                     # Filter in-place
+                                     exp.data = exp.data[exp.data["LiveBoundaryGate"]].copy()
+                                
+                                kept_cells = len(exp.data)
+                                percent = (kept_cells / total_cells) * 100 if total_cells > 0 else 0
+                                st.session_state.live_gate_stats = f"{kept_cells} / {total_cells} ({percent:.1f}%)"
+
+                                st.session_state.gated_experiment = exp
+                                st.session_state.gate_accepted = True
+                                st.session_state.doublets_removed = False # Reset downstream step
+                                st.success(f"Auto-Gate Accepted! Applied Contour Gate. Live Cells: {st.session_state.live_gate_stats}")
+                                st.rerun()
+
+                            elif 'suggested_live_label' in st.session_state and CYTOFLOW_AVAILABLE:
                                 label = st.session_state.suggested_live_label
                                 exp = st.session_state.gated_experiment
                                 
@@ -484,10 +521,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 filtered_df = exp.data[exp.data['AutoLiveGate'] == label].copy()
                                 exp.data = filtered_df
                                 
+                                kept_cells = len(exp.data)
+                                percent = (kept_cells / total_cells) * 100 if total_cells > 0 else 0
+                                st.session_state.live_gate_stats = f"{kept_cells} / {total_cells} ({percent:.1f}%)"
+
                                 st.session_state.gated_experiment = exp
                                 st.session_state.gate_accepted = True
                                 st.session_state.doublets_removed = False # Reset downstream step
-                                st.success("Auto-Gate Accepted! Proceeding to Singlet Detection...")
+                                st.success(f"Auto-Gate Accepted! Proceeding to Singlet Detection... Live Cells: {st.session_state.live_gate_stats}")
                                 st.rerun()
                             else:
                                 st.success("Feedback saved! (Mock mode)")
@@ -521,8 +562,19 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     vertices.append((float(p[0].strip()), float(p[1].strip())))
                                 
                                 gater = GatingManager()
+                                total_cells = len(base_exp.data)
+                                
                                 # Apply to BASE experiment
                                 manual_exp = gater.apply_manual_gate(base_exp, "ManualLiveGate", x_channel, y_channel, vertices)
+                                
+                                # Filter manually to match Auto behavior
+                                if "ManualLiveGate" in manual_exp.data.columns:
+                                     manual_exp.data = manual_exp.data[manual_exp.data["ManualLiveGate"]].copy()
+                                
+                                kept_cells = len(manual_exp.data)
+                                percent = (kept_cells / total_cells) * 100 if total_cells > 0 else 0
+                                st.session_state.live_gate_stats = f"{kept_cells} / {total_cells} ({percent:.1f}%)"
+
                                 st.session_state.gated_experiment = manual_exp
                                 st.session_state.manual_vertices = vertices # Save for visualization
                                 
@@ -551,6 +603,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     )
                                 
                                 st.session_state.gate_accepted = True
+                                st.session_state.doublets_removed = False # Reset downstream step
                                 st.rerun()
                                     
                             except Exception as e:
@@ -559,6 +612,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     # --- Step 3: Singlet Detection ---
                     if st.session_state.get('gate_accepted'): 
                         st.divider()
+                        
+                        # Stats Display (Moved here per user request)
+                        if st.session_state.get('live_gate_stats'):
+                            st.success(f"Final Live Cells: {st.session_state.live_gate_stats}")
+                            
                         st.header("3. Singlet Detection")
                         
                         # Automatically proceed to Singlet Detection
@@ -841,6 +899,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     dist = np.sqrt(np.sum(diff @ inv_cov * diff, axis=1))
                                     mask = dist <= 2.5 # Sigma threshold
                                     
+                                    # Calculate Stats
+                                    total_input = len(exp.data)
+                                    kept_singlets = sum(mask)
+                                    pct = (kept_singlets / total_input) * 100 if total_input > 0 else 0
+                                    st.session_state.singlet_gate_stats = f"{kept_singlets} / {total_input} ({pct:.1f}%)"
+                                    
                                     exp.data = exp.data[mask]
                                     st.session_state.gated_experiment = exp
                                     st.session_state.doublets_removed = True
@@ -914,12 +978,18 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     gater = GatingManager()
                                                     try:
                                                         gate_name = "ManualSingletGate"
+                                                        total_input = len(exp.data)
+
                                                         exp = gater.apply_manual_gate(exp, gate_name, d_x, d_y, parsed_verts)
                                                         
                                                         # Cytoflow apply() adds the condition, we must explicitly filter for the UI validation
                                                         if gate_name in exp.data.columns:
                                                             exp.data = exp.data[exp.data[gate_name]].copy()
                                                         
+                                                        kept_singlets = len(exp.data)
+                                                        pct = (kept_singlets / total_input) * 100 if total_input > 0 else 0
+                                                        st.session_state.singlet_gate_stats = f"{kept_singlets} / {total_input} ({pct:.1f}%)"
+
                                                         st.session_state.gated_experiment = exp
                                                         st.session_state.doublets_removed = True
                                                         st.session_state.show_doublet_gating = False
@@ -950,7 +1020,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.write(e) # Debug
 
                         if st.session_state.get('doublets_removed'):
-                            st.success("Doublets have been removed from the dataset.")
+                            # Stats for Singlets
+                            if st.session_state.get('singlet_gate_stats'):
+                                st.success(f"Final Singlets: {st.session_state.singlet_gate_stats}")
+                            else:
+                                st.success("Doublets have been removed from the dataset.")
                             
                             st.divider()
                             st.header("4. Export Data")
