@@ -16,6 +16,70 @@ except ImportError as e:
     st.error(f"Cytoflow or pipeline modules not found: {e}. Running in Mock Mode.")
     CYTOFLOW_AVAILABLE = False
 
+def render_metadata_upload_section(key_prefix=""):
+    """
+    Helper to allow uploading a CSV/Excel and merging it into st.session_state.preview_meta
+    """
+    st.markdown("---")
+    st.write("### Bulk Metadata Upload (CSV/Excel)")
+    with st.expander("Upload Metadata File", expanded=False):
+        uploaded_file = st.file_uploader("Upload CSV or Excel", type=['csv', 'xlsx', 'xls'], key=f"{key_prefix}_uploader")
+        
+        if uploaded_file:
+            header_row = st.number_input("Header Row (0-based index)", min_value=0, value=0, key=f"{key_prefix}_header")
+            
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    df_new = pd.read_csv(uploaded_file, header=header_row)
+                else:
+                    df_new = pd.read_excel(uploaded_file, header=header_row)
+                
+                st.write("Preview of Uploaded Data:", df_new.head())
+                
+                if 'preview_meta' not in st.session_state or not st.session_state.preview_meta:
+                    st.warning("No file preview generated yet to merge with.")
+                    return
+
+                df_preview = pd.DataFrame(st.session_state.preview_meta)
+
+                merge_type = st.radio("Merge Strategy", ["Merge by Order (Row 1 -> File 1)", "Merge by Column Key"], key=f"{key_prefix}_merge")
+                
+                if merge_type == "Merge by Order":
+                    if st.button("Apply Merge by Order", key=f"{key_prefix}_btn_order"):
+                        # reset index
+                        df_preview = df_preview.reset_index(drop=True)
+                        df_new = df_new.reset_index(drop=True)
+                        
+                        # Assign columns
+                        for col in df_new.columns:
+                            df_preview[col] = df_new[col]
+                            
+                        # Update session state
+                        st.session_state.preview_meta = df_preview.to_dict('records')
+                        st.success("Merged by order! Metadata updated.")
+                        st.rerun()
+
+                else:
+                    col1, col2 = st.columns(2)
+                    key_file = col1.selectbox("File Key (e.g. display_name)", df_preview.columns, key=f"{key_prefix}_key_file")
+                    key_upload = col2.selectbox("Upload Key (e.g. Well)", df_new.columns, key=f"{key_prefix}_key_upload")
+                    
+                    if st.button("Apply Merge by Key", key=f"{key_prefix}_btn_key"):
+                        merged = df_preview.merge(df_new, left_on=key_file, right_on=key_upload, how='left', suffixes=('', '_upload'))
+                        
+                        # Resolve suffixes
+                        for col in df_new.columns:
+                            if f"{col}_upload" in merged.columns:
+                                merged[col] = merged[f"{col}_upload"].combine_first(merged[col])
+                                merged.drop(columns=[f"{col}_upload"], inplace=True)
+                        
+                        st.session_state.preview_meta = merged.to_dict('records')
+                        st.success("Merged by key! Metadata updated.")
+                        st.rerun()
+
+            except Exception as e:
+                st.error(f"Error reading/merging file: {e}")
+
 st.title("Glow Flow Analysis Pipeline")
 
 st.sidebar.header("Configuration")
@@ -58,12 +122,20 @@ if upload_option == "Enter Directory Path":
             if st.session_state.preview_meta:
                  st.subheader("Edit Metadata Structure")
                  
+                 # --- Metadata Upload ---
+                 render_metadata_upload_section(key_prefix="dir")
+                 
                  # 1. Define fields user wants
                  default_cols = ["Replicate", "Cell_Line", "Experiment_Name", "Timepoint", "Concentration"]
                  st.write("Current Metadata Fields:")
+                 
+                 # Dynamic options
+                 preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
+                 extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path']]
+                 
                  cols_to_use = st.multiselect("Select columns to annotate:", 
-                                              options=default_cols + ["Custom1", "Custom2"],
-                                              default=["Replicate", "Cell_Line", "Experiment_Name"])
+                                              options=default_cols + extra_opts + ["Custom1", "Custom2"],
+                                              default=["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else []))
                  
                  # 2. Prepare DataFrame
                  df_preview = pd.DataFrame(st.session_state.preview_meta)
@@ -122,11 +194,18 @@ elif upload_option == "Upload File Paths List":
             if st.session_state.preview_meta:
                  st.subheader("Edit Metadata Structure")
                  
+                 # --- Metadata Upload ---
+                 render_metadata_upload_section(key_prefix="list")
+
                  # 1. Define fields
                  # User requested: "Treatment" -> "Experiment_Name"
                  default_cols = ["Replicate", "Cell_Line", "Experiment_Name"]
+                 
+                 preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
+                 extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path', "Timepoint", "Concentration", "Treatment"]]
+
                  cols_to_use = st.multiselect("Select columns:", 
-                                              options=default_cols + ["Timepoint", "Concentration", "Treatment"], # Kept Treatment just in case
+                                              options=default_cols + extra_opts + ["Timepoint", "Concentration", "Treatment"], # Kept Treatment just in case
                                               default=default_cols, key="txt_cols")
                                               
                  df_preview = pd.DataFrame(st.session_state.preview_meta)
@@ -196,17 +275,61 @@ if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_stat
          x_channel = st.selectbox("X Channel (Forward Scatter)", options=channels, index=channels.index(default_x) if default_x in channels else 0)
          y_channel = st.selectbox("Y Channel (Side Scatter)", options=channels, index=channels.index(default_y) if default_y in channels else 0)
 
-         if st.button("Run Auto-Gating"):
+         # Gating Method Selection
+         col_g1, col_g2 = st.columns(2)
+         with col_g1:
+             gating_method = st.selectbox("Gating Method", ["Density", "GMM"], index=0, help="Density: Selects high-density region (robust). GMM: Fits Gaussian clusters.")
+         
+         with col_g2:
+             if gating_method == "Density":
+                 # Use a key to ensure statefulness if needed, though Streamlit handles it.
+                 keep_percent = st.slider("Keep Fraction", 0.1, 1.0, 0.9, 0.05, help="Fraction of events to keep in the high-density region.")
+                 sigma_val = 2.0
+                 num_comp = 2 # Unused
+             else:
+                 num_comp = st.number_input("Num Components", min_value=1, max_value=5, value=2)
+                 keep_percent = 0.9 # Unused
+                 sigma_val = 2.0 # Unused
+
+         use_outliers = st.checkbox("Remove Outliers before Estimation", value=False, help="Removes sparse outliers before calculating the gate to improve robustness.")
+
+         # --- Reactive Auto-Gating ---
+         # Detect parameter changes to trigger re-calculation automatically.
+         current_gating_params = {
+             'x': x_channel,
+             'y': y_channel,
+             'method': gating_method,
+             'keep': keep_percent,
+             'comp': num_comp,
+             'sigma': sigma_val,
+             'use_outliers': use_outliers,
+             'base_exp_id': id(base_exp) # Ensure we re-run if the base experiment changes
+         }
+         
+         last_gating_params = st.session_state.get('last_gating_params', {})
+         
+         # Check if params changed OR if we don't have a result yet
+         should_run_gating = (current_gating_params != last_gating_params) or ('gated_experiment' not in st.session_state)
+
+         if should_run_gating:
              gater = GatingManager()
-             with st.spinner("Applying GMM Gating..."):
-                 # ALWAYS apply to the CLEAN base_experiment to avoid column name collisions on re-runs
-                 # Cytoflow operations return a NEW experiment object, they don't modify inplace.
-                 gated_experiment = gater.auto_gate_live_cells(base_exp, x_channel=x_channel, y_channel=y_channel)
-                 
-                 st.success("Auto Gating Complete!")
-                 
-                 # Save the RESULTING experiment separately
-                 st.session_state.gated_experiment = gated_experiment
+             with st.spinner(f"Applying {gating_method} Gating..."):
+                 try:
+                    # ALWAYS apply to the CLEAN base_experiment
+                    gated_experiment = gater.auto_gate_live_cells(base_exp, 
+                                                                x_channel=x_channel, 
+                                                                y_channel=y_channel,
+                                                                method=gating_method.lower(),
+                                                                num_components=num_comp,
+                                                                keep=keep_percent,
+                                                                sigma=sigma_val,
+                                                                use_outlier_removal=use_outliers)
+                    
+                    # Update State
+                    st.session_state.gated_experiment = gated_experiment
+                    st.session_state.last_gating_params = current_gating_params
+                 except Exception as e:
+                     st.error(f"Gating failed: {e}")
          
          # If we have a gated experiment, show it (persisting the view)
          if 'gated_experiment' in st.session_state:
@@ -328,76 +451,91 @@ if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_stat
                         subset = df[df['AutoLiveGate'] == live_label]
                         label = live_label # for variable consistency
 
-                        # Calculate Mean (Centroid) and Ellipse
-                        # Handle Log-Space Geometry if needed
-                        
-                        center_x, center_y = None, None
-                        ell_x, ell_y = None, None
+                        # Calculate Boundary (Convex Hull)
+                        # We use Convex Hull to draw a solid boundary around the "Live" population.
+                        boundary_x, boundary_y = None, None
                         
                         try:
-                            if is_log:
-                                # Perform calculations in LOG space
-                                # Filter <= 0 for log
-                                valid_mask = (subset[x_channel] > 0) & (subset[y_channel] > 0)
-                                s_valid = subset.loc[valid_mask]
-                                
-                                if len(s_valid) > 5:
-                                    log_x = np.log10(s_valid[x_channel])
-                                    log_y = np.log10(s_valid[y_channel])
-                                    
-                                    # Geometric Mean (Mean in log space)
-                                    l_mean_x = log_x.mean()
-                                    l_mean_y = log_y.mean()
-                                    
-                                    # Covariance in log space
-                                    cov = np.cov(log_x, log_y)
-                                    lambda_, v = np.linalg.eig(cov)
-                                    lambda_ = np.sqrt(lambda_)
-                                    
-                                    # USER REQ: "five points with lines in between"
-                                    # We discretize the ellipse into a pentagon (5 points + closing point)
-                                    theta = np.linspace(0, 2*np.pi, 6) 
-                                    
-                                    # Ellipse in log space
-                                    l_ell_x = l_mean_x + 2 * lambda_[0] * v[0, 0] * np.cos(theta) + 2 * lambda_[1] * v[0, 1] * np.sin(theta)
-                                    l_ell_y = l_mean_y + 2 * lambda_[0] * v[1, 0] * np.cos(theta) + 2 * lambda_[1] * v[1, 1] * np.sin(theta)
-                                    
-                                    # Transform back to linear for plotting
-                                    center_x = 10**l_mean_x
-                                    center_y = 10**l_mean_y
-                                    ell_x = 10**l_ell_x
-                                    ell_y = 10**l_ell_y
-                            else:
-                                # Linear space
-                                center_x = subset[x_channel].mean()
-                                center_y = subset[y_channel].mean()
-                                
-                                cov = np.cov(subset[x_channel], subset[y_channel])
-                                lambda_, v = np.linalg.eig(cov)
-                                lambda_ = np.sqrt(lambda_)
-                                
-                                # USER REQ: 5 points
-                                theta = np.linspace(0, 2*np.pi, 6)
-                                ell_x = center_x + 2 * lambda_[0] * v[0, 0] * np.cos(theta) + 2 * lambda_[1] * v[0, 1] * np.sin(theta)
-                                ell_y = center_y + 2 * lambda_[0] * v[1, 0] * np.cos(theta) + 2 * lambda_[1] * v[1, 1] * np.sin(theta)
-
-                            if center_x is not None:
-                                # Add Centroid ("Big Dot")
-                                fig.add_trace(go.Scatter(
-                                    x=[center_x], y=[center_y], mode='markers',
-                                    marker=dict(color='red', size=14, line=dict(color='white', width=2)), # Red for visibility
-                                    name=f"Auto Gate Center"
-                                ))
+                            hull_points = subset[[x_channel, y_channel]].values
                             
-                            if ell_x is not None:
-                                fig.add_trace(go.Scatter(x=ell_x, y=ell_y, mode='lines+markers', 
-                                                        line=dict(color='white', width=4, dash='solid'), # Very Thick White Line
-                                                        marker=dict(size=8, color='white'), # Show vertices
-                                                        name=f"Auto Gate"))
+                            # Filter for valid data
+                            if is_log:
+                                valid_mask = (hull_points[:,0] > 0) & (hull_points[:,1] > 0)
+                                hull_points = hull_points[valid_mask]
+                            else:
+                                valid_mask = np.isfinite(hull_points[:,0]) & np.isfinite(hull_points[:,1])
+                                hull_points = hull_points[valid_mask]
+
+                            if len(hull_points) > 3:
+                                if is_log:
+                                    # Perform Hull in Log Space to match the visual distribution
+                                    log_points = np.log10(hull_points)
+                                    hull = ConvexHull(log_points)
+                                    
+                                    # Get vertices in CCW order and close the loop
+                                    v_idx = hull.vertices
+                                    closed_v_idx = np.append(v_idx, v_idx[0])
+                                    
+                                    # Transform back to Linear for plotting (since axis is log)
+                                    boundary_x = 10**log_points[closed_v_idx, 0]
+                                    boundary_y = 10**log_points[closed_v_idx, 1]
+                                else:
+                                    hull = ConvexHull(hull_points)
+                                    v_idx = hull.vertices
+                                    closed_v_idx = np.append(v_idx, v_idx[0])
+                                    
+                                    boundary_x = hull_points[closed_v_idx, 0]
+                                    boundary_y = hull_points[closed_v_idx, 1]
+
+                            if boundary_x is not None:
+                                fig.add_trace(go.Scatter(x=boundary_x, y=boundary_y, mode='lines', 
+                                                        line=dict(color='black', width=3), # Solid Black Line
+                                                        name=f"Live Boundary"))
+                        except Exception as e:
+                            # Fallback or silent fail for geometry errors
+                            pass
                         except Exception:
                             pass # geometry calc fail
 
+                # --- Validation Plot (Live vs Non-Live) ---
+                # User Request: "separate scatter plot below... where live cells and non-live cells are colored"
+                if 'AutoLiveGate' in df.columns:
+                     st.write("### Gating Classification")
+                     
+                     # Create validation dataframe (downsampled if needed)
+                     # We use the same plot_df for consistency
+                     # We explicitly convert the gate column to string to ensure discrete coloring
+                     val_df = plot_df.copy()
+                     val_df['AutoLiveGate'] = val_df['AutoLiveGate'].astype(str)
+                     
+                     # Map colors: Live = Green (or safe color), Others = Red/Grey
+                     # Heuristic: We know 'live_label' from above if it exists
+                     color_map_val = {}
+                     if 'suggested_live_label' in st.session_state:
+                         live_lbl = str(st.session_state.suggested_live_label)
+                         # Set generic colors for all, then override Live
+                         unique_vals = val_df['AutoLiveGate'].unique()
+                         for u in unique_vals:
+                             color_map_val[u] = 'red' if u != live_lbl else 'green'
+
+                     fig_val = px.scatter(val_df, x=x_channel, y=y_channel, 
+                                          color='AutoLiveGate',
+                                          title="Live Cell Classification (Green = Selected)",
+                                          color_discrete_map=color_map_val,
+                                          opacity=0.6,
+                                          log_x=is_log, log_y=is_log)
+                     
+                     # Draw the same boundary on this plot for verification
+                     if boundary_x is not None:
+                         fig_val.add_trace(go.Scatter(x=boundary_x, y=boundary_y, mode='lines', 
+                                                         line=dict(color='black', width=2, dash='dot'),
+                                                         name="Computed Boundary"))
+
+                     st.plotly_chart(fig_val, use_container_width=True)
+
+
                 # --- Manual Gate Visualization ---
+
                 if st.session_state.get('manual_vertices'):
                     verts = st.session_state.manual_vertices
                     path_x = [v[0] for v in verts] + [verts[0][0]]
@@ -986,19 +1124,26 @@ if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_stat
                                                         user_decision="manual_override"
                                                     )
 
-                                                from matplotlib.path import Path
-                                                poly_path = Path(parsed_verts)
-                                                mask = poly_path.contains_points(X_lin)
-                                                
-                                                exp.data = exp.data[mask]
-                                                st.session_state.gated_experiment = exp
-                                                st.session_state.doublets_removed = True
-                                                st.session_state.show_doublet_gating = False
-                                                st.session_state.doublet_manual_mode = False # Reset
-                                                if 'pending_doublet_verts' in st.session_state:
-                                                    del st.session_state.pending_doublet_verts
-                                                st.success(f"Kept {sum(mask)} manual events.")
-                                                st.rerun()
+                                                # Use GatingManager for standard application + Filter
+                                                gater = GatingManager()
+                                                try:
+                                                    gate_name = "ManualSingletGate"
+                                                    exp = gater.apply_manual_gate(exp, gate_name, d_x, d_y, parsed_verts)
+                                                    
+                                                    # Cytoflow apply() adds the condition, we must explicitly filter for the UI validation
+                                                    if gate_name in exp.data.columns:
+                                                        exp.data = exp.data[exp.data[gate_name]].copy()
+                                                    
+                                                    st.session_state.gated_experiment = exp
+                                                    st.session_state.doublets_removed = True
+                                                    st.session_state.show_doublet_gating = False
+                                                    st.session_state.doublet_manual_mode = False # Reset
+                                                    if 'pending_doublet_verts' in st.session_state:
+                                                        del st.session_state.pending_doublet_verts
+                                                    st.success(f"Manual singlet gate applied. Kept {len(exp.data)} events.")
+                                                    st.rerun()
+                                                except Exception as e:
+                                                    st.error(f"Failed to apply gate: {e}")
 
                                         except Exception as e:
                                             st.error(f"Error parsing vertices: {e}")
