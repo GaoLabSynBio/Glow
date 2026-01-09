@@ -8,8 +8,8 @@ import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 try:
-    from base_pipeline.data_loader import DataLoader
-    from base_pipeline.gating import GatingManager
+    from glow.base_pipeline.data_loader import DataLoader
+    from glow.base_pipeline.gating import GatingManager
     import cytoflow
     CYTOFLOW_AVAILABLE = True
 except ImportError as e:
@@ -790,7 +790,7 @@ if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_stat
                 # Helper for logging
                 # Check for module availability (in case created dynamically)
                 try:
-                    from active_learning.storage import ActiveLearningLogger
+                    from glow.active_learning.storage import ActiveLearningLogger
                     logger = ActiveLearningLogger()
                 except ImportError:
                     logger = None

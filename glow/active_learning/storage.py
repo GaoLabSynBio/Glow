@@ -4,7 +4,7 @@ import datetime
 import numpy as np
 
 class ActiveLearningLogger:
-    def __init__(self, storage_dir="active_learning_data"):
+    def __init__(self, storage_dir="data/active_learning_data"):
         self.storage_dir = storage_dir
         if not os.path.exists(self.storage_dir):
             os.makedirs(self.storage_dir)

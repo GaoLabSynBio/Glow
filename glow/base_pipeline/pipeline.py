@@ -7,9 +7,9 @@ import sys
 # Ideally correct usage: python -m base_pipeline.pipeline
 from .data_loader import DataLoader
 from .gating import GatingManager
-from active_learning.learner import ActiveLearner
+from glow.active_learning.learner import ActiveLearner
 
-def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rename_strategy='folder_name', output_dir='processed_fcs', cell_line=None):
+def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rename_strategy='folder_name', output_dir='data/processed_fcs', cell_line=None):
     """
     Main entry point for the base pipeline logic.
     """

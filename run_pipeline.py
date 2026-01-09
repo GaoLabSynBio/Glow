@@ -1,11 +1,11 @@
 import argparse
-from base_pipeline.pipeline import run_base_pipeline
+from glow.base_pipeline.pipeline import run_base_pipeline
 
 def main():
     parser = argparse.ArgumentParser(description="Glow Pipeline Entry Point")
     parser.add_argument("--file_list", help="Path to a text file containing list of FCS file paths")
     parser.add_argument("--input_dir", help="Directory to recursively search for FCS files")
-    parser.add_argument("--output_dir", default="processed_fcs", help="Directory to save renamed files")
+    parser.add_argument("--output_dir", default="data/processed_fcs", help="Directory to save renamed files")
     parser.add_argument("--rename", default="folder_name", choices=["folder_name", "keep"], help="Renaming strategy")
     
     args = parser.parse_args()

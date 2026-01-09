@@ -4,7 +4,7 @@ import numpy as np
 from .storage import ActiveLearningLogger
 
 class ActiveLearner:
-    def __init__(self, storage_dir="active_learning_data", model_filename="model_weights.json"):
+    def __init__(self, storage_dir="data/active_learning_data", model_filename="model_weights.json"):
         self.storage_dir = storage_dir
         self.model_path = os.path.join(storage_dir, model_filename)
         self.logger = ActiveLearningLogger(storage_dir)
