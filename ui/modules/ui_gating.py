@@ -486,7 +486,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 
                                 st.session_state.gated_experiment = exp
                                 st.session_state.gate_accepted = True
-                                st.success("Auto-Gate Accepted! Data filtered to Live Cells.")
+                                st.session_state.doublets_removed = False # Reset downstream step
+                                st.success("Auto-Gate Accepted! Proceeding to Singlet Detection...")
                                 st.rerun()
                             else:
                                 st.success("Feedback saved! (Mock mode)")
@@ -555,24 +556,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             except Exception as e:
                                 st.error(f"Invalid format: {e}")
                     
-                    # --- Module 4: Cleanup & Export (Post-Gating) ---
+                    # --- Step 3: Singlet Detection ---
                     if st.session_state.get('gate_accepted'): 
                         st.divider()
-                        st.header("4. Post-Gating Processing")
-                        st.info("Gated population selected. Refine or export.")
+                        st.header("3. Singlet Detection")
                         
-                        # Export Data (Always available)
-                        csv = st.session_state.gated_experiment.data.to_csv(index=False).encode('utf-8')
-                        
-                        col_exp1, col_exp2 = st.columns([1, 1])
-                        with col_exp1:
-                            st.download_button("Download Gated CSV", data=csv, file_name="gated_live_cells.csv", mime="text/csv")
-                        
-                        st.divider()
-                        st.subheader("4.1 Doublet Discrimination (Singlet Selection)")
-                        
-                        # Toggle for Doublet Gating
-                        is_doublet_mode = st.checkbox("Show Doublet Check (FSC-A vs FSC-H)", value=st.session_state.get('show_doublet_gating', False))
+                        # Automatically proceed to Singlet Detection
+                        is_doublet_mode = not st.session_state.get('doublets_removed', False)
+                        st.session_state.show_doublet_gating = is_doublet_mode
                         if is_doublet_mode:
                             st.session_state.show_doublet_gating = True
                             
@@ -960,6 +951,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                         if st.session_state.get('doublets_removed'):
                             st.success("Doublets have been removed from the dataset.")
+                            
+                            st.divider()
+                            st.header("4. Export Data")
+                            final_csv = st.session_state.gated_experiment.data.to_csv(index=False).encode('utf-8')
+                            st.download_button("Download Processed CSV (Live + Singlets)", data=final_csv, file_name="processed_data.csv", mime="text/csv")
 
                 except Exception as e:
                     st.write(e) # Debug
