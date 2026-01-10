@@ -12,7 +12,7 @@ Glow is designed to streamline flow cytometry data analysis. It provides an inte
    conda env create -f environment.yml
    conda activate glow_env
    ```
-   *(Or install dependencies listed in `active_learning` and `base_pipeline` manually).*
+   *(Or install dependencies listed in `glow/data_loading` and `glow/gating` manually).*
 
 ## Usage
 
@@ -56,14 +56,16 @@ The project is organized into modular components to separate core logic, user in
 ```text
 Glow/
 ├── glow/                       # Core Python Package
-│   ├── base_pipeline/          # Backend logic (Cytoflow wrappers, Gating algos)
-│   └── active_learning/        # Learning system (Feedback logging, Model weights)
+│   ├── active_learning/        # Learning system (Feedback logging, Model weights)
+│   ├── data_loading/           # File loading & metadata parsing
+│   ├── gating/                 # Gating strategies & boundary computation
+│   ├── pipeline/               # Pipeline runner
+│   └── utils/                  # Utility functions
 ├── ui/                         # Streamlit Frontend
 │   ├── app.py                  # Main Application Entry Point
-│   └── modules/                # Modular UI Components
-│       ├── ui_file_loader.py   # File scanning & loading widgets
-│       ├── ui_metadata.py      # Metadata parsing & merging widgets
-│       └── ui_gating.py        # Gating visuals & interaction logic
+│   ├── analysis/               # Analysis tabs & views
+│   ├── gating/                 # Gating UI components
+│   └── plot/                   # Plotting UI components
 ├── tests/                      # Unit and integration tests
 ├── data/                       # Data storage (Active Learning logs, processed files)
 └── debug/                      # Prototyping notebooks

@@ -273,7 +273,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             # --- Draw Boundaries for ALL Valid Clusters ---
                             # Iterate through candidates to show Context
                             try:
-                                from glow.base_pipeline.boundary import compute_density_boundary
+                                from glow.gating.boundary import compute_density_boundary
                                 
                                 # Use a color palette for non-live items
                                 palette = ['cyan', 'magenta', 'orange', 'yellow', 'brown']
@@ -336,9 +336,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     fig.data = tuple(data)
                                     
                             except Exception as e:
-                                pass # Geometry fail
-                            except Exception:
-                                pass # geometry calc fail
+                                print(f"Warning: Boundary computation failed: {e}")
+                                # pass # Geometry fail
 
                     # --- Validation Plot (Live vs Non-Live) ---
                     # User Request: "separate scatter plot below... where live cells and non-live cells are colored"

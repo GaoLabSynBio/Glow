@@ -4,9 +4,9 @@ import sys
 
 # Ensure we can import modules from the current package context if run directly
 # Logic: If this script is run, add parent dir to sys.path or use relative imports if run as module
-# Ideally correct usage: python -m base_pipeline.pipeline
-from .data_loader import DataLoader
-from .gating import GatingManager
+# Ideally correct usage: python -m glow.pipeline.runner
+from glow.data_loading.loader import DataLoader
+from glow.gating.manager import GatingManager
 from glow.active_learning.learner import ActiveLearner
 
 def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rename_strategy='folder_name', output_dir='data/processed_fcs', cell_line=None):

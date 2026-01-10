@@ -1,5 +1,5 @@
 from typing import List, Optional
-from .gating_strategies import (
+from .strategies import (
     CompensationManager,
     GatingStrategy,
     GMMGating,

@@ -331,8 +331,3 @@ class RangeGating(ManualGating):
                                     low=self.low,
                                     high=self.high)
         return range_op.apply(experiment)
-
-
-
-
-

@@ -1,5 +1,5 @@
 import argparse
-from glow.base_pipeline.pipeline import run_base_pipeline
+from glow.pipeline.runner import run_base_pipeline
 
 def main():
     parser = argparse.ArgumentParser(description="Glow Pipeline Entry Point")

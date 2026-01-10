@@ -1,6 +1,6 @@
 import os
 import pytest
-from glow.base_pipeline.data_loader import DataLoader
+from glow.data_loading.loader import DataLoader
 
 class TestDataLoader:
     def test_natural_sort_key(self):

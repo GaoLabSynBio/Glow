@@ -9,8 +9,8 @@ st.set_page_config(page_title="Glow Flow Analysis", layout="wide")
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 try:
-    from glow.base_pipeline.data_loader import DataLoader
-    from glow.base_pipeline.gating import GatingManager
+    from glow.data_loading.loader import DataLoader
+    from glow.gating.manager import GatingManager
     import cytoflow
     CYTOFLOW_AVAILABLE = True
 except ImportError as e:

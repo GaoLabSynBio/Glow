@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from glow.data_loading.metadata_parser import parse_metadata_file
 
 def render_metadata_upload_section(key_prefix=""):
     """
@@ -46,36 +47,20 @@ def render_metadata_upload_section(key_prefix=""):
                 # 3. Process DataFrame
                 # Set headers
                 if header_row_idx < len(df_raw):
-                    # Manual fillna logic to avoid generator error
-                    header_series = df_raw.iloc[header_row_idx]
-                    headers = []
-                    for i, val in enumerate(header_series):
-                        if pd.isna(val) or str(val).strip() == "":
-                             headers.append(f"Untitled_{i}")
-                        else:
-                             headers.append(str(val))
+                    g_coords = (g_row, g_col) if use_global_exp else None
+                    
+                    try:
+                        df_parsed = parse_metadata_file(
+                            uploaded_file=None,
+                            df_raw=df_raw,
+                            header_row_idx=header_row_idx,
+                            data_start_idx=data_start_idx,
+                            global_exp_name_coords=g_coords
+                        )
+                    except ValueError as ve:
+                        st.error(f"Parsing error: {ve}")
+                        df_parsed = pd.DataFrame() # Fallback
 
-                    # Handle duplicate headers
-                    seen = {}
-                    final_headers = []
-                    for h in headers:
-                        if h in seen:
-                            seen[h] += 1
-                            final_headers.append(f"{h}_{seen[h]}")
-                        else:
-                            seen[h] = 0
-                            final_headers.append(h)
-                    
-                    # Slice data
-                    df_parsed = df_raw.iloc[data_start_idx:].copy()
-                    df_parsed.columns = final_headers
-                    df_parsed.reset_index(drop=True, inplace=True)
-                    
-                    # Apply global experiment name if found
-                    if global_exp_name:
-                        # If parsed df doesn't have "Experiment_Name", add it
-                        # If it does, we might overwrite OR fill na. Let's overwrite for consistency if user asked for it.
-                        df_parsed["Experiment_Name"] = global_exp_name
 
                     st.write("#### 3. Parsed Metadata Preview")
                     st.dataframe(df_parsed.head(), use_container_width=True)
