@@ -13,3 +13,4 @@ test_venv/
 .pytest_cache/
 gemini_coder/
 .ipynb_checkpoints/
+data/

@@ -2,6 +2,9 @@ import streamlit as st
 import os
 import sys
 
+# Set page config must be the first streamlit command
+st.set_page_config(page_title="Glow Flow Analysis", layout="wide")
+
 # Add parent directory to path to import pipeline modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -22,21 +25,61 @@ try:
 except ImportError:
     ActiveLearningLogger = None
 
-# Import local modules
-# We need to make sure python can find the modules directory.
-# Since app.py is in ui/, and modules is in ui/modules, 
-# and streamlit runs relative to the script usually.
-from modules.ui_file_loader import render_file_loader
-from modules.ui_gating import render_gating_section
+# Import tab views
+from gating.view import render_gating_tab
+from analysis.view import render_analysis_tab
+from plot.view import render_plot_tab
 
 st.title("Glow Flow Analysis Pipeline")
 
-st.sidebar.header("Configuration")
+# Initialize Session State for Workflow
+if 'gating_complete' not in st.session_state:
+    st.session_state.gating_complete = False
+if 'analysis_complete' not in st.session_state:
+    st.session_state.analysis_complete = False
+if 'current_tab' not in st.session_state:
+    st.session_state.current_tab = "Gating"
 
-# 1. File Loading Module
-render_file_loader(DataLoader, CYTOFLOW_AVAILABLE)
+# Sidebar Navigation
+st.sidebar.title("Navigation")
 
-# 2. Gating Module
-render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE)
+# Determine available tabs based on state
+tabs = ["Gating"]
+if st.session_state.gating_complete:
+    tabs.append("Analysis")
+if st.session_state.analysis_complete:
+    tabs.append("Plot")
 
-st.info("Active Learning Module to be integrated here.")
+# Ensure current tab is valid
+if st.session_state.current_tab not in tabs:
+    st.session_state.current_tab = "Gating" # Default fallback
+
+# Use a key to sync state, but handle manual changes via callback if needed. 
+# Simple approach: use the radio value.
+selected_tab = st.sidebar.radio("Go to", tabs, index=tabs.index(st.session_state.current_tab))
+
+# Handle tab switch
+if selected_tab != st.session_state.current_tab:
+    st.session_state.current_tab = selected_tab
+    st.rerun()
+
+st.sidebar.divider()
+
+# Render Selected Tab
+if selected_tab == "Gating":
+    # Logic for read-only view if gating is complete
+    if st.session_state.gating_complete:
+        st.warning("Gating is marked as complete. To modify gating, please unlock it below. Unlocking will reset Analysis progress.")
+        if st.button("Unlock Gating (Reset Analysis)"):
+            st.session_state.gating_complete = False
+            st.session_state.analysis_complete = False
+            st.rerun()
+            
+    # Render the gating tab content
+    render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE)
+
+elif selected_tab == "Analysis":
+    render_analysis_tab()
+
+elif selected_tab == "Plot":
+    render_plot_tab()
