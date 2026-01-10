@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import cytoflow
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 try:
     from sklearn.ensemble import IsolationForest
@@ -78,15 +78,15 @@ class OutlierDetector:
         """
         data = experiment.data
         x, y = channels[0], channels[1] if len(channels) > 1 else channels[0]
-        
+
         mask = None
-        if self.use_isolation_forest and len(data) > 20: 
+        if self.use_isolation_forest and len(data) > 20:
             # Isolation Forest Strategy
             contam_est = 1.0 - (self.outlier_high - self.outlier_low)
             contam_est = max(0.001, min(0.4, contam_est))
-            
+
             X_iso = data[[x, y]].values
-            
+
             if len(X_iso) > 20000:
                 idx = np.random.choice(len(X_iso), 20000, replace=False)
                 X_train = X_iso[idx]
@@ -95,7 +95,7 @@ class OutlierDetector:
 
             clf = IsolationForest(contamination=contam_est, n_jobs=-1, random_state=42)
             clf.fit(X_train)
-            
+
             preds = clf.predict(X_iso)
             mask = (preds == 1) # 1 = inlier
         else:
@@ -107,11 +107,11 @@ class OutlierDetector:
                        (data[y] >= y_low) & (data[y] <= y_high)
             else:
                 mask = (data[x] >= x_low) & (data[x] <= x_high)
-                
+
         # Ensure Series format
         if not isinstance(mask, (pd.Series, pd.DataFrame)):
             mask = pd.Series(mask, index=data.index)
-            
+
         return mask
 
     def get_clean_subset(self, experiment, channels: List[str]):
@@ -119,7 +119,7 @@ class OutlierDetector:
         mask = self.get_mask(experiment, channels)
 
         clean_data = data[mask]
-        
+
         # Check if we removed everything
         if len(clean_data) < 10:
              print("Warning: Outlier removal resulted in too few events. Using full dataset.")
@@ -166,7 +166,7 @@ class ManualGating(GatingStrategy):
 
 class GMMGating(AutomaticGating):
     """
-    Gaussian Mixture Model gating. 
+    Gaussian Mixture Model gating.
     Can be used for clustering, live/dead discrimination, or singlet finding.
     Dimension: N (usually 1 or 2).
     """
@@ -179,13 +179,13 @@ class GMMGating(AutomaticGating):
         gmm = cytoflow.GaussianMixtureOp(name=self.name,
                                          channels=self.channels,
                                          num_components=self.num_components)
-        
+
         # Estimate on (potentially cleaned) data
         estimation_data = self.get_estimation_data(experiment)
         gmm.estimate(estimation_data)
-        
+
         res = gmm.apply(experiment)
-        
+
         if self.return_model:
             return res, gmm
         return res
@@ -208,11 +208,93 @@ class DensityGating(AutomaticGating):
                                             ychannel=self.channels[1],
                                             keep=self.keep,
                                             sigma=self.sigma)
-        
+
         estimation_data = self.get_estimation_data(experiment)
         density_op.estimate(estimation_data)
-        
+
         return density_op.apply(experiment)
+
+
+class DBSCANGating(AutomaticGating):
+    """
+    DBSCAN-based gating.
+    Identifies clusters based on density and proximity.
+    Dimension: N (usually 2).
+    """
+    def __init__(self, name: str, channels: List[str], eps: float = 0.05, min_samples: int = 50, outlier_detector: Optional[OutlierDetector] = None):
+        super().__init__(name, channels, outlier_detector)
+        self.eps = eps
+        self.min_samples = min_samples
+
+    def apply(self, experiment):
+        from sklearn.cluster import DBSCAN
+        from sklearn.neighbors import KNeighborsClassifier
+        from sklearn.preprocessing import MinMaxScaler
+
+        MAX_SAMPLES = 20000
+
+        # Get estimation data (potentially cleaned)
+        estimation_data = self.get_estimation_data(experiment)
+
+        # Get full data for prediction later
+        full_data = experiment.data[self.channels].values
+
+        # Determine if we need to downsample for the clustering step
+        X = estimation_data.data[self.channels].values
+        n_samples = len(X)
+
+        scaler = MinMaxScaler()
+
+        if n_samples > MAX_SAMPLES:
+            # Downsample for DBSCAN
+            indices = np.random.choice(n_samples, MAX_SAMPLES, replace=False)
+            X_subset = X[indices]
+            X_scaled_subset = scaler.fit_transform(X_subset) # Fit scaler on subset
+            
+            # Scale min_samples relative to downsampling
+            ratio = MAX_SAMPLES / n_samples
+            adjusted_min_samples = max(3, int(self.min_samples * ratio))
+
+            # Run DBSCAN on subset
+            db = DBSCAN(eps=self.eps, min_samples=adjusted_min_samples).fit(X_scaled_subset)
+            labels_subset = db.labels_
+
+            # Train KNN classifier to propagate labels
+            knn = KNeighborsClassifier(n_neighbors=5)
+            knn.fit(X_scaled_subset, labels_subset)
+
+            # Predict for ALL data (scaled with the same scaler)
+            # Use chunks to avoid memory spike during prediction if massive
+            X_full_scaled = scaler.transform(full_data)
+            labels_full = knn.predict(X_full_scaled)
+
+            # Note: KNN will predict a label for everything, even outliers from DBSCAN (-1).
+            # This is generally acceptable for "gating" as we want a boundary,
+            # and -1 points (outliers) will form a "noise" class region.
+
+        else:
+            # Run on full estimation data
+            X_scaled = scaler.fit_transform(X)
+            db = DBSCAN(eps=self.eps, min_samples=self.min_samples).fit(X_scaled)
+            labels_est = db.labels_
+
+            # If estimation_data IS experiment data, we are done
+            # But if estimation_data is a subset (outlier removal), we need to propagate or map back
+            # For simplicity, if we have a mismatch, we use KNN as well
+
+            if len(X) != len(full_data):
+                knn = KNeighborsClassifier(n_neighbors=1)
+                knn.fit(X_scaled, labels_est)
+                X_full_scaled = scaler.transform(full_data)
+                labels_full = knn.predict(X_full_scaled)
+            else:
+                labels_full = labels_est
+
+        # Clone experiment
+        res = experiment.clone()
+        res.data[self.name] = labels_full
+
+        return res
 
 # --- Level 3: Specific Implementations of Manual Gating ---
 

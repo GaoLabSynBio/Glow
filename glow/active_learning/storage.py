@@ -12,7 +12,7 @@ class ActiveLearningLogger:
     def log_gate_feedback(self, sample_name, cell_line, x_channel, y_channel, gate_type, gate_params, user_decision):
         """
         Logs user interaction for active learning.
-        
+
         Args:
             sample_name (str): ID of the sample.
             cell_line (str): The cell line identifier from metadata.
@@ -31,10 +31,14 @@ class ActiveLearningLogger:
             "gate_params": self._serialize(gate_params),
             "user_decision": user_decision
         }
-        
+
         filename = f"{self.storage_dir}/feedback_{datetime.datetime.now().strftime('%Y%m%d')}.jsonl"
-        with open(filename, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        try:
+            with open(filename, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except (PermissionError, OSError) as e:
+            # Silently fail or log to stderr if feedback cannot be saved to avoid blocking the UI
+            print(f"Active Learning Logging Failed: {e}")
 
     def load_feedback(self):
         """
@@ -56,7 +60,7 @@ class ActiveLearningLogger:
                             except json.JSONDecodeError:
                                 pass
         return all_feedback
-            
+
     def _serialize(self, obj):
         """Helper to handle numpy types for JSON"""
         if isinstance(obj, np.ndarray):

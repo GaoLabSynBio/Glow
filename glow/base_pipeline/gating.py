@@ -4,6 +4,7 @@ from .gating_strategies import (
     GatingStrategy,
     GMMGating,
     DensityGating,
+    DBSCANGating,
     PolygonGating,
     RangeGating,
     OutlierDetector
@@ -64,31 +65,37 @@ class GatingManager:
         Removes doublets/duplicates.
         Uses GMMGating (1 component) effectively acting as a Singlet Finder on the diagonal.
         """
-        strategy = GMMGating(name="Singlets", 
-                             channels=[fsc_a_channel, fsc_h_channel], 
+        strategy = GMMGating(name="Singlets",
+                             channels=[fsc_a_channel, fsc_h_channel],
                              num_components=1)
         return strategy.apply(experiment)
 
-    def auto_gate_live_cells(self, experiment, x_channel="FSC-A", y_channel="SSC-A", method="density", num_components=2, keep=0.9, sigma=2.0, outlier_low=0.01, outlier_high=0.99, return_model=False, use_outlier_removal=False):
+    def auto_gate_live_cells(self, experiment, x_channel="FSC-A", y_channel="SSC-A", method="density", num_components=2, keep=0.9, sigma=2.0, outlier_low=0.01, outlier_high=0.99, return_model=False, use_outlier_removal=False, eps=0.05, min_samples=50):
         """
         Uses AutoGatingStrategy (GMM, Density).
         method: 'gmm', 'density', or 'smart' (legacy alias for density + outliers).
         """
         outlier_detector = None
-        
+
         # Handle 'smart' alias or explicit request
         if method == 'smart':
             method = 'density'
             use_outlier_removal = True
-            
+
         if use_outlier_removal:
             outlier_detector = OutlierDetector(method='isolation_forest',
                                                outlier_low=outlier_low,
                                                outlier_high=outlier_high)
 
-        if method == 'gmm':
-            strategy = GMMGating(name="AutoLiveGate", 
-                                 channels=[x_channel, y_channel], 
+        if method == 'dbscan':
+            strategy = DBSCANGating(name="AutoLiveGate",
+                                    channels=[x_channel, y_channel],
+                                    eps=eps,
+                                    min_samples=min_samples,
+                                    outlier_detector=outlier_detector)
+        elif method == 'gmm':
+            strategy = GMMGating(name="AutoLiveGate",
+                                 channels=[x_channel, y_channel],
                                  num_components=num_components,
                                  return_model=return_model,
                                  outlier_detector=outlier_detector)
@@ -107,8 +114,8 @@ class GatingManager:
         """
         Uses ManualGatingStrategy (Polygon).
         """
-        strategy = PolygonGating(name=name, 
-                                 channels=[x_channel, y_channel], 
+        strategy = PolygonGating(name=name,
+                                 channels=[x_channel, y_channel],
                                  vertices=vertices)
         return strategy.apply(experiment)
 
@@ -116,9 +123,9 @@ class GatingManager:
         """
         Uses AutoGatingStrategy (Density implementation).
         """
-        strategy = DensityGating(name=name, 
-                                 channels=[x_channel, y_channel], 
-                                 keep=keep, 
+        strategy = DensityGating(name=name,
+                                 channels=[x_channel, y_channel],
+                                 keep=keep,
                                  sigma=sigma)
         return strategy.apply(experiment)
 

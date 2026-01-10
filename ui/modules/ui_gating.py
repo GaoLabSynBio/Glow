@@ -37,10 +37,19 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
             # Gating Method Selection
             col_g1, col_g2 = st.columns(2)
             with col_g1:
-                gating_method = st.selectbox("Gating Method", ["Density", "GMM"], index=0, help="Density: Selects high-density region (robust). GMM: Fits Gaussian clusters.")
+                gating_method = st.selectbox("Gating Method", ["Density", "GMM", "DBSCAN"], index=0, help="Density: Selects high-density region. GMM: Gaussian Clusters. DBSCAN: Density clustering (good for irregular shapes).")
             
+            # Default values to prevent unbound errors
+            eps = 0.05
+            min_samples = 50
+
             with col_g2:
-                if gating_method == "Density":
+                if gating_method == "DBSCAN":
+                    eps = st.number_input("Epsilon (Radius)", 0.01, 1.0, 0.05, 0.01, format="%.2f", help="Max distance between samples (scaled 0-1).")
+                    min_samples = st.number_input("Min Samples", 5, 200, 50, 5, help="Min samples in neighborhood.")
+                    # Defaults for others
+                    num_comp = 2; keep_percent = 0.9; sigma_val = 2.0
+                elif gating_method == "Density":
                     # Use a key to ensure statefulness if needed, though Streamlit handles it.
                     keep_percent = st.slider("Keep Fraction", 0.1, 1.0, 0.9, 0.05, help="Fraction of events to keep in the high-density region.")
                     sigma_val = 2.0
@@ -65,6 +74,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 'keep': keep_percent,
                 'comp': num_comp,
                 'sigma': sigma_val,
+                'eps': eps,
+                'min_samples': min_samples,
                 'use_outliers': use_outliers,
                 'base_exp_id': id(base_exp) # Ensure we re-run if the base experiment changes
             }
@@ -86,7 +97,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                                     num_components=num_comp,
                                                                     keep=keep_percent,
                                                                     sigma=sigma_val,
-                                                                    use_outlier_removal=use_outliers)
+                                                                    use_outlier_removal=use_outliers,
+                                                                    eps=eps,
+                                                                    min_samples=min_samples)
                         
                         # Update State
                         st.session_state.gated_experiment = gated_experiment
@@ -203,17 +216,45 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         st.session_state.current_auto_boundary = None
                         
                         # Heuristic: Identify the "Live" population
-                        # The population with the higher Mean FSC (x_channel) is usually the cells, not debris.
-                        # We calculate means for all available labels first
-                        label_means = {}
-                        for label in unique_labels:
-                            subset = df[df['AutoLiveGate'] == label]
-                            if not subset.empty and len(subset) > 5:
-                                label_means[label] = subset[x_channel].mean()
+                        # 1. Ignore Noise (-1)
+                        # 2. Filter out insignificant clusters (< 1% count) to avoid outlier groups
+                        # 3. Pick Highest Mean FSC from leftovers
                         
-                        # Sort labels by mean X descending
-                        if label_means:
-                            # Heuristic Improvement: Prefer explicitly TRUE/True/1 labels if available and data is boolean-like
+                        label_stats = []
+                        total_events = len(df)
+                        
+                        for label in unique_labels:
+                            # Skip standard noise label
+                            if str(label) == '-1': 
+                                continue
+                                
+                            subset = df[df['AutoLiveGate'] == label]
+                            count = len(subset)
+                            if count > 5:
+                                mean_fsc = subset[x_channel].mean()
+                                label_stats.append({
+                                    'label': label,
+                                    'count': count,
+                                    'fraction': count / total_events,
+                                    'mean_fsc': mean_fsc
+                                })
+                        
+                        # Filter Candidates
+                        # Only keep clusters with > 1% (0.01) abundance if possible
+                        valid_candidates = [s for s in label_stats if s['fraction'] > 0.01]
+                        
+                        # If filtering removed everything (rare case), fallback to all
+                        if not valid_candidates:
+                            valid_candidates = label_stats
+                            
+                        boundary_x, boundary_y = None, None  # Initialize outside
+                        
+                        if valid_candidates:
+                            # Sort by Mean FSC Descending to find the "Rightmost" (Live) population
+                            # ignoring debris (left) and assuming outliers (extreme right) are filtered by size
+                            valid_candidates.sort(key=lambda x: x['mean_fsc'], reverse=True)
+                            
+                            # Heuristic Improvement: Prefer explicitly TRUE/True/1 labels
                             preferred_label = None
                             for lbl in unique_labels:
                                 if str(lbl).lower() in ['true', '1', 'live', 'pos', 'positive']:
@@ -223,75 +264,79 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             if preferred_label is not None:
                                 live_label = preferred_label
                             else:
-                                sorted_labels = sorted(label_means.items(), key=lambda item: item[1], reverse=True)
-                                # The "Live" gate is likely the first one (highest FSC)
-                                live_label = sorted_labels[0][0]
+                                # Pick the highest FSC one from valid candidates
+                                live_label = valid_candidates[0]['label']
 
                             # Store for the "Accept" button
                             st.session_state['suggested_live_label'] = live_label
 
-                            # Only plot this one
-                            subset = df[df['AutoLiveGate'] == live_label]
-                            label = live_label # for variable consistency
-
-                            # Calculate Boundary (Density / Isoline)
-                            # We use Density Isoline to draw a boundary that follows the true shape of the population.
-                            boundary_x, boundary_y = None, None
-                            
+                            # --- Draw Boundaries for ALL Valid Clusters ---
+                            # Iterate through candidates to show Context
                             try:
                                 from glow.base_pipeline.boundary import compute_density_boundary
                                 
-                                subset_df = subset[[x_channel, y_channel]]
+                                # Use a color palette for non-live items
+                                palette = ['cyan', 'magenta', 'orange', 'yellow', 'brown']
+                                p_idx = 0
                                 
-                                # Filter for valid data
-                                if is_log:
-                                     # Pre-filter
-                                     valid_mask = (subset_df[x_channel] > 0) & (subset_df[y_channel] > 0)
-                                     hull_points = subset_df[valid_mask].values
-                                     
-                                     if len(hull_points) > 10:
-                                        # Transform to Log Space for density calculation
-                                        log_points = np.log10(hull_points)
-                                        
-                                        # Compute Density Boundary in Log Space
-                                        # Percentile 90-95 gives a good tight bound for "Live"
-                                        bx, by = compute_density_boundary(log_points, percentile=float(boundary_percentile), smoothing=1.5)
-                                        
-                                        if bx is not None:
-                                             # Transform back to Linear
-                                             boundary_x = 10**bx
-                                             boundary_y = 10**by
-                                        else:
-                                             # Fallback to Convex Hull
-                                             pass
-                                else:
-                                    valid_mask = np.isfinite(subset_df[x_channel]) & np.isfinite(subset_df[y_channel])
-                                    hull_points = subset_df[valid_mask].values
-
-                                    if len(hull_points) > 10:
-                                         bx, by = compute_density_boundary(hull_points, percentile=float(boundary_percentile), smoothing=1.5)
-                                         if bx is not None:
-                                             boundary_x, boundary_y = bx, by
+                                for cand in valid_candidates:
+                                    lbl = cand['label']
+                                    is_target = (lbl == live_label)
+                                    
+                                    # Get Data
+                                    subset = df[df['AutoLiveGate'] == lbl]
+                                    subset_df = subset[[x_channel, y_channel]]
+                                    
+                                    bx, by = None, None
+                                    
+                                    # Calculate Boundary
+                                    if is_log:
+                                         valid_mask = (subset_df[x_channel] > 0) & (subset_df[y_channel] > 0)
+                                         hull_points = subset_df[valid_mask].values
+                                         if len(hull_points) > 10:
+                                            log_points = np.log10(hull_points)
+                                            # Use lower percentile for non-live to show "extent" rather than core
+                                            pct = float(boundary_percentile) if is_target else 85
+                                            res_x, res_y = compute_density_boundary(log_points, percentile=pct, smoothing=1.5)
+                                            if res_x is not None:
+                                                 bx, by = 10**res_x, 10**res_y
+                                    else:
+                                        valid_mask = np.isfinite(subset_df[x_channel]) & np.isfinite(subset_df[y_channel])
+                                        hull_points = subset_df[valid_mask].values
+                                        if len(hull_points) > 10:
+                                             pct = float(boundary_percentile) if is_target else 85
+                                             bx, by = compute_density_boundary(hull_points, percentile=pct, smoothing=1.5)
+                                    
+                                    # Determine Style
+                                    if is_target:
+                                        line_color = 'red'
+                                        line_width = 4
+                                        trace_name = "Suggested Live"
+                                        # Save this one for the action
+                                        boundary_x, boundary_y = bx, by 
+                                    else:
+                                        line_color = palette[p_idx % len(palette)]
+                                        p_idx += 1
+                                        line_width = 2
+                                        trace_name = f"Cluster {lbl}"
+                                    
+                                    # Add Trace
+                                    if bx is not None:
+                                        fig.add_trace(go.Scatter(x=bx, y=by, mode='lines',
+                                                                line=dict(color=line_color, width=line_width),
+                                                                name=trace_name))
 
                                 if boundary_x is not None:
                                     # Save to session state for application (User Request)
                                     st.session_state.current_auto_boundary = list(zip(boundary_x, boundary_y))
                                     
-                                    # Add boundary trace. 
-                                    fig.add_trace(go.Scatter(x=boundary_x, y=boundary_y, mode='lines', 
-                                                            line=dict(color='red', width=4), # Red Line, Thicker
-                                                            name=f"Live Boundary"))
-                                    
-                                    # Force boundary to top by reordering data
-                                    # Find the trace we just added (last one) or by name
+                                    # Force boundaries to top
                                     data = list(fig.data)
-                                    # Sort so that any trace with "Boundary" in name is last
-                                    # This ensures it is drawn on top of scatter points
-                                    data.sort(key=lambda t: 1 if "Boundary" in (t.name or "") else 0)
+                                    data.sort(key=lambda t: 1 if (t.mode == 'lines') else 0)
                                     fig.data = tuple(data)
+                                    
                             except Exception as e:
-                                # Fallback or silent fail for geometry errors
-                                pass
+                                pass # Geometry fail
                             except Exception:
                                 pass # geometry calc fail
 
@@ -491,6 +536,17 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             
                             if st.session_state.get('current_auto_boundary') and CYTOFLOW_AVAILABLE:
                                 verts = st.session_state.current_auto_boundary
+                                
+                                # Optimization: Simplify polygon if too complex to prevent hang
+                                if len(verts) > 150:
+                                    # Simple decimation: keep max ~150 points
+                                    step = len(verts) // 150
+                                    if step > 1:
+                                        verts = verts[::step]
+                                        # Ensure the last point connects back effectively or is included
+                                        if verts[-1] != st.session_state.current_auto_boundary[-1]:
+                                             verts.append(st.session_state.current_auto_boundary[-1])
+
                                 gater = GatingManager()
                                 
                                 # Apply Manual Gate (Polygon) using the computed contour

@@ -11,3 +11,5 @@ processed_fcs_ui/
 my_test_env/
 test_venv/
 .pytest_cache/
+gemini_coder/
+.ipynb_checkpoints/
