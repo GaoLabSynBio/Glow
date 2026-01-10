@@ -12,7 +12,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
     # Renaming Preference
     rename_strategy = st.sidebar.radio("Renaming Strategy", ('folder_name', 'keep'))
 
-    upload_option = st.radio("Choose Input Method", ("Enter Directory Path", "Upload File Paths List", "Upload FCS Files directly (Demo)"))
+    upload_option = st.radio("Choose Input Method", ("Enter Directory Path", "Upload File Paths List", "Upload Files / Drag & Drop Folder"))
 
     loaded_files = []
 
@@ -177,6 +177,77 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
             else:
                 st.warning("Cytoflow not installed. showcasing UI logic only.")
                 st.dataframe(pd.DataFrame({'display_name': ['demo_file_1.fcs', 'demo_file_2.fcs'], 'path': ['/tmp/A/1.fcs', '/tmp/B/2.fcs']}))
+
+    elif upload_option == "Upload Files / Drag & Drop Folder":
+        st.info("Drag and drop your folder or files here. Browsers handle folder drops by uploading all containing files.")
+        uploaded_files = st.file_uploader("Upload FCS Files", type=['fcs'], accept_multiple_files=True)
+        
+        if uploaded_files:
+            if st.button("Process Uploaded Files"):
+                if CYTOFLOW_AVAILABLE:
+                    loader = DataLoader() 
+                    with st.spinner("Saving uploaded files..."):
+                        saved_paths = loader.save_uploaded_files(uploaded_files, target_dir="data/uploaded_raw")
+                    
+                    st.session_state.uploaded_paths = saved_paths
+                    st.success(f"Saved {len(saved_paths)} files.")
+                else:
+                     st.warning("Cytoflow/Glow backend not available.")
+
+        if 'uploaded_paths' in st.session_state and st.session_state.uploaded_paths:
+            if CYTOFLOW_AVAILABLE:
+                loader = DataLoader()
+                
+                if 'preview_meta' not in st.session_state:
+                     st.session_state.preview_meta = []
+                
+                if st.button("Generate Preview from Uploads"):
+                     st.session_state.preview_meta = loader.generate_preview_metadata(st.session_state.uploaded_paths, rename_strategy=rename_strategy)
+                
+                if st.session_state.preview_meta:
+                    st.subheader("Edit Metadata Structure")
+                    render_metadata_upload_section(key_prefix="upload")
+                    
+                    default_cols = ["Replicate", "Cell_Line", "Experiment_Name", "Timepoint", "Concentration"]
+                    preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
+                    extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path']]
+                    
+                    cols_to_use = st.multiselect("Select columns to annotate:", 
+                                                options=default_cols + extra_opts + ["Custom1", "Custom2"],
+                                                default=["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else []),
+                                                key="upload_cols")
+                    
+                    df_preview = pd.DataFrame(st.session_state.preview_meta)
+                    for col in cols_to_use:
+                        if col not in df_preview.columns:
+                            df_preview[col] = ""
+
+                    for col in ["Experiment_Name", "Cell_Line", "Replicate", "condition", "display_name", "original_path"]:
+                        if col in df_preview.columns:
+                            df_preview[col] = df_preview[col].fillna("").astype(str)
+
+                    display_cols = ['display_name', 'condition'] + cols_to_use + ['original_path']
+
+                    edited_df = st.data_editor(df_preview[display_cols],
+                                                column_config={
+                                                    "display_name": st.column_config.TextColumn("Sample Name", required=True),
+                                                    "condition": st.column_config.TextColumn("Folder (Auto)", disabled=True),
+                                                    "original_path": st.column_config.TextColumn("Original Path", disabled=True),
+                                                    "Replicate": st.column_config.TextColumn("Replicate #"),
+                                                    "Experiment_Name": st.column_config.TextColumn("Experiment Name"),
+                                                    "Cell_Line": st.column_config.TextColumn("Cell Line"),
+                                                    "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
+                                                },
+                                                use_container_width=True,
+                                                num_rows="fixed",
+                                                key="upload_editor")
+                    
+                    if st.button("Confirm and Load Uploaded files"):
+                        with st.spinner("Processing files..."):
+                            final_meta = edited_df.to_dict('records')
+                            loaded_files = loader.process_files(final_meta, output_dir="processed_fcs_ui")
+                            st.session_state.loaded_files = loaded_files
+                            st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
     
     # Access loaded files from session state
     if 'loaded_files' in st.session_state:
