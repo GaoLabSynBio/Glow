@@ -179,18 +179,23 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                 st.dataframe(pd.DataFrame({'display_name': ['demo_file_1.fcs', 'demo_file_2.fcs'], 'path': ['/tmp/A/1.fcs', '/tmp/B/2.fcs']}))
 
     elif upload_option == "Upload Files / Drag & Drop Folder":
-        st.info("Drag and drop your folder or files here. Browsers handle folder drops by uploading all containing files.")
-        uploaded_files = st.file_uploader("Upload FCS Files", type=['fcs'], accept_multiple_files=True)
+        st.info("You can drag and drop a folder containing FCS files directly into the box below. All files in the folder will be uploaded.")
+        
+        col_up1, col_up2 = st.columns([1, 1])
+        with col_up1:
+            upload_folder_name = st.text_input("Name this Upload Batch (will be used as Folder Name)", value="My_Experiment_1")
+
+        uploaded_files = st.file_uploader("Upload FCS Files or Folder", type=['fcs'], accept_multiple_files=True)
         
         if uploaded_files:
             if st.button("Process Uploaded Files"):
                 if CYTOFLOW_AVAILABLE:
                     loader = DataLoader() 
                     with st.spinner("Saving uploaded files..."):
-                        saved_paths = loader.save_uploaded_files(uploaded_files, target_dir="data/uploaded_raw")
+                        saved_paths = loader.save_uploaded_files(uploaded_files, target_dir="data/uploaded_raw", folder_name=upload_folder_name)
                     
                     st.session_state.uploaded_paths = saved_paths
-                    st.success(f"Saved {len(saved_paths)} files.")
+                    st.success(f"Saved {len(saved_paths)} files to folder '{upload_folder_name}'.")
                 else:
                      st.warning("Cytoflow/Glow backend not available.")
 

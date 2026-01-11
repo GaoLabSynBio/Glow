@@ -545,6 +545,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         # Ensure the last point connects back effectively or is included
                                         if verts[-1] != st.session_state.current_auto_boundary[-1]:
                                              verts.append(st.session_state.current_auto_boundary[-1])
+                                
+                                # Store params for Export
+                                st.session_state.live_gate_params = {
+                                    'type': 'polygon', 
+                                    'vertices': verts, 
+                                    'channels': [x_channel, y_channel]
+                                }
 
                                 gater = GatingManager()
                                 
@@ -569,6 +576,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                             elif 'suggested_live_label' in st.session_state and CYTOFLOW_AVAILABLE:
                                 label = st.session_state.suggested_live_label
+
+                                # Store params for Export
+                                st.session_state.live_gate_params = {
+                                    'type': 'label',
+                                    'label': label,
+                                    'channel': 'AutoLiveGate'
+                                }
+
                                 exp = st.session_state.gated_experiment
                                 
                                 # Filter to keep only the Live Label population
@@ -621,6 +636,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 
                                 # Apply to BASE experiment
                                 manual_exp = gater.apply_manual_gate(base_exp, "ManualLiveGate", x_channel, y_channel, vertices)
+
+                                # Store params for Export
+                                st.session_state.live_gate_params = {
+                                    'type': 'polygon',
+                                    'vertices': vertices,
+                                    'channels': [x_channel, y_channel]
+                                }
                                 
                                 # Filter manually to match Auto behavior
                                 if "ManualLiveGate" in manual_exp.data.columns:
@@ -953,6 +975,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     diff = X_lin - d_mean
                                     dist = np.sqrt(np.sum(diff @ inv_cov * diff, axis=1))
                                     mask = dist <= 2.5 # Sigma threshold
+
+                                    # Store params for Export
+                                    st.session_state.singlet_gate_params = {
+                                        'type': 'gmm_mahalanobis',
+                                        'mean': d_mean,
+                                        'cov': d_cov,
+                                        'channels': [d_x, d_y],
+                                        'threshold': 2.5
+                                    }
                                     
                                     # Calculate Stats
                                     total_input = len(exp.data)
@@ -1036,6 +1067,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                         total_input = len(exp.data)
 
                                                         exp = gater.apply_manual_gate(exp, gate_name, d_x, d_y, parsed_verts)
+
+                                                        # Store params for Export
+                                                        st.session_state.singlet_gate_params = {
+                                                            'type': 'polygon',
+                                                            'vertices': parsed_verts,
+                                                            'channels': [d_x, d_y]
+                                                        }
                                                         
                                                         # Cytoflow apply() adds the condition, we must explicitly filter for the UI validation
                                                         if gate_name in exp.data.columns:
@@ -1083,8 +1121,100 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             
                             st.divider()
                             st.header("4. Export Data")
-                            final_csv = st.session_state.gated_experiment.data.to_csv(index=False).encode('utf-8')
-                            st.download_button("Download Processed CSV (Live + Singlets)", data=final_csv, file_name="processed_data.csv", mime="text/csv")
+                            
+                            export_mode = st.radio("Export Mode", ["Gated Population (Live + Singlets)", "Full Population (Annotated)"], horizontal=True)
+                            
+                            final_csv = None
+                            if export_mode == "Gated Population (Live + Singlets)":
+                                final_csv = st.session_state.gated_experiment.data.to_csv(index=False).encode('utf-8')
+                            else:
+                                with st.spinner("Reconstructing full dataset annotation..."):
+                                    # Clone base
+                                    full_exp = st.session_state.base_experiment.clone()
+                                    bgater = GatingManager()
+                                    
+                                    # 1. Re-Apply Live Gate (if exists)
+                                    l_params = st.session_state.get('live_gate_params')
+                                    # Do not modify full_exp.data directly before Cytoflow ops to avoid metadata mismatch errors
+
+                                    if l_params:
+                                        if l_params['type'] == 'polygon':
+                                            full_exp = bgater.apply_manual_gate(full_exp, "LiveGate", l_params['channels'][0], l_params['channels'][1], l_params['vertices'])
+                                        elif l_params['type'] == 'label':
+                                            # Retrieve params
+                                            gp = st.session_state.get('last_gating_params', {})
+                                            if gp:
+                                                # Re-run auto gating to get labels
+                                                try:
+                                                    # Fix: Ensure method is lower case string
+                                                    method_name = gp.get('method', 'density').lower() if isinstance(gp.get('method'), str) else 'density'
+                                                    
+                                                    res_exp = bgater.auto_gate_live_cells(
+                                                        full_exp,
+                                                        x_channel=gp.get('x'),
+                                                        y_channel=gp.get('y'),
+                                                        method=method_name,
+                                                        num_components=gp.get('comp', 2),
+                                                        keep=gp.get('keep', 0.9),
+                                                        sigma=gp.get('sigma', 2.0),
+                                                        eps=gp.get('eps', 0.05),
+                                                        min_samples=gp.get('min_samples', 50),
+                                                        use_outlier_removal=gp.get('use_outliers', False)
+                                                    )
+                                                    full_exp = res_exp
+                                                except Exception as e:
+                                                    st.warning(f"Auto-gate reconstruction warning: {e}")
+                                            else:
+                                                st.warning("Could not reconstruct Auto Gate (params lost). Annotating all as Live.")
+
+                                    # 2. Re-Apply Singlet Gate (if exists)
+                                    s_params = st.session_state.get('singlet_gate_params')
+                                    
+                                    if s_params:
+                                        if s_params['type'] == 'polygon':
+                                            full_exp = bgater.apply_manual_gate(full_exp, "SingletGate", s_params['channels'][0], s_params['channels'][1], s_params['vertices'])
+                                        
+                                        # Note: GMM/Mahalanobis is calculated on DataFrame level below to avoid complex custom Cytoflow wrappers
+
+                                    # 3. Final Assembly & Column Unification
+                                    # Create a copy as DataFrame to safely add annotation columns
+                                    df_export = full_exp.data.copy()
+
+                                    # Create "cells" column (Live Cells)
+                                    if 'LiveGate' in df_export.columns:
+                                        df_export['cells'] = df_export['LiveGate']
+                                    elif 'AutoLiveGate' in df_export.columns and l_params and l_params.get('type') == 'label':
+                                        lbl = l_params['label']
+                                        df_export['cells'] = (df_export['AutoLiveGate'] == lbl)
+                                    else:
+                                        df_export['cells'] = False
+                                    
+                                    # Create "singlets" column
+                                    if 'SingletGate' in df_export.columns:
+                                        df_export['singlets'] = df_export['SingletGate']
+                                    elif s_params and s_params.get('type') == 'gmm_mahalanobis':
+                                         try:
+                                            X = df_export[s_params['channels']].values
+                                            d_mean = s_params['mean']
+                                            inv_cov = np.linalg.inv(s_params['cov'])
+                                            threshold = s_params.get('threshold', 2.5)
+                                            
+                                            diff = X - d_mean
+                                            left = diff @ inv_cov
+                                            dist_sq = np.sum(left * diff, axis=1)
+                                            dist = np.sqrt(dist_sq)
+                                            
+                                            df_export['singlets'] = dist <= threshold
+                                         except Exception as e:
+                                             st.warning(f"Singlet calculation warning: {e}")
+                                             df_export['singlets'] = False
+                                    else:
+                                        # Default False if no singlet gate defined
+                                        df_export['singlets'] = False
+
+                                    final_csv = df_export.to_csv(index=False).encode('utf-8')
+                            
+                            st.download_button("Download CSV", data=final_csv, file_name="processed_data.csv", mime="text/csv")
 
                 except Exception as e:
                     st.write(e) # Debug

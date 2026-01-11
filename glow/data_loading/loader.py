@@ -3,6 +3,7 @@ import os
 import shutil
 import pandas as pd
 import re
+import zipfile
 
 class DataLoader:
     def __init__(self):
@@ -17,6 +18,70 @@ class DataLoader:
         Helper key function for natural sorting (e.g., A1, A2, A10 instead of A1, A10, A2).
         """
         return [int(c) if c.isdigit() else c.lower() for c in re.split('([0-9]+)', str(text))]
+
+    def save_uploaded_files(self, uploaded_files, target_dir="data/uploaded_raw", folder_name=None):
+        """
+        Saves Streamlit uploaded files to disk.
+        
+        Args:
+            uploaded_files: List of UploadedFile objects from st.file_uploader
+            target_dir: Directory to save the raw files
+            folder_name: Optional subfolder name to organize files
+            
+        Returns:
+            list: List of absolute paths to the saved files.
+        """
+        if folder_name:
+            # Sanitize folder name basics
+            folder_name = "".join(x for x in folder_name if (x.isalnum() or x in "._- "))
+            target_dir = os.path.join(target_dir, folder_name)
+            
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+            
+        saved_paths = []
+        for uploaded_file in uploaded_files:
+            file_path = os.path.join(target_dir, uploaded_file.name)
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            saved_paths.append(os.path.abspath(file_path))
+        
+        # Apply natural sort to uploaded files
+        saved_paths.sort(key=self._natural_sort_key)
+        return saved_paths
+
+    def save_uploaded_folder_zip(self, uploaded_zip, target_dir="data/uploaded_raw_zip"):
+        """
+        Saves and extracts a Streamlit uploaded ZIP file representing a folder.
+        
+        Args:
+            uploaded_zip: UploadedFile object (zip)
+            target_dir: Directory to extract files to
+            
+        Returns:
+            list: List of absolute paths to the extracted .fcs files.
+        """
+        # Clear/Create target directory
+        if os.path.exists(target_dir):
+            shutil.rmtree(target_dir) # Clean up previous uploads to avoid mixing
+        os.makedirs(target_dir, exist_ok=True)
+            
+        try:
+            with zipfile.ZipFile(uploaded_zip, 'r') as zip_ref:
+                zip_ref.extractall(target_dir)
+        except zipfile.BadZipFile:
+            print("Error: Invalid zip file")
+            return []
+
+        # Scan for FCS files in the extracted directory
+        saved_paths = []
+        for root, dirs, files in os.walk(target_dir):
+            for file in files:
+                if file.lower().endswith('.fcs'):
+                    saved_paths.append(os.path.abspath(os.path.join(root, file)))
+        
+        saved_paths.sort(key=self._natural_sort_key)
+        return saved_paths
 
     def scan_directory(self, directory_path):
         """
