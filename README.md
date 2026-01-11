@@ -25,7 +25,7 @@ streamlit run ui/app.py
 ### 2. Workflow
 1.  **File Loading**:
     *   Select "Enter Directory Path" to scan a folder of `.fcs` files.
-    *   **Or select "Upload FCS Files directly" to upload files from your local machine.**
+    *   **Or select "Upload Files / Drag & Drop Folder" to upload files from your local machine.**
     *   Click "Generate Preview" to edit metadata (Sample Name, Replicate, **Cell Line**, etc.).
     *   Confirm to load files.
 
