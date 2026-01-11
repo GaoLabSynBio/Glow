@@ -47,8 +47,8 @@ st.sidebar.title("Navigation")
 tabs = ["Gating"]
 if st.session_state.gating_complete:
     tabs.append("Analysis")
-if st.session_state.analysis_complete:
-    tabs.append("Plot")
+# if st.session_state.analysis_complete: # Bypassed for debugging
+tabs.append("Plot")
 
 # Ensure current tab is valid
 if st.session_state.current_tab not in tabs:

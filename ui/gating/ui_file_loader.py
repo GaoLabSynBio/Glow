@@ -32,6 +32,12 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         class MockExperiment:
                             def __init__(self, data):
                                 self.data = data
+                            @property
+                            def channels(self):
+                                return [c for c in self.data.columns if pd.api.types.is_numeric_dtype(self.data[c])]
+                            @property
+                            def conditions(self):
+                                return {c: self.data[c] for c in self.data.columns if not pd.api.types.is_numeric_dtype(self.data[c])}
                             def clone(self):
                                 return MockExperiment(self.data.copy())
                             def __repr__(self):
