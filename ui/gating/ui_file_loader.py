@@ -32,12 +32,11 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         class MockExperiment:
                             def __init__(self, data):
                                 self.data = data
-                            @property
-                            def channels(self):
-                                return [c for c in self.data.columns if pd.api.types.is_numeric_dtype(self.data[c])]
-                            @property
-                            def conditions(self):
-                                return {c: self.data[c] for c in self.data.columns if not pd.api.types.is_numeric_dtype(self.data[c])}
+                                self.conditions = {}
+                                # Infer channels (numeric columns not in exclusion list)
+                                exclude_cols = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate', 'Sample', 'sample']
+                                self.channels = [c for c in data.columns if c not in exclude_cols and pd.api.types.is_numeric_dtype(data[c])]
+
                             def clone(self):
                                 return MockExperiment(self.data.copy())
                             def __repr__(self):
@@ -47,13 +46,12 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         
                         # Handle Gating Logic based on columns
                         if 'cells' in df.columns and 'singlets' in df.columns:
-                            # Filter for valid population
-                            # Ensure boolean type just in case
-                            is_cell = df['cells'].astype(bool)
-                            is_singlet = df['singlets'].astype(bool)
-                            df_gated = df[is_cell & is_singlet]
-                            st.session_state.gated_experiment = MockExperiment(df_gated)
-                            st.info(f"Identified {len(df_gated)} valid events out of {len(df)} total.")
+                            # Do NOT filter rows, just create the experiment with the full data
+                            # The analysis module will handle the 'cells' and 'singlets' boolean columns
+                            st.session_state.gated_experiment = MockExperiment(df)
+                            
+                            valid_count = (df['cells'] & df['singlets']).sum()
+                            st.info(f"Loaded {len(df)} events. Identified {valid_count} valid events (Live & Singlet).")
                         else:
                             # Assume data is already the target population
                             st.warning("'cells' or 'singlets' annotations not found. Assuming imported data is the target population.")
