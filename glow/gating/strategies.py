@@ -331,3 +331,53 @@ class RangeGating(ManualGating):
                                     low=self.low,
                                     high=self.high)
         return range_op.apply(experiment)
+
+class MLPGating(AutomaticGating):
+    """
+    MLP-based gating using a pre-trained neural network.
+    """
+    def __init__(self, name: str, channels: List[str], model_path: str = "data/gating_model_full.pkl", outlier_detector: Optional[OutlierDetector] = None):
+        super().__init__(name, channels, outlier_detector)
+        self.model_path = model_path
+
+    def apply(self, experiment):
+        from glow.active_learning.models import GatingClassifier
+        import os
+        
+        if not os.path.exists(self.model_path):
+             # Fallback or Error? 
+             # Check if we can find it in the generic path
+             self.model_path = "data/gating_model_full.pkl"
+             if not os.path.exists(self.model_path):
+                raise FileNotFoundError(f"MLP Model not found at {self.model_path}")
+
+        clf = GatingClassifier.load(self.model_path)
+        
+        data = experiment.data
+        
+        # Prepare Features: Model expects 2 columns, usually Log transformed.
+        xs = data[self.channels[0]].values
+        ys = data[self.channels[1]].values
+        
+        # Heuristic Log Transform if data seems linear (max > 10)
+        # The model 'gating_model_full.pkl' was trained on Log data.
+        if np.max(xs) > 10:
+            xs = np.log10(xs + 1)
+        if np.max(ys) > 10:
+            ys = np.log10(ys + 1)
+            
+        X = np.column_stack([xs, ys])
+        
+        # Predict
+        preds = clf.predict(X)
+        
+        # Result
+        res = experiment.clone()
+        
+        # Map 0/1 to meaningful labels if desired, or keep as is.
+        # User UI expects 'AutoLiveGate' to split population.
+        # 1 = Live, 0 = Debris usually.
+        # We'll cast to string or int to match expectations of categorical gate
+        res.data[self.name] = preds 
+        
+        return res

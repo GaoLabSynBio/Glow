@@ -1,106 +1,130 @@
-import json
 import os
+import numpy as np
+import pandas as pd
 from .storage import ActiveLearningLogger
+from .models import GatingClassifier
 
 class ActiveLearner:
-    def __init__(self, storage_dir="data/active_learning_data", model_filename="model_weights.json"):
+    """
+    Manages the Active Learning process:
+    1. Loads the Neural Network model.
+    2. Queries for uncertain samples.
+    3. Updates the model with new user feedback.
+    """
+    def __init__(self, storage_dir="data/active_learning_data", model_path="data/gating_model_full.pkl"):
         self.storage_dir = storage_dir
-        self.model_path = os.path.join(storage_dir, model_filename)
+        self.model_path = model_path
         self.logger = ActiveLearningLogger(storage_dir)
-        # Knowledge base structure: { cell_line: { 'Live': vertices, 'Singlet': vertices } }
-        self.knowledge_base = {}
-        self.load_weights()
-
-    def train(self):
-        """
-        Rebuilds knowledge base from stored feedback logs.
-        Strategy: Use the LATEST accepted or manual_override gate for each cell_line.
-        This updates the in-memory knowledge base.
-        """
-        feedback_history = self.logger.load_feedback()
-
-        # Sort by timestamp to ensure we process chronologically
-        feedback_history.sort(key=lambda x: x.get('timestamp', ''))
-
-        for entry in feedback_history:
-            cell_line = entry.get('cell_line')
-            if not cell_line:
-                continue
-
-            # Normalize cell line name (trim whitespace)
-            cell_line = cell_line.strip()
-
-            gate_params = entry.get('gate_params')
-            vertices = gate_params
-            # Handle potential nested dict structure from GMM or others if we standardize on Polygon here for learning
-            if isinstance(gate_params, dict) and 'vertices' in gate_params:
-                 vertices = gate_params['vertices']
-
-            if not isinstance(vertices, list):
-                continue
-
-            num_vertices = len(vertices)
-
-            inferred_type = None
-            # Live cells = 5 points, Singlets = 4 points.
-            if num_vertices == 5:
-                inferred_type = 'Live'
-            elif num_vertices == 4:
-                inferred_type = 'Singlet'
-
-            if inferred_type:
-                if cell_line not in self.knowledge_base:
-                    self.knowledge_base[cell_line] = {}
-                self.knowledge_base[cell_line][inferred_type] = vertices
-
-        print(f"Training complete. Knowledge base updated for {len(self.knowledge_base)} cell lines.")
-        self.save_weights()
-
-    def get_known_cell_lines(self):
-        """
-        Returns a sorted list of unique cell lines currently in the knowledge base.
-        Useful for UI dropdowns.
-        """
-        return sorted(list(self.knowledge_base.keys()))
-
-    def save_weights(self):
-        """
-        Saves the current knowledge base (weights) to a JSON file.
-        """
-        try:
-            with open(self.model_path, 'w') as f:
-                json.dump(self.knowledge_base, f, indent=2)
-            print(f"Model weights saved to {self.model_path}")
-        except Exception as e:
-            print(f"Error saving weights: {e}")
-
-    def load_weights(self):
-        """
-        Loads the knowledge base (weights) from a JSON file if it exists.
-        """
+        self.model = self._load_or_init_model()
+        
+    def _load_or_init_model(self):
+        """Loads model from disk or creates valid fallback if missing."""
         if os.path.exists(self.model_path):
             try:
-                with open(self.model_path, 'r') as f:
-                    self.knowledge_base = json.load(f)
-                print(f"Model weights loaded from {self.model_path}")
+                print(f"Loading Active Learning model from {self.model_path}")
+                return GatingClassifier.load(self.model_path)
             except Exception as e:
-                print(f"Error loading weights: {e}")
-                self.knowledge_base = {}
-        else:
-            print("No existing model weights found. Starting fresh.")
-            self.knowledge_base = {}
+                print(f"Error loading model: {e}")
+        
+        print("Initializing new/empty GatingClassifier.")
+        return GatingClassifier()
 
-    def predict(self, cell_line, gate_category):
+    def predict(self, df):
         """
-        Predicts vertices for a given cell_line and gate category ('Live' or 'Singlet').
-        Returns list of (x,y) tuples or None if unknown.
-
+        Predicts labels for a dataframe.
         Args:
-            cell_line (str): The cell line identifier.
-            gate_category (str): 'Live' or 'Singlet'.
+            df (pd.DataFrame): Must contain ['Log_FSC', 'Log_SSC'] or transformable columns.
+        Returns:
+            np.ndarray: Predicted labels (0/1)
         """
-        if cell_line in self.knowledge_base:
-            val = self.knowledge_base[cell_line].get(gate_category)
-            if val:
-                return val
-        return None
+        X = self._extract_features(df)
+        return self.model.predict(X)
+
+    def query_uncertainty(self, df, n_instances=10):
+        """
+        Selects the top N most uncertain instances for labeling.
+        Strategy: Uncertainty Sampling (Margin).
+        
+        Returns:
+            pd.DataFrame: Subset of df containing the uncertain instances.
+            np.ndarray: Indices of these instances in the original df.
+        """
+        X = self._extract_features(df)
+        uncertainties = self.model.uncertainty(X)
+        
+        # Get indices of top N uncertainties
+        # argsort assumes ascending, so we take the end (largest uncertainty)
+        # However, uncertainty() returns 1.0 (High Uncert) to 0.0 (Low).
+        # So we sort usually.
+        # sort descending
+        query_indices = np.argsort(uncertainties)[::-1][:n_instances]
+        
+        return df.iloc[query_indices], query_indices
+
+    def teach(self, X_new, y_new):
+        """
+        Updates the model with new labeled data.
+        
+        Args:
+            X_new (np.ndarray): N x 2 features.
+            y_new (np.ndarray): Labels.
+        """
+        if len(X_new) == 0:
+            return
+
+        print(f"Teaching model with {len(X_new)} new samples...")
+        
+        # 1. Update Model (Incremental)
+        try:
+            self.model.partial_fit(X_new, y_new)
+        except Exception as e:
+            print(f"Partial fit failed ({e}), attempting full retrain context if available (not implemented).")
+            # In a real system, we might reload all old data + new data here.
+            # For now, simplistic partial_fit.
+            return
+
+        # 2. Save Model checkpoint
+        self.model.save(self.model_path)
+        
+        # 3. Log/Save this training batch for future full-retraining
+        self.logger.save_labeled_batch(X_new, y_new, source="active_learning_feedback")
+    
+    def retrain_full(self):
+        """
+        Reloads ALL stored labeled data (initial + feedback) and fully retrains the model.
+        Useful if partial_fit diverges or forgetting occurs.
+        """
+        print("Starting full retraining...")
+        # 1. Load Initial Data (if we want to keep it frozen or mix it)
+        # Usually we would have a 'seed' dataset path. 
+        # For this setup, we assume load_all_labeled_data gets everything relevant stored in storage_dir.
+        # OR we combine 'synthetic_training_data.parquet' + 'active_learning_data/*.parquet'.
+        
+        # Load accumulated feedback
+        X_feed, y_feed = self.logger.load_all_labeled_data()
+        
+        if X_feed is None:
+            print("No feedback data found to retrain on.")
+            return
+
+        print(f"Retraining on {len(X_feed)} accumulated feedback samples.")
+        # Re-init model to fresh state? Or fine tune?
+        # Usually full retrain = fresh state.
+        self.model = GatingClassifier() 
+        self.model.fit(X_feed, y_feed)
+        self.model.save(self.model_path)
+        print("Full retraining complete.")
+
+    def _extract_features(self, df):
+        """Helper to safely get Log_FSC/SSC"""
+        if "Log_FSC" not in df.columns:
+            # Try to compute on the fly if raw exists
+            if "FSC-A" in df.columns:
+                return np.column_stack([
+                    np.log10(df["FSC-A"] + 1e-1),
+                    np.log10(df["SSC-A"] + 1e-1)
+                ])
+            else:
+                 raise ValueError("Dataframe missing required columns: Log_FSC, Log_SSC or FSC-A, SSC-A")
+        
+        return df[["Log_FSC", "Log_SSC"]].values
