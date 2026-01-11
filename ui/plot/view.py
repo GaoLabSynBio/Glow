@@ -8,11 +8,13 @@ from .bar_ui import render_bar_ui
 def render_plot_tab():
     st.header("Plotting")
     
-    if 'base_experiment' not in st.session_state or st.session_state.base_experiment is None:
+    if 'analysis_experiment' in st.session_state and st.session_state.analysis_experiment is not None:
+        experiment = st.session_state.analysis_experiment
+    elif 'base_experiment' in st.session_state and st.session_state.base_experiment is not None:
+        experiment = st.session_state.base_experiment
+    else:
         st.warning("No experiment loaded. Please load data in the Gating tab first.")
         return
-
-    experiment = st.session_state.base_experiment
     if experiment is None:
         st.error("Experiment is None.")
         return
@@ -22,7 +24,15 @@ def render_plot_tab():
     if filtered_experiment is None: return # Selection failed
 
     # 2. Main Plot Type Selection
-    channels = plots.get_channels(filtered_experiment)
+    all_available_channels = plots.get_channels(filtered_experiment)
+    
+    # Filter channels based on selection in Gating tab if available
+    # Use persistent state to survive tab switch
+    user_selected = st.session_state.get('persistent_selected_channels')
+    if user_selected is not None:
+        channels = [c for c in all_available_channels if c in user_selected]
+    else:
+        channels = all_available_channels
     
     with st.sidebar:
         st.subheader("Plot Settings")

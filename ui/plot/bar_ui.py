@@ -86,24 +86,88 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     # --- Gating Logic ---
     st.markdown("#### 3. Gating (Optional)")
     
+    # NEW: Import Analysis Gates
+    analysis_gates_to_apply = []
+    if ('positive_gates' in st.session_state and st.session_state.positive_gates) or \
+       ('cells' in filtered_experiment.data.columns) or ('singlets' in filtered_experiment.data.columns):
+        
+        with st.expander("Import Gates from Analysis Tab"):
+            st.info("You can choose to apply gates defined in the Analysis tab to this plot.")
+            
+            # 1. Fundamental Gates (if present)
+            built_in_options = []
+            if 'cells' in filtered_experiment.data.columns: built_in_options.append("Pre-Gate: Live Cells")
+            if 'singlets' in filtered_experiment.data.columns: built_in_options.append("Pre-Gate: Singlets")
+            
+            # 2. Positive Gates from Analysis
+            pos_gate_labels = [g['label'] for g in st.session_state.get('positive_gates', [])]
+            
+            gate_options = built_in_options + pos_gate_labels
+            selected_analysis_labels = st.multiselect("Select Analysis Gates to Apply", options=gate_options, default=built_in_options)
+            
+            # Map selected labels back to gate objects
+            def resolve_gate_chain(labels_to_res):
+                to_apply = []
+                seen_labels = set()
+                
+                # Use a queue-like approach to find all parents
+                remaining = list(labels_to_res)
+                while remaining:
+                    lbl = remaining.pop(0)
+                    if lbl in seen_labels: continue
+                    
+                    found = False
+                    # 1. Check Built-ins
+                    if lbl == "Pre-Gate: Live Cells":
+                        to_apply.append({'channel': 'cells', 'threshold': 0.5, 'label': lbl})
+                        seen_labels.add(lbl)
+                        found = True
+                    elif lbl == "Pre-Gate: Singlets":
+                        to_apply.append({'channel': 'singlets', 'threshold': 0.5, 'label': lbl})
+                        seen_labels.add(lbl)
+                        # Singlets implies Live Cells
+                        if "Pre-Gate: Live Cells" not in seen_labels:
+                            remaining.append("Pre-Gate: Live Cells")
+                        found = True
+                    
+                    # 2. Check Positive Gates
+                    if not found:
+                        for g in st.session_state.get('positive_gates', []):
+                            if g['label'] == lbl:
+                                to_apply.append(g)
+                                seen_labels.add(lbl)
+                                # Check for Parent
+                                p = g.get('parent')
+                                if p and p != "Singlets":
+                                    if p not in seen_labels:
+                                        remaining.append(p)
+                                elif p == "Singlets":
+                                    if "Pre-Gate: Singlets" not in seen_labels:
+                                        remaining.append("Pre-Gate: Singlets")
+                                found = True
+                                break # Found this label's object
+                return to_apply
+
+            analysis_gates_to_apply = resolve_gate_chain(selected_analysis_labels)
+
     if 'bar_gates' not in st.session_state:
         st.session_state.bar_gates = []
         
-    with st.expander("Active Gates", expanded=True):
+    with st.expander("Active Local Gates", expanded=True):
         if not st.session_state.bar_gates:
-            st.info("No gates currently applied to this plot.")
+            st.info("No local gates defined for this plot.")
         else:
             for i, gate in enumerate(st.session_state.bar_gates):
                 gc1, gc2 = st.columns([4, 1])
                 with gc1:
                     th = gate['threshold']
-                    st.write(f"**Gate {i+1}**: {gate['channel']} ({th[0]:.2f} - {th[1]:.2f})")
+                    st.write(f"**Local Gate {i+1}**: {gate['channel']} ({th[0]:.2f} - {th[1]:.2f})")
                 with gc2:
                     if st.button("🗑️", key=f"del_gate_{i}"):
                         st.session_state.bar_gates.pop(i)
                         st.rerun()
 
-    with st.expander("Add New Gate"):
+    with st.expander("Add New Local Gate"):
         importlib.reload(utils)
         
         c1, c2 = st.columns(2)
@@ -112,7 +176,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
             default_marker_idx = 0
             if len(channels) > 1 and channels[0] == selected_channel:
                 default_marker_idx = 1
-            new_gate_channel = st.selectbox("Marker Channel for New Gate", channels, index=default_marker_idx)
+            new_gate_channel = st.selectbox("Marker Channel for New Local Gate", channels, index=default_marker_idx)
         
         # --- Two-Dot Range Selection Linked with Raw Score ---
         
@@ -240,8 +304,13 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
     # X-Axis Annotations
     # Filter conditions to exclude 'Experiment_Name' or 'Replicate'
-    valid_conditions = [c for c in conditions if c not in ["Experiment_Name", "experiment_name", replicate_col]]
+    target_names = ["Experiment_Name", "Experiment Name", "Experiment_name", "experiment_name", "Sample", "sample"]
+    valid_conditions = [c for c in conditions if c not in target_names and c != replicate_col]
     annotation_cols = st.multiselect("Additional Conditions for X-Axis Labels", valid_conditions)
+
+    # Show event count for feedback
+    event_count = len(filtered_experiment.data)
+    st.info(f"Using {event_count:,} events for plotting.")
 
 
     if st.button("Generate Plot", type="primary", key="btn_bar"):
@@ -251,6 +320,18 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         
         with st.spinner("Generating plots..."):
             try:
+                # Combine local gates and selected analysis gates
+                all_applied_gates = st.session_state.bar_gates + analysis_gates_to_apply
+                
+                # Manual filtering for debug/visibility if required, 
+                # but categorical.plot_means_with_significance handles it too.
+                # Let's verify the backend is actually receiving the gates.
+                if all_applied_gates:
+                     st.write(f"Applying {len(all_applied_gates)} filters...")
+                     # Small debug log for user
+                     # for g in all_applied_gates:
+                     #    st.write(f"- {g['channel']} {g.get('direction', '>')}: {g['threshold']}")
+
                 fig = categorical.plot_means_with_significance(
                     filtered_experiment,
                     channel=selected_channel,
@@ -266,7 +347,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     use_bars=use_bars,
                     font_size=font_size,
                     bracket_spacing=step_fraction,
-                    gates=st.session_state.bar_gates
+                    gates=all_applied_gates
                 )
                 st.pyplot(fig)
                 plt.close(fig)

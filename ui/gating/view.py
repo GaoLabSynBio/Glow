@@ -15,6 +15,50 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
     
     st.divider()
     col1, col2 = st.columns([3, 1])
+    
+    # Initialize persistent selected channels if not present
+    if 'persistent_selected_channels' not in st.session_state and 'base_experiment' in st.session_state and st.session_state.base_experiment:
+        all_ch = list(st.session_state.base_experiment.channels)
+        # Default to fluorophores (exclude scatter/time)
+        defaults = [c for c in all_ch if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])]
+        if not defaults: defaults = all_ch
+        st.session_state.persistent_selected_channels = defaults
+
+    with col1:
+        if 'base_experiment' in st.session_state and st.session_state.base_experiment is not None:
+            all_channels = st.session_state.base_experiment.channels
+            st.subheader("Final Data Settings")
+            st.info("Select fluorescence channels to include in your analysis. Unselected channels will be hidden.")
+            
+            # Action buttons for quick management
+            b1, b2, _ = st.columns([1, 1, 2])
+            if b1.button("Select All", key="gating_sel_all"):
+                st.session_state.persistent_selected_channels = list(all_channels)
+                st.rerun()
+            if b2.button("Clear All", key="gating_clear_all"):
+                st.session_state.persistent_selected_channels = []
+                st.rerun()
+
+            # Dynamic Checkbox Selection (Click 1 to Include, Click again to Delete/Exclude)
+            current_selected = set(st.session_state.get('persistent_selected_channels', []))
+            new_selection = []
+            
+            # Display channels in a structured grid for easier selection
+            with st.expander("Available Channels List", expanded=True):
+                n_cols = 3
+                grid_cols = st.columns(n_cols)
+                for i, ch in enumerate(all_channels):
+                    with grid_cols[i % n_cols]:
+                        # A checkbox is the most literal "Click to Include / Click to Delete" UI
+                        if st.checkbox(ch, value=(ch in current_selected), key=f"checkbox_ch_{ch}"):
+                            new_selection.append(ch)
+            
+            # Sync the final selection back to session state
+            st.session_state.persistent_selected_channels = new_selection
+            st.session_state.selected_channels = new_selection
+        else:
+            st.info("Load data to enable channel selection.")
+
     with col2:
         if st.button("Finish Gating & Proceed to Analysis", type="primary"):
             # Check if critical data exists
@@ -30,6 +74,9 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                         base = st.session_state.base_experiment
                         full_exp = base.clone() if hasattr(base, 'clone') else base 
                         
+                        # Note: We NO LONGER drop channels here to keep the full dataset intact.
+                        # The channel selection will be used to filter UI options in Analysis and Plot tabs.
+
                         # Initialize flags to False if not present (safeguard)
                         # We use 'cells' and 'singlets' as the standard flags
                         # If columns don't exist, we add them as boolean False generally?

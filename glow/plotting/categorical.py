@@ -22,14 +22,22 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
     
     # Handle multiple gates
     if gates:
-        for gate in gates:
+        print(f"DEBUG: Applying {len(gates)} gates to Bar Plot")
+        for i, gate in enumerate(gates):
             ch = gate.get('channel')
             th = gate.get('threshold')
-            if ch and th is not None:
+            direction = gate.get('direction', 'positive') # Default to positive
+            
+            if ch in plot_df.columns and th is not None:
+                before = len(plot_df)
                 if isinstance(th, (tuple, list)) and len(th) == 2:
                     plot_df = plot_df[(plot_df[ch] >= th[0]) & (plot_df[ch] <= th[1])]
                 else:
-                    plot_df = plot_df[plot_df[ch] > th]
+                    if direction == 'negative' or direction == 'Negative (<)':
+                        plot_df = plot_df[plot_df[ch] < th]
+                    else:
+                        plot_df = plot_df[plot_df[ch] > th]
+                print(f"DEBUG: Gate {i} ({ch}) reduced points from {before} to {len(plot_df)}")
                     
     # Backward compatibility for single gate
     if gate_channel and gate_threshold is not None:
@@ -37,6 +45,14 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
             plot_df = plot_df[(plot_df[gate_channel] >= gate_threshold[0]) & (plot_df[gate_channel] <= gate_threshold[1])]
         else:
             plot_df = plot_df[plot_df[gate_channel] > gate_threshold]
+
+    # Combined Filter Check
+    if len(plot_df) == 0:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.text(0.5, 0.5, f"No events remaining\nafter applying gates", 
+                ha='center', va='center', color='red', fontsize=14)
+        ax.set_axis_off()
+        return fig
 
     if group_by not in df.columns:
         fig, ax = plt.subplots()

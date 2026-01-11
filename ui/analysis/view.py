@@ -32,6 +32,17 @@ def render_analysis_tab():
     
     # Calculate base stats
     stats_df = get_summary_statistics(experiment)
+
+    # --- Row Exclusion for Sub-Gating & Visualization ---
+    # Apply "Exclusion" (filter for Live/Singlets if flags present) for the REST of analysis
+    # This keeps the data "clean" for positive population definition while keeping original metadata
+    if 'cells' in experiment.data.columns and 'singlets' in experiment.data.columns:
+        # Create a filtered copy for visualization and sub-gating
+        # Summary statistics above were calculated on the full experiment to get correct % flags
+        filtered_experiment = experiment.clone() if hasattr(experiment, 'clone') else experiment
+        filtered_experiment.data = experiment.data[experiment.data['cells'] & experiment.data['singlets']].copy()
+        experiment = filtered_experiment
+        st.info(f"Analysis is being performed on the gated (Live & Singlet) population: {len(experiment.data)} events.")
     
     # Initialize positive gates storage if not present
     if 'positive_gates' not in st.session_state:
@@ -116,31 +127,32 @@ def render_analysis_tab():
         parent_gate = st.selectbox("Select Parent Population", parent_options, index=0)
 
         # --- CHANNEL SELECTION ---
-        # NOTE: We avoid accessing experiment.channels or experiment.conditions 
-        # Define Common Fluorophore Channels (Area only)
-        COMMON_FLUOROPHORES = [
-            "GFP-A", "mCherry-A", "BFP-A", "RFP-A", "YFP-A", "tdTomato-A", "CFP-A", "dsRed-A", "iRFP-A",
-            "FITC-A", "PE-A", "APC-A", "PerCP-A", "PerCP-Cy5.5-A", "PE-Cy7-A", "APC-Cy7-A",
-            "DAPI-A", "Hoechst-A", "PI-A", "7-AAD-A", "Live Dead-A",
-            "BV421-A", "BV510-A", "BV605-A", "BV650-A", "BV711-A", "BV785-A", "BV786-A",
-            "Pacific Blue-A", "AmCyan-A", "V450-A", "V500-A",
-            "Alexa Fluor 488-A", "Alexa Fluor 647-A", "Alexa Fluor 700-A", "Alexa Fluor 594-A",
-            "APC-H7-A", "PE-TxRed-A"
-        ]
+        # Identify all numeric channels in the dataset
+        all_numeric = [c for c in experiment.data.columns if pd.api.types.is_numeric_dtype(experiment.data[c])]
         
-        available_cols = set(experiment.data.columns)
-        valid_channels = sorted([
-            c for c in COMMON_FLUOROPHORES 
-            if c in available_cols and pd.api.types.is_numeric_dtype(experiment.data[c])
-        ])
-         # Fallback
-        if not valid_channels:
-             valid_channels = sorted([
-                c for c in available_cols
-                if c.endswith("-A") 
-                and not any(x in c for x in ["FSC", "SSC", "Time"]) 
-                and pd.api.types.is_numeric_dtype(experiment.data[c])
+        # Filter out system flags and internal bookkeeping columns
+        ignore_cols = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate', 'Density']
+        
+        # Get selected channels from Gating tab
+        # Use persistent state to ensure it survives tab switching
+        user_selected = st.session_state.get('persistent_selected_channels')
+        
+        # Define valid channels: must be in user's selection and not ignored
+        if user_selected is not None:
+            valid_channels = sorted([
+                c for c in all_numeric 
+                if c not in ignore_cols and c in user_selected
             ])
+        else:
+            # Fallback if gating wasn't visited - hide scatter by default
+            valid_channels = sorted([
+                c for c in all_numeric 
+                if c not in ignore_cols and not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])
+            ])
+        
+        # Final safety check: if everything was filtered out (e.g. only FSC/SSC exist), show them.
+        if not valid_channels:
+            valid_channels = sorted([c for c in all_numeric if c not in ignore_cols])
 
         # Use columns for layout
         c1, c2 = st.columns([1, 2])

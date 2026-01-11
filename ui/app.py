@@ -29,6 +29,7 @@ except ImportError:
 from gating.view import render_gating_tab
 from analysis.view import render_analysis_tab
 from plot.view import render_plot_tab
+from gating.ui_file_loader import clear_experiment_state
 
 st.title("Glow Flow Analysis Pipeline")
 
@@ -73,6 +74,7 @@ if selected_tab == "Gating":
         if st.button("Unlock Gating (Reset Analysis)"):
             st.session_state.gating_complete = False
             st.session_state.analysis_complete = False
+            clear_experiment_state() # Ensure fresh state when unlocking
             st.rerun()
             
     # Render the gating tab content
