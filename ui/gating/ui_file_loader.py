@@ -12,11 +12,55 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
     # Renaming Preference
     rename_strategy = st.sidebar.radio("Renaming Strategy", ('folder_name', 'keep'))
 
-    upload_option = st.radio("Choose Input Method", ("Enter Directory Path", "Upload File Paths List", "Upload Files / Drag & Drop Folder"))
+    upload_option = st.radio("Choose Input Method", ("Enter Directory Path", "Upload Files / Drag & Drop Folder", "Upload Processed CSV"))
 
     loaded_files = []
 
-    if upload_option == "Enter Directory Path":
+    if upload_option == "Upload Processed CSV":
+        st.info("Upload a previously processed CSV file (Full or Gated population) to skip gating. Supports .csv and .csv.gz")
+        uploaded_csv = st.file_uploader("Upload CSV", type=["csv", "gz"])
+        
+        if uploaded_csv is not None:
+             if st.button("Load CSV"):
+                try:
+                    with st.spinner("Loading CSV..."):
+                        # Auto-detect compression based on extension
+                        comp_arg = 'gzip' if uploaded_csv.name.endswith('.gz') else 'infer'
+                        df = pd.read_csv(uploaded_csv, compression=comp_arg)
+                        
+                        # Mock Experiment Class to emulate Cytoflow structure for downstream compatibility
+                        class MockExperiment:
+                            def __init__(self, data):
+                                self.data = data
+                            def clone(self):
+                                return MockExperiment(self.data.copy())
+                            def __repr__(self):
+                                return f"<MockExperiment: {len(self.data)} events>"
+
+                        st.session_state.base_experiment = MockExperiment(df)
+                        
+                        # Handle Gating Logic based on columns
+                        if 'cells' in df.columns and 'singlets' in df.columns:
+                            # Filter for valid population
+                            # Ensure boolean type just in case
+                            is_cell = df['cells'].astype(bool)
+                            is_singlet = df['singlets'].astype(bool)
+                            df_gated = df[is_cell & is_singlet]
+                            st.session_state.gated_experiment = MockExperiment(df_gated)
+                            st.info(f"Identified {len(df_gated)} valid events out of {len(df)} total.")
+                        else:
+                            # Assume data is already the target population
+                            st.warning("'cells' or 'singlets' annotations not found. Assuming imported data is the target population.")
+                            st.session_state.gated_experiment = MockExperiment(df)
+
+                        st.session_state.loaded_files = [f"CSV: {uploaded_csv.name}"]
+                        st.session_state.gating_complete = True # Auto-complete since we are skipping
+                        st.success("Loaded CSV successfully. Gating marked as complete.")
+                        
+                except Exception as e:
+                    st.error(f"Error loading CSV: {e}")
+
+    elif upload_option == "Enter Directory Path":
         input_dir = st.text_input("Enter absolute path to directory containing .fcs files", "/home/xwz/Projects/Flow/flow-data/dhy_20251001_fcs/")
         
         if st.button("Scan Directory"):
@@ -99,84 +143,6 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                             st.session_state.loaded_files = loaded_files
                             st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
                             st.write("Loaded Metadata Sample:", pd.DataFrame(loaded_files).head())
-
-    elif upload_option == "Upload File Paths List":
-        st.info("Format: /path/to/file.fcs OR /path/to/file.fcs, NewName")
-        path_file = st.file_uploader("Upload .txt with file paths", type=['txt'])
-        if path_file:
-            # Save temp to read
-            with open("temp_paths.txt", "wb") as f:
-                f.write(path_file.getbuffer())
-                
-            if CYTOFLOW_AVAILABLE:
-                loader = DataLoader() # Re-instantiate
-                file_paths = loader.parse_file_paths_from_text("temp_paths.txt")
-                st.write(f"Found {len(file_paths)} paths.")
-                
-                # Step 1: Generate Preview
-                if 'preview_meta' not in st.session_state:
-                    st.session_state.preview_meta = []
-
-                if st.button("Generate Preview"):
-                    st.session_state.preview_meta = loader.generate_preview_metadata(file_paths, rename_strategy=rename_strategy)
-                
-                if st.session_state.preview_meta:
-                    st.subheader("Edit Metadata Structure")
-                    
-                    # --- Metadata Upload ---
-                    render_metadata_upload_section(key_prefix="list")
-
-                    # 1. Define fields
-                    # User requested: "Treatment" -> "Experiment_Name"
-                    default_cols = ["Replicate", "Cell_Line", "Experiment_Name"]
-                    
-                    preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
-                    extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path', "Timepoint", "Concentration", "Treatment"]]
-
-                    cols_to_use = st.multiselect("Select columns:", 
-                                                options=default_cols + extra_opts + ["Timepoint", "Concentration", "Treatment"], # Kept Treatment just in case
-                                                default=default_cols, key="txt_cols")
-                                                
-                    df_preview = pd.DataFrame(st.session_state.preview_meta)
-                    
-                    for col in cols_to_use:
-                        if col not in df_preview.columns:
-                            # Default value logic
-                            if col == "Replicate":
-                                df_preview[col] = "1"
-                            else:
-                                df_preview[col] = "" 
-                    
-                    # Fix types for Editor (Streamlit is strict about types)
-                    for col in ["Experiment_Name", "Cell_Line", "Replicate", "condition", "display_name", "original_path"]:
-                        if col in df_preview.columns:
-                            df_preview[col] = df_preview[col].fillna("").astype(str)
-
-                    display_cols = ['display_name', 'condition'] + cols_to_use + ['original_path']
-                    
-                    # User requested: Input a new cell line name (free text), copy paste support (standard).
-                    # We remove the constrained SelectboxColumn for Cell_Line.
-                    edited_df = st.data_editor(df_preview[display_cols],
-                                                column_config={
-                                                    "display_name": "Sample Name",
-                                                    "original_path": st.column_config.TextColumn("Original Path", disabled=True),
-                                                    "condition": st.column_config.TextColumn("Folder", disabled=True),
-                                                },
-                                                use_container_width=True, num_rows="fixed")
-                    
-                    # Step 2: Confirm and Process
-                    if st.button("Confirm and Load files"):
-                        with st.spinner("Processing files..."):
-                            # Convert dataframe back to list of dicts
-                            final_meta = edited_df.to_dict('records')
-                            # Process (copy/rename)
-                            loaded_files = loader.process_files(final_meta, output_dir="processed_fcs_ui")
-                            st.session_state.loaded_files = loaded_files
-                            st.success(f"Successfully loaded and renamed {len(loaded_files)} files.")
-
-            else:
-                st.warning("Cytoflow not installed. showcasing UI logic only.")
-                st.dataframe(pd.DataFrame({'display_name': ['demo_file_1.fcs', 'demo_file_2.fcs'], 'path': ['/tmp/A/1.fcs', '/tmp/B/2.fcs']}))
 
     elif upload_option == "Upload Files / Drag & Drop Folder":
         st.info("You can drag and drop a folder containing FCS files directly into the box below. All files in the folder will be uploaded.")

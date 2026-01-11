@@ -11,6 +11,112 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
     st.subheader("2. Auto Gating & Selection")
 
     if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_state.loaded_files:
+        
+        # Check if loaded from CSV (Bypass mode)
+        is_csv_source = any(str(f).startswith("CSV:") for f in st.session_state.loaded_files)
+        
+        if is_csv_source:
+            st.info("Data loaded from Processed CSV. Skipping Gating workflow.")
+            
+            if 'gated_experiment' in st.session_state:
+                exp = st.session_state.gated_experiment
+                st.write(f"Loaded Population: {len(exp.data)} events")
+                
+                # Show Density Plots of the Singlet Population
+                if len(exp.data) > 0:
+                    st.write("### Population Density")
+                    # Filter for likely channel columns (numeric) excluding system flags
+                    numeric_cols = exp.data.select_dtypes(include=['float', 'int']).columns.tolist()
+                    exclude_cols = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate']
+                    channels = [c for c in numeric_cols if c not in exclude_cols]
+                    
+                    if not channels:
+                         channels = exp.data.columns.tolist() # Fallback
+
+                    # Try to default to standard Scatter channels if available
+                    default_x = "FSC 488/10-A" if "FSC 488/10-A" in channels else channels[0]
+                    default_y = "SSC 488/10-A" if "SSC 488/10-A" in channels else channels[1] if len(channels) > 1 else channels[0]
+                    
+                    x_axis = st.selectbox("X Axis", channels, index=channels.index(default_x) if default_x in channels else 0, key="csv_x")
+                    y_axis = st.selectbox("Y Axis", channels, index=channels.index(default_y) if default_y in channels else 0, key="csv_y")
+                    
+                    viz_col1, viz_col2, _ = st.columns([1, 1, 3])
+                    with viz_col1:
+                        scale_opt = st.radio("Scale", ["Linear", "Log"], index=1, horizontal=True, key="csv_scale")
+                        is_log = (scale_opt == "Log")
+                    with viz_col2:
+                         cmap_selected = st.selectbox("Colormap", ["Viridis", "Plasma"], index=0, key="csv_cmap")
+
+                    # High performance plotting - Downsample for interaction speed if necessary, but density calc on full relevant set
+                    df_viz = exp.data.copy()
+                    
+                    # --- Density Calculation (Fast 2D Histogram Method) ---
+                    try:
+                        color_col = None
+                        
+                        # Use log data for density calculation if log scale is selected
+                        x_data = np.log10(df_viz[x_axis]) if is_log else df_viz[x_axis]
+                        y_data = np.log10(df_viz[y_axis]) if is_log else df_viz[y_axis]
+                        
+                        # Remove infs/nans for calculation
+                        mask = np.isfinite(x_data) & np.isfinite(y_data)
+                        x_clean, y_clean = x_data[mask], y_data[mask]
+                        
+                        if len(x_clean) > 0:
+                            # Fast density via histogram
+                            # 100x100 bins
+                            H, xedges, yedges = np.histogram2d(x_clean, y_clean, bins=100)
+                            
+                            # Map density back to points
+                            x_bins = np.digitize(x_clean, xedges) - 1
+                            y_bins = np.digitize(y_clean, yedges) - 1
+                            
+                            x_bins = np.clip(x_bins, 0, H.shape[0]-1)
+                            y_bins = np.clip(y_bins, 0, H.shape[1]-1)
+                            
+                            # Assign density values
+                            df_viz['Density'] = 0.0
+                            df_viz.loc[mask, 'Density'] = H[x_bins, y_bins]
+                            color_col = 'Density'
+                        else:
+                            color_col = None # Fallback
+
+                    except Exception as e:
+                        color_col = None
+
+                    # Construct Plot
+                    # Downsample for SVG rendering performance
+                    if len(df_viz) > 5000:
+                        df_plot = df_viz.sample(n=5000, random_state=42)
+                        st.caption(f"Plotting 5,000 representative events (out of {len(df_viz)}) for smoother interaction.")
+                    else:
+                        df_plot = df_viz
+
+                    fig = px.scatter(df_plot, x=x_axis, y=y_axis, color=color_col,
+                                    title="Population Density (Singlets)",
+                                    color_continuous_scale=cmap_selected,
+                                    opacity=0.8,
+                                    log_x=is_log, log_y=is_log,
+                                    render_mode='svg')
+                    
+                    if color_col:
+                        fig.update_traces(marker=dict(size=5))
+                        fig.update_layout(coloraxis_colorbar=dict(title="Density"))
+
+                    # Improved Plot Layout (White Background, Black Axes)
+                    fig.update_layout(
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
+                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
+                        font=dict(color="black"),
+                        legend=dict(font=dict(color="black"))
+                    )
+
+                    st.plotly_chart(fig)
+            
+            return
+
         st.write("Configuring Gating...")
         
         # Load Base Experiment (Clean state)
@@ -195,9 +301,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     fig.update_layout(
                         plot_bgcolor='white',
                         paper_bgcolor='white',
-                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                        font=dict(color="black")
+                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
+                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
+                        font=dict(color="black"),
+                        legend=dict(font=dict(color="black"))
                     )
 
                     # Enable Click Selection by default (Shift+Click for multi)
@@ -372,9 +479,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         fig_val.update_layout(
                             plot_bgcolor='white',
                             paper_bgcolor='white',
-                            xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                            yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                            font=dict(color="black")
+                            xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
+                            yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
+                            font=dict(color="black"),
+                            legend=dict(font=dict(color="black"))
                         )
                         
                         # Draw the same boundary on this plot for verification
@@ -874,8 +982,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     font=dict(color='black'), # Ensure text is visible
                                     margin=dict(l=20, r=20, t=40, b=20),
                                     height=500,
-                                    xaxis=dict(range=start_range_x),
-                                    yaxis=dict(range=start_range_y),
+                                    xaxis=dict(range=start_range_x, color='black', tickfont=dict(color='black')),
+                                    yaxis=dict(range=start_range_y, color='black', tickfont=dict(color='black')),
+                                    legend=dict(font=dict(color="black")),
                                     uirevision='constant' # Keeps user zoom state on re-runs
                                 )
                                 fig_d.update_xaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
@@ -1126,6 +1235,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             
                             # Determine Experiment Name for filename
                             import os
+                            import io
                             experiment_name = "experiment"
                             if 'loaded_files' in st.session_state and st.session_state.loaded_files:
                                 try:
@@ -1134,7 +1244,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     pass
 
                             final_csv = None
-                            file_name = "processed_data.csv"
+                            file_name = "processed_data.csv.gz"
 
                             if export_mode == "Gated Population (Live + Singlets)":
                                 df_gated = st.session_state.gated_experiment.data.copy()
@@ -1143,12 +1253,17 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 df_gated['cells'] = True
                                 df_gated['singlets'] = True
                                 
-                                final_csv = df_gated.to_csv(index=False).encode('utf-8')
-                                file_name = f"{experiment_name}_singlets.csv"
+                                # Compress to GZIP
+                                buf = io.BytesIO()
+                                df_gated.to_csv(buf, index=False, compression='gzip')
+                                final_csv = buf.getvalue()
+                                
+                                file_name = f"{experiment_name}_singlets.csv.gz"
                             else:
                                 with st.spinner("Reconstructing full dataset annotation..."):
                                     # Clone base
                                     full_exp = st.session_state.base_experiment.clone()
+
                                     bgater = GatingManager()
                                     
                                     # 1. Re-Apply Live Gate (if exists)
@@ -1239,10 +1354,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     if 'LiveGate' in df_export.columns:
                                         del df_export['LiveGate']
 
-                                    final_csv = df_export.to_csv(index=False).encode('utf-8')
-                                    file_name = f"{experiment_name}_full_population.csv"
+                                    # Compress to GZIP
+                                    buf = io.BytesIO()
+                                    df_export.to_csv(buf, index=False, compression='gzip')
+                                    final_csv = buf.getvalue()
+                                    
+                                    file_name = f"{experiment_name}_full_population.csv.gz"
                             
-                            st.download_button("Download CSV", data=final_csv, file_name=file_name, mime="text/csv")
+                            st.download_button("Download CSV (GZIP)", data=final_csv, file_name=file_name, mime="application/gzip")
 
                 except Exception as e:
                     st.write(e) # Debug
