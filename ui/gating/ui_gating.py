@@ -1124,9 +1124,27 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             
                             export_mode = st.radio("Export Mode", ["Gated Population (Live + Singlets)", "Full Population (Annotated)"], horizontal=True)
                             
+                            # Determine Experiment Name for filename
+                            import os
+                            experiment_name = "experiment"
+                            if 'loaded_files' in st.session_state and st.session_state.loaded_files:
+                                try:
+                                    experiment_name = os.path.basename(os.path.dirname(st.session_state.loaded_files[0]))
+                                except:
+                                    pass
+
                             final_csv = None
+                            file_name = "processed_data.csv"
+
                             if export_mode == "Gated Population (Live + Singlets)":
-                                final_csv = st.session_state.gated_experiment.data.to_csv(index=False).encode('utf-8')
+                                df_gated = st.session_state.gated_experiment.data.copy()
+                                # Unify columns to represent the state of this data
+                                # Since this is the gated subset, these conditions are by definition met (or ignored if not applied)
+                                df_gated['cells'] = True
+                                df_gated['singlets'] = True
+                                
+                                final_csv = df_gated.to_csv(index=False).encode('utf-8')
+                                file_name = f"{experiment_name}_singlets.csv"
                             else:
                                 with st.spinner("Reconstructing full dataset annotation..."):
                                     # Clone base
@@ -1187,7 +1205,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         lbl = l_params['label']
                                         df_export['cells'] = (df_export['AutoLiveGate'] == lbl)
                                     else:
-                                        df_export['cells'] = False
+                                        # If no gate applied, assume everything is part of population or False? 
+                                        # Usually False if we strive for intersection, but if no gate, maybe True?
+                                        # Based on prompt, we want annotations. Defaulting to False (not live) or True (all live) depends on semantics.
+                                        # Let's assume False for safety if gate missing, OR True if we consider "no gate = all cells".
+                                        # Given loop structure, we only enter if l_params. If no l_params, likely no gate.
+                                        df_export['cells'] = False # Default fail
                                     
                                     # Create "singlets" column
                                     if 'SingletGate' in df_export.columns:
@@ -1211,10 +1234,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     else:
                                         # Default False if no singlet gate defined
                                         df_export['singlets'] = False
+                                    
+                                    # Remove redundant LiveGate column as requested
+                                    if 'LiveGate' in df_export.columns:
+                                        del df_export['LiveGate']
 
                                     final_csv = df_export.to_csv(index=False).encode('utf-8')
+                                    file_name = f"{experiment_name}_full_population.csv"
                             
-                            st.download_button("Download CSV", data=final_csv, file_name="processed_data.csv", mime="text/csv")
+                            st.download_button("Download CSV", data=final_csv, file_name=file_name, mime="text/csv")
 
                 except Exception as e:
                     st.write(e) # Debug
