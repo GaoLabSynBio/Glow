@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from scipy.spatial import ConvexHull
 from scipy.stats import gaussian_kde
 from sklearn.mixture import GaussianMixture
+from .active_learning_ui import render_uncertainty_controls, get_uncertainty_trace, render_labeling_controls, render_reset_controls
 
 def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE):
     # Gating Section showing the base functionality
@@ -44,6 +45,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     with viz_col1:
                         scale_opt = st.radio("Scale", ["Linear", "Log"], index=1, horizontal=True, key="csv_scale")
                         is_log = (scale_opt == "Log")
+                with viz_col1:
+                    drag_tool = st.radio("Interaction", ["Pan", "Box Select"], index=0, horizontal=True, key="csv_interaction_mode")
+                    drag_mode = "pan" if drag_tool == "Pan" else "select"
                     with viz_col2:
                          cmap_selected = st.selectbox("Colormap", ["Viridis", "Plasma"], index=0, key="csv_cmap")
 
@@ -290,6 +294,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 st.subheader("3. Verification & Active Learning")
                 
                 exp = st.session_state.gated_experiment
+                render_uncertainty_controls(exp, x_channel, y_channel)
+                render_reset_controls()
                 df = exp.data.copy() # Safe copy
 
                 # --- Representative File Selection (Request: Gate per cell line on one file) ---
@@ -306,6 +312,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 with viz_col1:
                     scale_opt = st.radio("Scale", ["Linear", "Log"], index=1, horizontal=True)
                     is_log = (scale_opt == "Log")
+                with viz_col1:
+                    drag_tool = st.radio("Interaction", ["Pan", "Box Select"], index=0, horizontal=True, key="gating_interaction_mode")
+                    drag_mode = "pan" if drag_tool == "Pan" else "select"
                 with viz_col2:
                     cmap_selected = st.selectbox("Colormap", ["Viridis", "Plasma"], index=0)
 
@@ -367,7 +376,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     
                     # To match the user image: Viridis, small dots
                     # Explicitly use render_mode='svg' to ensure correct z-stacking with the boundary lines
-                    fig = px.scatter(plot_df, x=x_channel, y=y_channel, color=color_col, 
+                    
+                    # Add stable row id for selection mapping (works across traces)
+                    plot_df = plot_df.copy()
+                    plot_df['__row_id'] = plot_df.index.astype(str)
+
+                    fig = px.scatter(plot_df, x=x_channel, y=y_channel, color=color_col, custom_data=['__row_id'], 
                                     title="Gating Result",
                                     color_discrete_map=color_map,
                                     color_continuous_scale=cmap_selected,
@@ -392,7 +406,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                     # Enable Click Selection by default (Shift+Click for multi)
                     # dragmode='pan' disables the "rectangle" box select, so clicks are registered as point selections.
-                    fig.update_layout(clickmode='event+select', dragmode='pan')
+                    fig.update_layout(clickmode='event+select', dragmode=drag_mode)
+                    # Add Uncertainty Trace
+                    unc_trace = get_uncertainty_trace(exp, x_channel, y_channel)
+                    if unc_trace:
+                        fig.add_trace(unc_trace)
                     
                     # Note: dragmode='lasso' removed per user request for "point selection"
 
@@ -486,6 +504,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     lbl = cand['label']
                                     is_target = (lbl == live_label)
                                     
+                                    # User Request: Only show boundary for the Live population
+                                    if not is_target:
+                                        continue
+                                    
                                     # Get Data
                                     subset = df[df['AutoLiveGate'] == lbl]
                                     subset_df = subset[[x_channel, y_channel]]
@@ -553,19 +575,23 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         val_df = plot_df.copy()
                         val_df['AutoLiveGate'] = val_df['AutoLiveGate'].astype(str)
                         
-                        # Map colors: Live = Green (or safe color), Others = Red/Grey
-                        # Heuristic: We know 'live_label' from above if it exists
-                        color_map_val = {}
-                        if 'suggested_live_label' in st.session_state:
-                            live_lbl = str(st.session_state.suggested_live_label)
-                            # Set generic colors for all, then override Live
-                            unique_vals = val_df['AutoLiveGate'].unique()
-                            for u in unique_vals:
-                                color_map_val[u] = 'red' if u != live_lbl else 'green'
+                        # Map to meaningful labels
+                        live_lbl = str(st.session_state.get('suggested_live_label', '1'))
+                        
+                        def get_label_desc(val):
+                            return "Live Cells" if str(val) == live_lbl else "Debris / Dead"
+                            
+                        val_df['Cond_Label'] = val_df['AutoLiveGate'].apply(get_label_desc)
+                        
+                        # Define discrete color map
+                        color_map_val = {
+                            "Live Cells": "green",
+                            "Debris / Dead": "red"
+                        }
 
                         fig_val = px.scatter(val_df, x=x_channel, y=y_channel, 
-                                            color='AutoLiveGate',
-                                            title="Live Cell Classification (Green=Preprocessed, Line=Actual Boundary)",
+                                            color='Cond_Label',
+                                            title="MLP Classification (Points) vs. Computed Gate (Line)",
                                             color_discrete_map=color_map_val,
                                             opacity=0.6,
                                             log_x=is_log, log_y=is_log,
@@ -630,10 +656,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     
                     # Render Plot
                     # Use selection_mode='points' for clicking individual cells
-                    selection = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
+                    selection = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points" if drag_mode=="pan" else "box", key=f"live_gating_plot_{len(df)}_{st.session_state.get('plot_id', 0)}")
+                    render_labeling_controls(exp, x_channel, y_channel, selection, plot_df=plot_df)
                     
                     # Check for NEW selection
-                    if selection and selection.get("selection"):
+                    # Only treat as Manual Gating if explicitly in manual mode
+                    if st.session_state.get('show_manual_gating', False) and selection and selection.get("selection"):
                         pts = selection["selection"]["points"]
                         count = len(pts)
                         
