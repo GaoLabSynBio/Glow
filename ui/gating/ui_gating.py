@@ -1277,6 +1277,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                             if export_mode == "Gated Population (Live + Singlets)":
                                 df_gated = st.session_state.gated_experiment.data.copy()
+                                
+                                # Filter channels if requested
+                                if st.session_state.get('selected_channels'):
+                                    all_ch = st.session_state.base_experiment.channels
+                                    to_drop = [c for c in all_ch if c not in st.session_state.selected_channels]
+                                    df_gated = df_gated.drop(columns=[c for c in to_drop if c in df_gated.columns])
+
                                 # Unify columns to represent the state of this data
                                 # Since this is the gated subset, these conditions are by definition met (or ignored if not applied)
                                 df_gated['cells'] = True
@@ -1292,6 +1299,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 with st.spinner("Reconstructing full dataset annotation..."):
                                     # Clone base
                                     full_exp = st.session_state.base_experiment.clone()
+
+                                    # Filter channels if requested
+                                    if st.session_state.get('selected_channels'):
+                                        all_ch = st.session_state.base_experiment.channels
+                                        to_drop = [c for c in all_ch if c not in st.session_state.selected_channels]
+                                        full_exp.data = full_exp.data.drop(columns=[c for c in to_drop if c in full_exp.data.columns])
+                                        if hasattr(full_exp, 'channels'):
+                                            full_exp.channels = st.session_state.selected_channels
 
                                     bgater = GatingManager()
                                     

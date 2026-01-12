@@ -3,6 +3,31 @@ import os
 import pandas as pd
 from .ui_metadata import render_metadata_upload_section
 
+# Mock Experiment Class to emulate Cytoflow structure for downstream compatibility
+class MockExperiment:
+    def __init__(self, data):
+        self.data = data
+        # Infer channels (numeric columns not in exclusion list)
+        exclude_cols = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate', 'Sample', 'sample']
+        self.channels = [c for c in data.columns if c not in exclude_cols and pd.api.types.is_numeric_dtype(data[c])]
+        # Preserve metadata columns as conditions for plotting and filtering
+        self.conditions = {c: "category" for c in data.columns if c not in self.channels}
+
+    def clone(self):
+        return MockExperiment(self.data.copy())
+    def __repr__(self):
+        return f"<MockExperiment: {len(self.data)} events>"
+
+def clear_experiment_state():
+    """Clears all experiment-related data from session state to ensure fresh loading."""
+    for key in ['base_experiment', 'gated_experiment', 'analysis_experiment', 
+                'live_gate_params', 'singlet_gate_params', 'fixed_gate_params',
+                'live_gate_stats', 'singlet_gate_stats', 'gate_accepted',
+                'doublets_removed', 'positive_gates', 'threshold_gate',
+                'selected_channels', 'persistent_selected_channels']:
+        if key in st.session_state:
+            del st.session_state[key]
+
 def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
     """
     Renders the File Loading section
@@ -28,26 +53,19 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         comp_arg = 'gzip' if uploaded_csv.name.endswith('.gz') else 'infer'
                         df = pd.read_csv(uploaded_csv, compression=comp_arg)
                         
-                        # Mock Experiment Class to emulate Cytoflow structure for downstream compatibility
-                        class MockExperiment:
-                            def __init__(self, data):
-                                self.data = data
-                            def clone(self):
-                                return MockExperiment(self.data.copy())
-                            def __repr__(self):
-                                return f"<MockExperiment: {len(self.data)} events>"
+                        # Clear any existing experiment state before loading new CSV
+                        clear_experiment_state()
 
                         st.session_state.base_experiment = MockExperiment(df)
                         
                         # Handle Gating Logic based on columns
                         if 'cells' in df.columns and 'singlets' in df.columns:
-                            # Filter for valid population
-                            # Ensure boolean type just in case
-                            is_cell = df['cells'].astype(bool)
-                            is_singlet = df['singlets'].astype(bool)
-                            df_gated = df[is_cell & is_singlet]
-                            st.session_state.gated_experiment = MockExperiment(df_gated)
-                            st.info(f"Identified {len(df_gated)} valid events out of {len(df)} total.")
+                            # Do NOT filter rows, just create the experiment with the full data
+                            # The analysis module will handle the 'cells' and 'singlets' boolean columns
+                            st.session_state.gated_experiment = MockExperiment(df)
+                            
+                            valid_count = (df['cells'] & df['singlets']).sum()
+                            st.info(f"Loaded {len(df)} events. Identified {valid_count} valid events (Live & Singlet).")
                         else:
                             # Assume data is already the target population
                             st.warning("'cells' or 'singlets' annotations not found. Assuming imported data is the target population.")
@@ -138,6 +156,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     
                     if st.button("Confirm and Load Directory files"):
                         with st.spinner("Processing files..."):
+                            clear_experiment_state()
                             final_meta = edited_df.to_dict('records')
                             loaded_files = loader.process_files(final_meta, output_dir="processed_fcs_ui")
                             st.session_state.loaded_files = loaded_files
@@ -215,6 +234,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     
                     if st.button("Confirm and Load Uploaded files"):
                         with st.spinner("Processing files..."):
+                            clear_experiment_state()
                             final_meta = edited_df.to_dict('records')
                             loaded_files = loader.process_files(final_meta, output_dir="processed_fcs_ui")
                             st.session_state.loaded_files = loaded_files
