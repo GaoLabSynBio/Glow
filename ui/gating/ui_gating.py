@@ -6,9 +6,16 @@ from scipy.spatial import ConvexHull
 from scipy.stats import gaussian_kde
 from sklearn.mixture import GaussianMixture
 from glow.canvas.functions import add_plot_to_canvas
+from glow.plotting.utils import get_channels
+import matplotlib.path as mpath
 
 def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE):
     # Gating Section showing the base functionality
+    
+    # Initialize Wizard Step State
+    if 'gating_step' not in st.session_state:
+        st.session_state.gating_step = 1
+    
     st.subheader("2. Auto Gating & Selection")
 
     if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_state.loaded_files:
@@ -322,6 +329,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     # --- Auto-Gating Visualization (Centroids & Ellipses) ---
                     # ALWAYS overlay Auto-Gating if available
                     # Optimization: Do not re-compute contour if gate is already accepted (User Request)
+                    boundary_x, boundary_y = None, None
                     if 'AutoLiveGate' in df.columns and not st.session_state.get('gate_accepted'):
                         unique_labels = df['AutoLiveGate'].unique()
                         
@@ -684,6 +692,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                 st.session_state.gated_experiment = exp
                                 st.session_state.gate_accepted = True
+                                st.session_state.gating_step = 2
                                 st.session_state.doublets_removed = False # Reset downstream step
                                 st.success(f"Auto-Gate Accepted! Applied Contour Gate. Live Cells: {st.session_state.live_gate_stats}")
                                 st.rerun()
@@ -711,6 +720,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                 st.session_state.gated_experiment = exp
                                 st.session_state.gate_accepted = True
+                                st.session_state.gating_step = 2
                                 st.session_state.doublets_removed = False # Reset downstream step
                                 st.success(f"Auto-Gate Accepted! Proceeding to Singlet Detection... Live Cells: {st.session_state.live_gate_stats}")
                                 st.rerun()
@@ -794,6 +804,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     )
                                 
                                 st.session_state.gate_accepted = True
+                                st.session_state.gating_step = 2
                                 st.session_state.doublets_removed = False # Reset downstream step
                                 st.rerun()
                             except Exception as e:
@@ -808,6 +819,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             st.success(f"Final Live Cells: {st.session_state.live_gate_stats}")
                             
                         st.header("3. Singlet Detection")
+                        if st.button("⬅ Back to Live Gating", key="back_to_step1"):
+                            st.session_state.gating_step = 1
+                            st.session_state.gate_accepted = False
+                            st.rerun()
                         
                         # Automatically proceed to Singlet Detection
                         is_doublet_mode = not st.session_state.get('doublets_removed', False)
@@ -817,7 +832,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             
                             exp = st.session_state.gated_experiment
                             df_gated = exp.data
-                            d_channels = exp.channels
+                            d_channels = get_channels(exp)
                             
                             # Auto-guess channels
                             idx_a, idx_h = 0, 0
@@ -1100,6 +1115,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     exp.data = exp.data[mask]
                                     st.session_state.gated_experiment = exp
                                     st.session_state.doublets_removed = True
+                                    st.session_state.gating_step = 3
                                     st.session_state.show_doublet_gating = False
                                     st.success(f"Kept {sum(mask)} singlet events.")
                                     st.rerun()
@@ -1191,6 +1207,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                                         st.session_state.gated_experiment = exp
                                                         st.session_state.doublets_removed = True
+                                                        st.session_state.gating_step = 3
                                                         st.session_state.show_doublet_gating = False
                                                         st.session_state.doublet_manual_mode = False # Reset
                                                         if 'pending_doublet_verts' in st.session_state:
@@ -1226,6 +1243,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             
                             st.divider()
                             st.header("4. Export Data")
+                            if st.button("⬅ Back to Singlet Detection", key="back_to_step2"):
+                                st.session_state.gating_step = 2
+                                st.session_state.doublets_removed = False
+                                st.rerun()
                             
                             export_mode = st.radio("Export Mode", ["Gated Population (Live + Singlets)", "Full Population (Annotated)"], horizontal=True)
                             
@@ -1272,8 +1293,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         all_ch = st.session_state.base_experiment.channels
                                         to_drop = [c for c in all_ch if c not in st.session_state.selected_channels]
                                         full_exp.data = full_exp.data.drop(columns=[c for c in to_drop if c in full_exp.data.columns])
-                                        if hasattr(full_exp, 'channels'):
-                                            full_exp.channels = st.session_state.selected_channels
+                                        # Note: Cannot set full_exp.channels as it is read-only in cytoflow
 
                                     bgater = GatingManager()
                                     
@@ -1372,7 +1392,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     
                                     file_name = f"{experiment_name}_full_population.csv.gz"
                             
-                            st.download_button("Download CSV (GZIP)", data=final_csv, file_name=file_name, mime="application/gzip")
+                            if final_csv:
+                                st.download_button("Download CSV (GZIP)", data=final_csv, file_name=file_name, mime="application/gzip")
+                            else:
+                                st.error("Failed to generate export data.")
 
                 except Exception as e:
                     st.write(e) # Debug

@@ -16,8 +16,11 @@ except ImportError:
 def get_channels(experiment):
     """Returns a list of available channels in the experiment."""
     # Priority: explicit property -> data columns -> empty
-    if hasattr(experiment, 'channels'):
-         return sorted(experiment.channels)
+    try:
+        if hasattr(experiment, 'channels'):
+             return sorted(experiment.channels)
+    except Exception:
+        pass # Fallback if cytoflow property crashes
     
     # Fallback if channels attribute is missing but data exists
     if hasattr(experiment, 'data'):
@@ -28,10 +31,13 @@ def get_channels(experiment):
 
 def get_conditions(experiment):
     """Returns a list of available conditions (metadata columns) in the experiment."""
-    if hasattr(experiment, 'conditions'):
-        if isinstance(experiment.conditions, dict):
-            return sorted(experiment.conditions.keys())
-        return sorted(experiment.conditions) # if list
+    try:
+        if hasattr(experiment, 'conditions'):
+            if isinstance(experiment.conditions, dict):
+                return sorted(experiment.conditions.keys())
+            return sorted(experiment.conditions) # if list
+    except Exception:
+        pass # Fallback if cytoflow property crashes
         
     # Fallback
     if hasattr(experiment, 'data'):
