@@ -5,10 +5,18 @@ import plotly.graph_objects as go
 from scipy.spatial import ConvexHull
 from scipy.stats import gaussian_kde
 from sklearn.mixture import GaussianMixture
+from glow.canvas.functions import add_plot_to_canvas
+from glow.plotting.utils import get_channels
+import matplotlib.path as mpath
 from .active_learning_ui import render_uncertainty_controls, get_uncertainty_trace, render_labeling_controls, render_reset_controls
 
 def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE):
     # Gating Section showing the base functionality
+    
+    # Initialize Wizard Step State
+    if 'gating_step' not in st.session_state:
+        st.session_state.gating_step = 1
+    
     st.subheader("2. Auto Gating & Selection")
 
     if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_state.loaded_files:
@@ -109,15 +117,20 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                     # Improved Plot Layout (White Background, Black Axes)
                     fig.update_layout(
-                        plot_bgcolor='white',
-                        paper_bgcolor='white',
-                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
-                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
-                        font=dict(color="black"),
-                        legend=dict(font=dict(color="black"))
+                        plot_bgcolor='#ffffff',
+                        paper_bgcolor='#ffffff',
+                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='#000000'),
+                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='#000000'),
+                        font=dict(color="#000000"),
+                        legend=dict(font=dict(color="#000000"))
                     )
 
                     st.plotly_chart(fig)
+
+                    # Add to Canvas Button
+                    if st.button(f"Add \"Population Density\" to Canvas", key="add_density_to_canvas"):
+                        add_plot_to_canvas(fig, "Population Density")
+                        st.success("Plot added to canvas!")
             
             return
 
@@ -396,12 +409,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                     # Improved Plot Layout (White Background)
                     fig.update_layout(
-                        plot_bgcolor='white',
-                        paper_bgcolor='white',
-                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
-                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
-                        font=dict(color="black"),
-                        legend=dict(font=dict(color="black"))
+                        plot_bgcolor='#ffffff',
+                        paper_bgcolor='#ffffff',
+                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='#000000', tickfont=dict(color='#000000')),
+                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='#000000', tickfont=dict(color='#000000')),
+                        font=dict(color="#000000"),
+                        legend=dict(font=dict(color="#000000"))
                     )
 
                     # Enable Click Selection by default (Shift+Click for multi)
@@ -599,18 +612,18 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         
                         # White background for validation plot too
                         fig_val.update_layout(
-                            plot_bgcolor='white',
-                            paper_bgcolor='white',
-                            xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
-                            yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
-                            font=dict(color="black"),
-                            legend=dict(font=dict(color="black"))
+                            plot_bgcolor='#ffffff',
+                            paper_bgcolor='#ffffff',
+                            xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='#000000', tickfont=dict(color='#000000')),
+                            yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='#000000', tickfont=dict(color='#000000')),
+                            font=dict(color="#000000"),
+                            legend=dict(font=dict(color="#000000"))
                         )
                         
                         # Draw the same boundary on this plot for verification
                         if boundary_x is not None:
                             fig_val.add_trace(go.Scatter(x=boundary_x, y=boundary_y, mode='lines', 
-                                                            line=dict(color='black', width=2), # Black Line, Thinner
+                                                            line=dict(color='#000000', width=2), # Black Line, Thinner
                                                             name="Computed Boundary"))
                             
                             # Force order on validation plot too
@@ -884,6 +897,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                 st.session_state.gated_experiment = exp
                                 st.session_state.gate_accepted = True
+                                st.session_state.gating_step = 2
                                 st.session_state.doublets_removed = False # Reset downstream step
                                 st.success(f"Auto-Gate Accepted! Applied Contour Gate. Live Cells: {st.session_state.live_gate_stats}")
                                 st.rerun()
@@ -911,12 +925,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                 st.session_state.gated_experiment = exp
                                 st.session_state.gate_accepted = True
+                                st.session_state.gating_step = 2
                                 st.session_state.doublets_removed = False # Reset downstream step
                                 st.success(f"Auto-Gate Accepted! Proceeding to Singlet Detection... Live Cells: {st.session_state.live_gate_stats}")
                                 st.rerun()
                             else:
                                 st.success("Feedback saved! (Mock mode)")
-                            
+                        
                         if col2.button("❌ Reject / Manual Gate"):
                             st.session_state.show_manual_gating = True
                     
@@ -994,9 +1009,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     )
                                 
                                 st.session_state.gate_accepted = True
+                                st.session_state.gating_step = 2
                                 st.session_state.doublets_removed = False # Reset downstream step
                                 st.rerun()
-                                    
                             except Exception as e:
                                 st.error(f"Invalid format: {e}")
                     
@@ -1009,6 +1024,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             st.success(f"Final Live Cells: {st.session_state.live_gate_stats}")
                             
                         st.header("3. Singlet Detection")
+                        if st.button("⬅ Back to Live Gating", key="back_to_step1"):
+                            st.session_state.gating_step = 1
+                            st.session_state.gate_accepted = False
+                            st.rerun()
                         
                         # Automatically proceed to Singlet Detection
                         is_doublet_mode = not st.session_state.get('doublets_removed', False)
@@ -1054,7 +1073,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         if is_doublet_mode:
                             st.session_state.show_doublet_gating = True
                             
-                            d_channels = base_exp.channels # Use base channels for selection
+                            exp = st.session_state.gated_experiment
+                            df_gated = exp.data
+                            d_channels = get_channels(exp)
                             
                             # Auto-guess channels
                             idx_a, idx_h = 0, 0
@@ -1178,17 +1199,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         pv = st.session_state.pending_doublet_verts
                                         # Transform for display if needed
                                         if d_is_log:
-                                            # Not implementing complex log drag yet, assume manual on linear for now or transform points
-                                            # For simplicity in this iteration, let's keep manual selection logic on the raw data coordinates
-                                            # but display might misalign if we transformed x_to_plot.
-                                            # Let's stick to LINEAR coordinates for the axes if user selected Linear, 
-                                            # if Log, we should probably plot log-log. 
-                                            pass
-                                        
-                                        px_ = [v[0] for v in pv] + [pv[0][0]]
-                                        py_ = [v[1] for v in pv] + [pv[0][1]]
-                                        
-                                        if d_is_log:
+                                            px_ = [v[0] for v in pv] + [pv[0][0]]
+                                            py_ = [v[1] for v in pv] + [pv[0][1]]
+                                            
                                             px_ = np.log10(np.array(px_) + 1)
                                             py_ = np.log10(np.array(py_) + 1)
                                             
@@ -1231,16 +1244,16 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     clickmode='event+select',
                                     plot_bgcolor='rgba(0,0,0,0)',
                                     paper_bgcolor='rgba(0,0,0,0)',
-                                    font=dict(color='black'), # Ensure text is visible
+                                    font=dict(color='#000000'), # Ensure text is visible
                                     margin=dict(l=20, r=20, t=40, b=20),
                                     height=500,
-                                    xaxis=dict(range=start_range_x, color='black', tickfont=dict(color='black')),
-                                    yaxis=dict(range=start_range_y, color='black', tickfont=dict(color='black')),
-                                    legend=dict(font=dict(color="black")),
+                                    xaxis=dict(range=start_range_x, color='#000000', tickfont=dict(color='#000000')),
+                                    yaxis=dict(range=start_range_y, color='#000000', tickfont=dict(color='#000000')),
+                                    legend=dict(font=dict(color="#000000")),
                                     uirevision='constant' # Keeps user zoom state on re-runs
                                 )
-                                fig_d.update_xaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
-                                fig_d.update_yaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
+                                fig_d.update_xaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='#000000', zeroline=False)
+                                fig_d.update_yaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='#000000', zeroline=False)
                                 
                                 # Selection Interaction
                                 # User req for Shift selection is handled by Plotly standard behavior with clickmode
@@ -1359,15 +1372,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             else:
                                                 current_cell_line = ",".join(list(lines))
 
-                                        logger.log_gate_feedback(
-                                            sample_name="Batch_Experiment",
-                                            cell_line=current_cell_line, 
-                                            x_channel=d_x, 
-                                            y_channel=d_y, 
-                                            gate_type="GMM_Singlet", 
-                                            gate_params="Auto", 
-                                            user_decision="accepted"
-                                        )
+                                    logger.log_gate_feedback(
+                                        sample_name="Batch_Experiment",
+                                        cell_line=current_cell_line, 
+                                        x_channel=d_x, 
+                                        y_channel=d_y, 
+                                        gate_type="GMM_Singlet", 
+                                        gate_params="Auto", 
+                                        user_decision="accepted"
+                                    )
 
                                     # Mahalanobis distance filter using the Auto-GMM
                                     inv_cov = np.linalg.inv(d_cov)
@@ -1393,6 +1406,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     exp.data = exp.data[mask]
                                     st.session_state.gated_experiment = exp
                                     st.session_state.doublets_removed = True
+                                    st.session_state.gating_step = 3
                                     st.session_state.show_doublet_gating = False
                                     st.success(f"Kept {sum(mask)} singlet events.")
                                     st.rerun()
@@ -1533,6 +1547,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                                         st.session_state.gated_experiment = exp
                                                         st.session_state.doublets_removed = True
+                                                        st.session_state.gating_step = 3
                                                         st.session_state.show_doublet_gating = False
                                                         st.session_state.doublet_manual_mode = False # Reset
                                                         if 'pending_doublet_verts' in st.session_state:
@@ -1545,17 +1560,16 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             except Exception as e:
                                                 st.error(f"Error parsing vertices: {e}")
                                     
-                                    # Buttons for Clear / Cancel / Undo (User Req)
                                     if col_m2.button("🚫 Clear Points", key="clear_manual_singlets"):
                                         if 'pending_doublet_verts' in st.session_state:
-                                                del st.session_state.pending_doublet_verts
+                                            del st.session_state.pending_doublet_verts
                                         st.rerun()
 
                                     if col_m3.button("🔙 Back to Auto / Cancel", key="cancel_manual_singlets"):
-                                            st.session_state.doublet_manual_mode = False
-                                            if 'pending_doublet_verts' in st.session_state:
-                                                del st.session_state.pending_doublet_verts
-                                            st.rerun()
+                                        st.session_state.doublet_manual_mode = False
+                                        if 'pending_doublet_verts' in st.session_state:
+                                            del st.session_state.pending_doublet_verts
+                                        st.rerun()
                                         
                             except Exception as e:
                                 st.write(e) # Debug
@@ -1569,6 +1583,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             
                             st.divider()
                             st.header("4. Export Data")
+                            if st.button("⬅ Back to Singlet Detection", key="back_to_step2"):
+                                st.session_state.gating_step = 2
+                                st.session_state.doublets_removed = False
+                                st.rerun()
                             
                             export_mode = st.radio("Export Mode", ["Gated Population (Live + Singlets)", "Full Population (Annotated)"], horizontal=True)
                             
@@ -1615,8 +1633,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         all_ch = st.session_state.base_experiment.channels
                                         to_drop = [c for c in all_ch if c not in st.session_state.selected_channels]
                                         full_exp.data = full_exp.data.drop(columns=[c for c in to_drop if c in full_exp.data.columns])
-                                        if hasattr(full_exp, 'channels'):
-                                            full_exp.channels = st.session_state.selected_channels
+                                        # Note: Cannot set full_exp.channels as it is read-only in cytoflow
 
                                     bgater = GatingManager()
                                     
@@ -1715,7 +1732,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     
                                     file_name = f"{experiment_name}_full_population.csv.gz"
                             
-                            st.download_button("Download CSV (GZIP)", data=final_csv, file_name=file_name, mime="application/gzip")
+                            if final_csv:
+                                st.download_button("Download CSV (GZIP)", data=final_csv, file_name=file_name, mime="application/gzip")
+                            else:
+                                st.error("Failed to generate export data.")
 
                 except Exception as e:
                     st.write(e) # Debug
