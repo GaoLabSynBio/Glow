@@ -16,4 +16,4 @@ gemini_coder/
 data/
 .vscode/
 tests/test_data/
-training/*
+training/labeled_data/
