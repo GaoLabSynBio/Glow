@@ -2,12 +2,52 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import importlib
+import glow.active_learning.learner
 from glow.active_learning.learner import ActiveLearner
 
 def get_active_learner():
+    # Ensure module is up to date if we are relying on recent changes
+    # (Optional: only do this if we suspect staleness, but it's safer during dev)
+    # importlib.reload(glow.active_learning.learner)
+    
     if 'active_learner' not in st.session_state:
         st.session_state.active_learner = ActiveLearner()
+        
+    # Auto-heal: If the cached object is from an old class definition without reset_model
+    if not hasattr(st.session_state.active_learner, 'reset_model'):
+        print("Detecting stale ActiveLearner instance (missing reset_model). Reloading...")
+        importlib.reload(glow.active_learning.learner)
+        from glow.active_learning.learner import ActiveLearner as NewActiveLearner
+        st.session_state.active_learner = NewActiveLearner()
+        
     return st.session_state.active_learner
+
+def render_reset_controls():
+    """
+    Renders a button to reset the model to its initial state.
+    """
+    st.divider()
+    if st.button("Start Over (Reset Model)", help="Reverts the model to the initial pre-trained state. All interactive learning will be lost."):
+        learner = get_active_learner()
+        with st.spinner("Resetting model..."):
+            success = learner.reset_model()
+            
+        if success:
+            st.success("Model reset successfully!")
+            # Clear UI state
+            if 'uncertain_indices' in st.session_state:
+                del st.session_state.uncertain_indices
+            if 'gated_experiment' in st.session_state:
+                del st.session_state.gated_experiment
+            if 'current_auto_boundary' in st.session_state:
+                del st.session_state.current_auto_boundary
+            
+            # Force refresh to update plots
+            st.session_state.plot_id = st.session_state.get('plot_id', 0) + 1
+            st.rerun()
+        else:
+            st.error("Could not reset model. Base model not found.")
 
 def render_uncertainty_controls(experiment, x_col, y_col):
     """
@@ -15,31 +55,31 @@ def render_uncertainty_controls(experiment, x_col, y_col):
     """
     st.markdown("### 🧠 Active Learning")
     col1, col2 = st.columns(2)
-    
+
     with col1:
         if st.button("🔍 Find Confusion"):
             with st.spinner("Querying model..."):
                 learner = get_active_learner()
                 df = experiment.data
-                
+
                 # Data Prep (Assume linear UI -> log Model)
                 is_x_log = (df[x_col].min() < 0) or (df[x_col].max() < 10)
                 vals_x = df[x_col].values
                 vals_y = df[y_col].values
-                
+
                 if not is_x_log:
-                    vals_x = np.log10(vals_x + 1)
-                    vals_y = np.log10(vals_y + 1)
-                
+                    vals_x = np.log1p(vals_x)
+                    vals_y = np.log1p(vals_y)
+
                 query_df = pd.DataFrame({
                     "Log_FSC": vals_x,
                     "Log_SSC": vals_y
                 }, index=df.index)
-                
+
                 _, indices = learner.query_uncertainty(query_df, n_instances=5)
                 st.session_state.uncertain_indices = indices
                 st.rerun()
-    
+
     with col2:
         if st.button("Clear Highlights"):
             st.session_state.uncertain_indices = []
@@ -51,14 +91,14 @@ def get_uncertainty_trace(experiment, x_col, y_col):
     """
     if 'uncertain_indices' not in st.session_state:
         return None
-        
+
     indices = st.session_state.uncertain_indices
     # Robust check for empty list or empty numpy array
     if indices is None or len(indices) == 0:
         return None
-        
+
     df = experiment.data
-    
+
     try:
         # Filter indices that might be out of bounds if data changed
         valid_indices = [i for i in indices if i in df.index]
@@ -101,7 +141,6 @@ def render_labeling_controls(experiment, x_col, y_col, selection, plot_df=None):
     st.divider()
     st.markdown(f"**📝 Label {count} Selected Points**")
     st.caption("Tip: you can select any cells (not just red-circled) using box select or Shift+Click, then label them.")
-
     strength = st.slider(
         "Learning strength",
         min_value=1,
@@ -110,15 +149,14 @@ def render_labeling_controls(experiment, x_col, y_col, selection, plot_df=None):
         step=1,
         help="Higher values up-weight your labels so the boundary moves more visibly.",
     )
-    
+
     col1, col2 = st.columns(2)
-    
+
     learner = get_active_learner()
-    
+
     if col1.button("✅ In Gate"):
         with st.spinner("Updating model..."):
             _teach_batch(learner, experiment, x_col, y_col, pts, label=1, plot_df=plot_df, strength=strength)
-        
     if col2.button("🚫 Not In Gate"):
         with st.spinner("Updating model..."):
             _teach_batch(learner, experiment, x_col, y_col, pts, label=0, plot_df=plot_df, strength=strength)
@@ -206,67 +244,42 @@ def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None,
     vals_y = subset[y_col].values
 
     if not is_x_log:
-        vals_x = np.log10(vals_x + 1)
-        vals_y = np.log10(vals_y + 1)
+        vals_x = np.log1p(vals_x)
+        vals_y = np.log1p(vals_y)
 
     X_new = np.column_stack([vals_x, vals_y])
     y_new = np.full(len(X_new), label)
-    # Dynamic aggressive up-weighting with Iterative Correction
-    # Goal: Force the model to immediately respect these manual corrections.
-    # Strategy: Flatten errors with extreme prejudice (repetition + iterative partial_fit).
-    
-    current_preds = learner.predict(pd.DataFrame({'Log_FSC': vals_x, 'Log_SSC': vals_y}))
-    
-    # Base strength increased to 200 (was 50)
-    # If wrong, multiplier is 10x (was 4x) -> 2000x repetitions
-    base_strength = 200 
+
+    # Dynamic weighting based on selection size and user strength
+    # Goal: Allow gentle updates for single points, stronger updates for bulk selection.
     
     effective_X = []
     effective_y = []
-    
-    # Slider aggressiveness: 10 -> 5x, 30 -> 15x
-    s_val = int(strength) if strength is not None else 10
-    user_mult = max(1, s_val // 2)
+
+    # Slider value (1-30) determines repetition factor directly
+    # This acts as a pseudo-sample_weight for the MLP
+    repetition_factor = int(strength) if strength is not None else 5
+    repetition_factor = max(1, repetition_factor)
+
+    # If the user selects many points, we naturally get a larger batch which provides a stronger signal.
+    # If the user selects 1 point, we get a small batch (gentle update).
+    # We apply the repetition factor uniformly.
 
     for i in range(len(X_new)):
-        is_wrong = (current_preds[i] != y_new[i])
-        
-        instance_strength = base_strength * 10 if is_wrong else base_strength
-        instance_strength *= user_mult
-        
-        # Cap to reasonable memory limits per point (e.g. 10k)
-        instance_strength = min(instance_strength, 10000)
+        # Create copies of the sample to simulate weight
+        X_repeated = np.tile(X_new[i], (repetition_factor, 1))
+        y_repeated = np.full(repetition_factor, y_new[i])
 
-        X_repeated = np.tile(X_new[i], (instance_strength, 1))
-        y_repeated = np.full(instance_strength, y_new[i])
-        
         effective_X.append(X_repeated)
         effective_y.append(y_repeated)
-        
+
     X_train = np.vstack(effective_X)
     y_train = np.concatenate(effective_y)
 
-    print(f"[ActiveLearning] Iterative Boost: Expanded {len(X_new)} samples to {len(X_train)} training points. Starting force-fit loop...")
-
-    # Force Fit Loop
-    # Keep teaching until the model gets it right, or we hit a safety limit.
-    max_loops = 10
-    accuracy = 0.0
+    print(f"[ActiveLearning] Updating with {len(X_new)} samples (Expanded to {len(X_train)} training points via strength {repetition_factor}).")
     
-    for attempt in range(max_loops):
-        learner.teach(X_train, y_train)
-        
-        # Verification
-        check_preds = learner.predict(pd.DataFrame({'Log_FSC': vals_x, 'Log_SSC': vals_y}))
-        accuracy = np.mean(check_preds == y_new)
-        
-        if accuracy >= 0.999: # Allow for tiny float oddities, practically 1.0
-            print(f"[ActiveLearning] Convergence reached at iteration {attempt+1}")
-            break
-        print(f"[ActiveLearning] Iteration {attempt+1}: Accuracy {accuracy:.2f}. Retrying...")
-    
-    if accuracy < 1.0:
-        print(f"[ActiveLearning] Warning: Capped at {max_loops} iterations with accuracy {accuracy:.2f}")
+    # Single update step
+    learner.teach(X_train, y_train)
 
     st.session_state.uncertain_indices = []  # Clear highlights
 
@@ -280,5 +293,5 @@ def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None,
     # Increment plot ID to force clear selection state
     st.session_state.plot_id = st.session_state.get('plot_id', 0) + 1
 
-    st.success(f"Updated model. Force-fit applied on {len(X_new)} points ({attempt+1} iterations, expanded to {len(X_train)}). Boundary should move immediately.")
+    st.success(f"Updated model with {len(X_new)} points.")
     st.rerun()

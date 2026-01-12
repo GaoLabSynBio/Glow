@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from scipy.spatial import ConvexHull
 from scipy.stats import gaussian_kde
 from sklearn.mixture import GaussianMixture
-from .active_learning_ui import render_uncertainty_controls, get_uncertainty_trace, render_labeling_controls
+from .active_learning_ui import render_uncertainty_controls, get_uncertainty_trace, render_labeling_controls, render_reset_controls
 
 def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE):
     # Gating Section showing the base functionality
@@ -225,6 +225,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 
                 exp = st.session_state.gated_experiment
                 render_uncertainty_controls(exp, x_channel, y_channel)
+                render_reset_controls()
                 df = exp.data.copy() # Safe copy
 
                 # Scale Toggle

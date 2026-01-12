@@ -362,9 +362,9 @@ class MLPGating(AutomaticGating):
         # Heuristic Log Transform if data seems linear (max > 10)
         # The model 'gating_model_full.pkl' was trained on Log data.
         if np.max(xs) > 10:
-            xs = np.log10(xs + 1)
+            xs = np.log1p(xs)
         if np.max(ys) > 10:
-            ys = np.log10(ys + 1)
+            ys = np.log1p(ys)
             
         X = np.column_stack([xs, ys])
         

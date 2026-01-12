@@ -1,4 +1,5 @@
 import os
+import shutil
 import numpy as np
 import pandas as pd
 from .storage import ActiveLearningLogger
@@ -14,6 +15,13 @@ class ActiveLearner:
     def __init__(self, storage_dir="data/active_learning_data", model_path="data/gating_model_full.pkl"):
         self.storage_dir = storage_dir
         self.model_path = model_path
+        
+        # Ensure backup exists for reset functionality
+        self.backup_path = self.model_path + ".base"
+        if os.path.exists(self.model_path) and not os.path.exists(self.backup_path):
+            print(f"Creating base backup at {self.backup_path}")
+            shutil.copy2(self.model_path, self.backup_path)
+
         self.logger = ActiveLearningLogger(storage_dir)
         self.model = self._load_or_init_model()
         
@@ -28,6 +36,27 @@ class ActiveLearner:
         
         print("Initializing new/empty GatingClassifier.")
         return GatingClassifier()
+
+    def reset_model(self):
+        """
+        Resets the model to the base state (from .base backup).
+        Returns:
+            bool: Success status.
+        """
+        if not os.path.exists(self.backup_path):
+            print("Cannot reset: Base backup file not found.")
+            return False
+            
+        print(f"Resetting model from {self.backup_path}...")
+        try:
+            # Restore file
+            shutil.copy2(self.backup_path, self.model_path)
+            # Reload object
+            self.model = GatingClassifier.load(self.model_path)
+            return True
+        except Exception as e:
+            print(f"Error resetting model: {e}")
+            return False
 
     def predict(self, df):
         """
@@ -126,5 +155,4 @@ class ActiveLearner:
                 ])
             else:
                  raise ValueError("Dataframe missing required columns: Log_FSC, Log_SSC or FSC-A, SSC-A")
-        
         return df[["Log_FSC", "Log_SSC"]].values
