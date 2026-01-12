@@ -5,6 +5,7 @@ from .strategies import (
     GMMGating,
     DensityGating,
     DBSCANGating,
+    MLPGating,
     PolygonGating,
     RangeGating,
     OutlierDetector
@@ -105,6 +106,10 @@ class GatingManager:
                                      keep=keep,
                                      sigma=sigma,
                                      outlier_detector=outlier_detector)
+        elif method == 'mlp':
+            strategy = MLPGating(name="AutoLiveGate",
+                                 channels=[x_channel, y_channel],
+                                 outlier_detector=outlier_detector)
         else:
             raise ValueError(f"Unknown gating method: {method}")
 
