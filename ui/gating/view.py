@@ -94,6 +94,84 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                                 full_exp = gater.apply_manual_gate(full_exp, "LiveGate", l_params['channels'][0], l_params['channels'][1], l_params['vertices'])
                                 live_mask_col = "LiveGate"
                                 
+                            elif l_params['type'] == 'multiclass':
+                                # Re-run auto gating using stored parameters
+                                gp = l_params.get('auto_params', {})
+                                if 'AutoLiveGate' not in full_exp.data.columns:
+                                     full_exp = gater.auto_gate_live_cells(
+                                        full_exp,
+                                        x_channel=gp.get('x'),
+                                        y_channel=gp.get('y'),
+                                        method=gp.get('method', 'gmm').lower(),
+                                        num_components=gp.get('comp', 2),
+                                        keep=gp.get('keep', 0.9),
+                                        sigma=gp.get('sigma', 2.0),
+                                        eps=gp.get('eps', 0.05),
+                                        min_samples=gp.get('min_samples', 50),
+                                        use_outlier_removal=gp.get('use_outliers', False)
+                                    )
+                                
+                                mapping = l_params['mapping']
+                                
+                                # Define helper
+                                def map_label(x):
+                                    if str(x) == '-1': return "Debris"
+                                    # Handle different types for x (int/str)
+                                    res = mapping.get(x)
+                                    if res is None and str(x).isdigit():
+                                         res = mapping.get(int(x))
+                                    if res is None:
+                                         res = mapping.get(str(x), "Unknown")
+                                    return res
+
+                                full_exp.data['Population'] = full_exp.data['AutoLiveGate'].apply(map_label)
+                                
+                                # Mark as 'cells' (Live) if not Debris (and not Unknown)
+                                full_exp.data['cells'] = (full_exp.data['Population'] != "Debris") & (full_exp.data['Population'] != "Unknown")
+
+                                # Update Condition
+                                if 'Condition' in full_exp.data.columns:
+                                    full_exp.data['Condition'] = full_exp.data['Condition'].astype(str) + "_" + full_exp.data['Population'].astype(str)
+                                else:
+                                    full_exp.data['Condition'] = full_exp.data['Population']
+
+                            elif l_params['type'] == 'per_cell_line':
+                                from matplotlib.path import Path
+                                
+                                # Initialize decision column
+                                full_exp.data['cells'] = False
+                                
+                                col_name = l_params['col']
+                                gates_dict = l_params['gates']
+                                
+                                for cell_line, gate in gates_dict.items():
+                                    # Find relevant events
+                                    # Note: Cytoflow/Pandas data types for categories might be strict or strings
+                                    # Safe bet is to convert both to string for comparison
+                                    mask = (full_exp.data[col_name].astype(str) == str(cell_line))
+                                    if not mask.any():
+                                        continue
+                                        
+                                    if gate['type'] == 'polygon':
+                                        verts = gate['vertices']
+                                        x_ch, y_ch = gate['channels']
+                                        
+                                        if len(verts) > 2:
+                                            path = Path(verts)
+                                            points = full_exp.data.loc[mask, [x_ch, y_ch]].values
+                                            
+                                            # Check inclusion
+                                            # radius=0 ensures strict boundary
+                                            is_in = path.contains_points(points)
+                                            full_exp.data.loc[mask, 'cells'] = is_in
+                                    
+                                    elif gate['type'] == 'label':
+                                        # This path requires re-running clustering on the subset
+                                        # For now, if the UI promotes Polygon (which it does via 'current_auto_boundary'),
+                                        # we might not hit this often. 
+                                        # Implementing robustly requires recreating the subset Experiment.
+                                        pass
+
                             elif l_params['type'] == 'label':
                                 # Re-run auto gating to get labels if needed
                                 # Note: If AutoLiveGate is already in base, we good.
@@ -143,13 +221,46 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                                 threshold = s_params.get('threshold', 2.5)
                                 
                                 diff = X - d_mean
-                                # dist = sqrt( (x-mu)T . Sigma^-1 . (x-mu) )
-                                # Batched: sum( (diff @ inv_cov) * diff, axis=1 )
                                 left = diff @ inv_cov
                                 dist_sq = np.sum(left * diff, axis=1)
                                 dist = np.sqrt(dist_sq)
                                 
                                 full_exp.data['singlets'] = (dist <= threshold)
+                            
+                            elif s_params['type'] == 'per_cell_line':
+                                from matplotlib.path import Path
+                                
+                                # Initialize decision column
+                                full_exp.data['singlets'] = False
+                                
+                                col_name_s = s_params['col']
+                                gates_dict_s = s_params['gates']
+                                
+                                for cell_line, gate in gates_dict_s.items():
+                                    mask_s = (full_exp.data[col_name_s].astype(str) == str(cell_line))
+                                    if not mask_s.any():
+                                        continue
+                                        
+                                    if gate['type'] == 'polygon':
+                                        verts = gate['vertices']
+                                        x_ch, y_ch = gate['channels']
+                                        
+                                        if len(verts) > 2:
+                                            path = Path(verts)
+                                            points = full_exp.data.loc[mask_s, [x_ch, y_ch]].values
+                                            is_in = path.contains_points(points)
+                                            full_exp.data.loc[mask_s, 'singlets'] = is_in
+                                    
+                                    elif gate['type'] == 'gmm_mahalanobis':
+                                        ch = gate['channels']
+                                        X_s = full_exp.data.loc[mask_s, ch].values
+                                        d_m = gate['mean']
+                                        i_c = np.linalg.inv(gate['cov'])
+                                        thr = gate.get('threshold', 2.5)
+                                        
+                                        df_s = X_s - d_m
+                                        d_sq = np.sum((df_s @ i_c) * df_s, axis=1)
+                                        full_exp.data.loc[mask_s, 'singlets'] = (np.sqrt(d_sq) <= thr)
                         
                         # Ensure 'singlets' exists
                         if 'singlets' not in full_exp.data.columns:
