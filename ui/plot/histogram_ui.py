@@ -53,6 +53,9 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
          legend_font_size = st.number_input("Legend Font Size", min_value=5, max_value=20, value=10, step=1)
     
     if st.button("Generate Plot", type="primary", key="btn_hist"):
+        st.session_state.hist_generated = True
+
+    if st.session_state.get('hist_generated'):
         # Reload plots module
         from glow.plotting import histogram, plots as main_plots
         importlib.reload(histogram)
@@ -71,8 +74,12 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                         legend_cols=legend_columns,
                         legend_font_size=legend_font_size
                     )
-                    st.pyplot(fig)
-                    plt.close(fig)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    from glow.canvas.functions import add_plot_to_canvas
+                    if st.button("Add Merged Plot to Canvas", key="add_merged_hist_to_canvas"):
+                        add_plot_to_canvas(fig, f"Histogram: {selected_channel} by {hue_var}" if hue_var else f"Histogram: {selected_channel}")
+                        st.success("Plot added to canvas!")
                 
                 # Individual Plots
                 if show_individual and hue_var:

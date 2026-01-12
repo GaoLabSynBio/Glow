@@ -371,9 +371,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         boundary_x, boundary_y = None, None  # Initialize outside
                         
                         if valid_candidates:
-                            # Sort by Mean FSC Descending to find the "Rightmost" (Live) population
-                            # ignoring debris (left) and assuming outliers (extreme right) are filtered by size
-                            valid_candidates.sort(key=lambda x: x['mean_fsc'], reverse=True)
+                            # Sort by Count (Abundance) Descending to find the "Main" population
+                            # (Fixes issue where small doublet clusters with high FSC were selected over the main population)
+                            valid_candidates.sort(key=lambda x: x['count'], reverse=True)
                             
                             # Heuristic Improvement: Prefer explicitly TRUE/True/1 labels
                             preferred_label = None
@@ -512,6 +512,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                         st.plotly_chart(fig_val, use_container_width=True)
 
+                        if st.button("Add \"Live Classification\" to Canvas", key="add_val_to_canvas"):
+                            add_plot_to_canvas(fig_val, "Live Classification")
+                            st.success("Plot added to canvas!")
+
 
                     # --- Manual Gate Visualization ---
 
@@ -549,6 +553,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     # Render Plot
                     # Use selection_mode='points' for clicking individual cells
                     selection = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
+
+                    if st.button("Add \"Auto Gating\" to Canvas", key="add_auto_to_canvas"):
+                        add_plot_to_canvas(fig, "Auto Gating Selection")
+                        st.success("Plot added to canvas!")
                     
                     # Check for NEW selection
                     if selection and selection.get("selection"):
@@ -1005,6 +1013,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 # Selection Interaction
                                 # User req for Shift selection is handled by Plotly standard behavior with clickmode
                                 sel_d = st.plotly_chart(fig_d, use_container_width=True, on_select="rerun", selection_mode="points", key="doublet_chart")
+
+                                if st.button("Add \"Singlet Detection\" to Canvas", key="add_singlet_to_canvas"):
+                                    add_plot_to_canvas(fig_d, "Singlet Detection")
+                                    st.success("Plot added to canvas!")
+                                
+                                # Check for Manual Gate interaction
                                 
                                 # Counter for selection
                                 if is_manual_active:

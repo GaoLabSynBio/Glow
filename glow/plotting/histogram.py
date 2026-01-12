@@ -1,214 +1,123 @@
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.graph_objects as go
+import plotly.express as px
 import pandas as pd
 import numpy as np
-from matplotlib import gridspec
+from scipy.stats import gaussian_kde
 
 def plot_1d_histogram(experiment, channel, hue=None, scale='log', bins=100, color=None, legend_cols=None, legend_font_size=10, title=None):
     """
-    Generates a 1D Ridge Plot (stacked histograms) if hue is provided.
-    Includes a statistics table matching the visual style of the reference.
+    Generates a 1D Density Plot (Histogram-like) using Plotly.
+    Supports hue grouping and log/linear scales.
+    
+    Args:
+        experiment: Cytoflow experiment
+        channel: Channel name
+        hue: Grouping column
+        scale: 'log' or 'linear'
+        bins: Number of points for KDE evaluation
+        color: Specific color (if no hue)
+        legend_cols: Ignored in Plotly version (interactive legend used instead)
+        legend_font_size: Ignored
+        title: Plot title
     """
     df = experiment.data
     log_scale = (scale == 'log')
 
-    # If no hue, simple histogram (Individual Plots)
-    if not hue or hue not in df.columns:
-        fig, ax = plt.subplots(figsize=(8, 6))
-        
-        c = color if color is not None else 'gray'
-        
-        # Use histplot with KDE and step element for "bin wise with curve" style
-        sns.histplot(
-            data=df, x=channel, log_scale=log_scale, bins=bins,
-            kde=True, 
-            element="step", 
-            fill=True, 
-            color=c, 
-            alpha=0.5,
-            line_kws={'linewidth': 2},
-            ax=ax
-        )
-        if title:
-            ax.set_title(title)
-        else:
-            ax.set_title(f"Histogram of {channel}")
-        return fig
+    fig = go.Figure()
 
-    # Ridge Plot Logic
-    groups = sorted(df[hue].unique())
-    n_groups = len(groups)
-    
-    if n_groups == 0:
-        return plt.figure()
-
-    # Determine columns to show in legend table
-    if legend_cols is None:
-        legend_cols = [hue, "Mean"]
-    
-    # If legend_cols is empty, user might want to hide table, but we will show at least colors?
-    # Or just return plot without table?
-    show_table = len(legend_cols) > 0
-    
-    # Calculate stats for the table
-    table_data = []
-    
-    for g in groups:
-        sub = df[df[hue] == g]
-        row_vals = []
-        
-        # First col is always Color Block (added later during table construction) hence strict loop over requested cols
-        for col_key in legend_cols:
-            if col_key == "Mean":
-                vals = sub[channel]
-                if log_scale:
-                     v = vals[vals > 0]
-                     mean_val = np.exp(np.log(v).mean()) if len(v) > 0 else 0
-                else:
-                    mean_val = vals.mean()
-                row_vals.append(f"{mean_val:.2f}")
-                
-            elif col_key == "Median":
-                 median_val = sub[channel].median()
-                 row_vals.append(f"{median_val:.2f}")
-                 
-            elif col_key == "Count":
-                 row_vals.append(str(len(sub)))
-                 
-            elif col_key == hue:
-                row_vals.append(str(g))
-                
-            elif col_key in df.columns:
-                # Try to get unique value
-                u_vals = sub[col_key].unique()
-                if len(u_vals) == 1:
-                    row_vals.append(str(u_vals[0]))
-                else:
-                    row_vals.append("Mixed")
-            else:
-                row_vals.append("-")
-                
-        table_data.append(row_vals)
-
-    # Layout
-    plt.rcParams.update({'font.size': 10})
-    
-    # Responsive height
-    if show_table:
-        fig = plt.figure(figsize=(10, max(4, n_groups * 0.8)))
-        # GridSpec: 4 parts plot, 1 part table (or wider if more cols)
-        gs = gridspec.GridSpec(n_groups, 2, width_ratios=[3, 1 + 0.2*len(legend_cols)], wspace=0.1, hspace=0)
+    # Define groups
+    if hue and hue in df.columns:
+        groups = sorted(df[hue].unique())
     else:
-        fig = plt.figure(figsize=(8, max(4, n_groups * 0.8)))
-        gs = gridspec.GridSpec(n_groups, 1, hspace=0)
-    
-    palette = sns.color_palette("bright", n_groups)
+        # Single group wrapper
+        groups = ["All Events"]
+        # Use a dummy column if needed or just handle logic below
+        
+    # Color Palette
+    if hue:
+        colors = px.colors.qualitative.Plotly * (len(groups) // 10 + 1)
+    else:
+        colors = [color if color else 'rgb(31, 119, 180)']
 
-    # Determine x limits
+    # Determine Range for Grid
     if log_scale:
         valid_data = df[df[channel] > 0][channel]
         if len(valid_data) > 0:
-            x_min = 10**(np.floor(np.log10(valid_data.min())))
-            x_max = 10**(np.ceil(np.log10(valid_data.max())))
+            x_min = np.log10(valid_data.min())
+            x_max = np.log10(valid_data.max())
         else:
-            x_min, x_max = 0.1, 1000
+            x_min, x_max = -1, 4 # Fallback
     else:
         x_min = df[channel].min()
         x_max = df[channel].max()
 
-    axes = []
-    
-    for i, group in enumerate(groups):
-        # Plot Axis (Left Column)
-        if show_table:
-            ax = fig.add_subplot(gs[i, 0])
-        else:
-            ax = fig.add_subplot(gs[i])
-            
-        axes.append(ax)
-        
-        subset = df[df[hue] == group]
-        color = palette[i]
-        
-        # Plot
-        # Use KDE for smooth appearance as requested ("like the plot provided")
-        sns.kdeplot(
-            data=subset, x=channel, 
-            log_scale=log_scale, 
-            fill=True, 
-            color=color, alpha=0.5, linewidth=1.5,
-            edgecolor=color,
-            ax=ax
-        )
-        
-        # Aesthetics
-        ax.set_ylabel("")
-        ax.set_yticks([]) 
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_visible(False)
-        ax.grid(False) 
-        ax.set_facecolor('white') 
-        
-        # X Axis
-        ax.set_xlim(x_min, x_max)
-        if i < n_groups - 1:
-            ax.set_xlabel("")
-            ax.set_xticklabels([])
-            ax.spines['bottom'].set_visible(False)
-            ax.axhline(0, color='gray', linewidth=0.5, alpha=0.5)
-        else:
-            ax.set_xlabel(channel)
-            ax.spines['bottom'].set_visible(True)
+    # Evaluation Grid
+    x_grid = np.linspace(x_min, x_max, bins)
+    x_plot = 10**x_grid if log_scale else x_grid
 
-    # Table (Right Column)
-    if show_table:
-        ax_table = fig.add_subplot(gs[:, 1])
-        ax_table.axis('off')
+    for i, g in enumerate(groups):
+        if hue:
+            subset = df[df[hue] == g]
+            label = str(g)
+            c = colors[i]
+        else:
+            subset = df
+            label = channel
+            c = colors[0]
+
+        if len(subset) < 2:
+            continue
+
+        data = subset[channel].values
         
-        # Legend Table Header
-        col_labels = [""] + legend_cols
-        
-        # Use a Unicode block for the color box: ■ (U+25A0)
-        # Prepend color block char to each row
-        table_content = [["■"] + row for row in table_data]
-    
-        # Dynamic column widths
-        n_cols = len(col_labels)
-        # First col (color) small, others equal
-        widths = [0.05] + [0.95/(n_cols-1)] * (n_cols-1)
-    
-        tbl = ax_table.table(
-            cellText=table_content,
-            colLabels=col_labels,
-            loc='center',
-            cellLoc='left',
-            colWidths=widths, 
-            edges='horizontal'
-        )
-        
-        tbl.auto_set_font_size(False)
-        tbl.set_fontsize(legend_font_size)
-        tbl.scale(1, 1.5)
-        
-        # Style stats
-        for i in range(n_groups):
-            # Row index i+1 (header is 0)
+        try:
+            if log_scale:
+                # Filter positive and log transform for KDE
+                data = data[data > 0]
+                if len(data) < 2: continue
+                data_kde = np.log10(data)
+            else:
+                data_kde = data
+
+            kde = gaussian_kde(data_kde)
+            density = kde(x_grid if log_scale else x_plot)
             
-            # 1. Color Block (Column 0)
-            cell_color = tbl[(i+1, 0)]
-            # Set TEXT color to the palette color
-            cell_color.set_text_props(color=palette[i], weight='bold', size=14)
-            # Clear background/borders for cleaner look
-            cell_color.set_facecolor('white')
-            cell_color.set_edgecolor('white')
+            # Normalize density to count-like or max 1 for visualization? 
+            # Seaborn 'density' is area=1. Let's stick to density.
             
-            # 2. Style other cells?
-            for j in range(1, n_cols):
-                 cell = tbl[(i+1, j)]
-                 if j == 1: # Usually the ID column
-                     cell.set_text_props(weight='bold')
+            fig.add_trace(go.Scatter(
+                x=x_plot, 
+                y=density, 
+                mode='lines',
+                name=label,
+                fill='tozeroy',
+                line=dict(width=2, color=c),
+                # fillcolor=c # Transparent fill usually handled by defaults or opacity
+            ))
+            
+        except Exception as e:
+            # Singular matrix or other KDE error
+            print(f"KDE failed for {label}: {e}")
+
+    # Layout
+    fig.update_layout(
+        title=title if title else f"Density Plot of {channel}",
+        xaxis_title=channel + (" (Log)" if log_scale else ""),
+        yaxis_title="Density",
+        xaxis=dict(
+            type="log" if log_scale else "linear",
+            showgrid=True,
+            gridcolor='lightgrey'
+        ),
+        yaxis=dict(
+            showgrid=True, 
+            gridcolor='lightgrey'
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        font=dict(color='black'),
+        legend=dict(title=hue if hue else None)
+    )
 
     return fig
 
-    return fig

@@ -43,6 +43,15 @@ def render_canvas_tab():
             font_size = c4.number_input("Font Size", 8, 40, value=int(fig.layout.font.size or 12), key=f"fsize_{title}")
             trace_color = c5.color_picker("Data Color (All Traces)", key=f"tcolor_{title}")
 
+            st.markdown("**Dimensions (px)**")
+            d1, d2, _ = st.columns(3)
+            # Default to 0 (Auto)
+            current_w = fig.layout.width or 0
+            current_h = fig.layout.height or 0
+            
+            p_width = d1.number_input("Width (0=Auto)", 0, 2000, value=int(current_w), key=f"w_{title}")
+            p_height = d2.number_input("Height (0=Auto)", 0, 2000, value=int(current_h), key=f"h_{title}")
+
             # 2. Axes
             st.markdown("**Axes Labels**")
             ax1, ax2 = st.columns(2)
@@ -76,7 +85,9 @@ def render_canvas_tab():
                     paper_bgcolor=bg_color,
                     font=dict(color=font_color, size=font_size),
                     xaxis_title=x_label,
-                    yaxis_title=y_label
+                    yaxis_title=y_label,
+                    width=p_width if p_width > 0 else None,
+                    height=p_height if p_height > 0 else None
                 )
                 update_canvas_plot(title, fig)
                 st.rerun()
@@ -91,7 +102,9 @@ def render_canvas_tab():
                 update_canvas_plot(title, fig)
                 st.rerun()
 
-        st.plotly_chart(fig, use_container_width=True)
+        # Determine if we use container width or fixed width
+        use_container = (fig.layout.width is None or fig.layout.width <= 0)
+        st.plotly_chart(fig, use_container_width=use_container)
         
         if st.button(f"Remove {title}", key=f"remove_{title}"):
             remove_plot_from_canvas(title)
