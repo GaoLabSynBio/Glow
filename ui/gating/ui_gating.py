@@ -316,6 +316,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     # --- Auto-Gating Visualization (Centroids & Ellipses) ---
                     # ALWAYS overlay Auto-Gating if available
                     # Optimization: Do not re-compute contour if gate is already accepted (User Request)
+                    boundary_x, boundary_y = None, None  # Initialize to avoid UnboundLocalError
                     if 'AutoLiveGate' in df.columns and not st.session_state.get('gate_accepted'):
                         unique_labels = df['AutoLiveGate'].unique()
                         
