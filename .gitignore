@@ -13,5 +13,9 @@ test_venv/
 .pytest_cache/
 gemini_coder/
 .ipynb_checkpoints/
-data/
+active_learning_data/
+real_data*
+synthetic_training_data*
+gating_model_best.pkl
+gating_model_full.pkl.base
 .vscode/
