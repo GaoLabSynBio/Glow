@@ -13,6 +13,5 @@ test_venv/
 .pytest_cache/
 gemini_coder/
 .ipynb_checkpoints/
-data/
 .vscode/
 tests/test_data/
