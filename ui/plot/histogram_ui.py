@@ -102,7 +102,6 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                 color=palette[i],
                                 title=f"Experiment: {group}"
                             )
-                            st.pyplot(fig)
-                            plt.close(fig)
+                            st.plotly_chart(fig, use_container_width=True)
             except Exception as e:
                 st.error(f"Error: {e}")
