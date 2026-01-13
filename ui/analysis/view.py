@@ -6,6 +6,7 @@ import plotly.express as px
 from scipy.stats import gaussian_kde
 from glow.analysis.stats import get_summary_statistics
 from glow.analysis.positive import calculate_positive_stats, get_channel_data_for_samples, calculate_positive_stats_recursive
+from glow.canvas.functions import add_plot_to_canvas
 
 def render_analysis_tab():
     st.header("Analysis & Statistics")
@@ -410,6 +411,10 @@ def render_analysis_tab():
                     # Enable box selection
                     # Add unique KEY to prevent state leakage
                     selection = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode=["points", "box"], key=f"plot_{selected_channel}_{parent_gate}")
+
+                    if st.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
+                        add_plot_to_canvas(fig, f"Density Plot: {selected_channel} (Subset: {parent_gate})")
+                        st.success("Plot added to canvas!")
                     
                     # Check selection
                     if selection and selection.selection:

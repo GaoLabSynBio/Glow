@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import importlib
 from glow.plotting import plots, utils, categorical
+from glow.canvas.functions import add_plot_to_canvas
 
 def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     """
@@ -314,23 +315,20 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
 
     if st.button("Generate Plot", type="primary", key="btn_bar"):
+        st.session_state.bar_generated = True
+
+    if st.session_state.get('bar_generated'):
         # reload to get latest backend changes
         importlib.reload(utils)
         importlib.reload(categorical)
-        
+
         with st.spinner("Generating plots..."):
             try:
                 # Combine local gates and selected analysis gates
                 all_applied_gates = st.session_state.bar_gates + analysis_gates_to_apply
-                
-                # Manual filtering for debug/visibility if required, 
-                # but categorical.plot_means_with_significance handles it too.
-                # Let's verify the backend is actually receiving the gates.
+
                 if all_applied_gates:
-                     st.write(f"Applying {len(all_applied_gates)} filters...")
-                     # Small debug log for user
-                     # for g in all_applied_gates:
-                     #    st.write(f"- {g['channel']} {g.get('direction', '>')}: {g['threshold']}")
+                    st.write(f"Applying {len(all_applied_gates)} filters...")
 
                 fig = categorical.plot_means_with_significance(
                     filtered_experiment,
@@ -350,6 +348,12 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     gates=all_applied_gates
                 )
                 st.pyplot(fig)
+
+                canvas_title = f"Bar Plot: {selected_channel} by {hue_var}" if hue_var else f"Bar Plot: {selected_channel}"
+                if st.button("Add Bar Plot to Canvas", key="add_bar_to_canvas"):
+                    add_plot_to_canvas(fig, canvas_title)
+                    st.success("Plot added to canvas!")
+
                 plt.close(fig)
             except Exception as e:
                 st.error(f"Error: {e}")

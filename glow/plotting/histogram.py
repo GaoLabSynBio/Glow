@@ -4,7 +4,59 @@ import pandas as pd
 import numpy as np
 from matplotlib import gridspec
 
-def plot_1d_histogram(experiment, channel, hue=None, scale='log', bins=100, color=None, legend_cols=None, legend_font_size=10, title=None):
+def _gaussian_kernel1d(sigma: float, radius: int | None = None) -> np.ndarray:
+    if sigma is None or sigma <= 0:
+        return np.array([1.0])
+    if radius is None:
+        radius = int(np.ceil(3 * float(sigma)))
+    x = np.arange(-radius, radius + 1)
+    k = np.exp(-(x ** 2) / (2 * float(sigma) ** 2))
+    k /= k.sum()
+    return k
+
+
+def _smooth_1d(y: np.ndarray, sigma: float) -> np.ndarray:
+    k = _gaussian_kernel1d(sigma)
+    if k.size == 1:
+        return y
+    return np.convolve(y, k, mode="same")
+
+
+def _histogram_curve(values: np.ndarray, bins: int, log_scale: bool) -> tuple[np.ndarray, np.ndarray]:
+    values = np.asarray(values)
+    values = values[np.isfinite(values)]
+    if log_scale:
+        values = values[values > 0]
+    if values.size == 0:
+        return np.array([]), np.array([])
+
+    if log_scale:
+        vmin = values.min()
+        vmax = values.max()
+        if vmin <= 0:
+            vmin = np.min(values[values > 0]) if np.any(values > 0) else 1e-3
+        edges = np.logspace(np.log10(vmin), np.log10(vmax), int(bins) + 1)
+    else:
+        edges = np.linspace(values.min(), values.max(), int(bins) + 1)
+
+    counts, edges = np.histogram(values, bins=edges)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    return centers, counts.astype(float)
+
+
+def plot_1d_histogram(
+    experiment,
+    channel,
+    hue=None,
+    scale='log',
+    bins=100,
+    color=None,
+    legend_cols=None,
+    legend_font_size=10,
+    title=None,
+    smooth_sigma: float = 2.0,
+    normalization: str = "total",
+):
     """
     Generates a 1D Ridge Plot (stacked histograms) if hue is provided.
     Includes a statistics table matching the visual style of the reference.
@@ -12,23 +64,39 @@ def plot_1d_histogram(experiment, channel, hue=None, scale='log', bins=100, colo
     df = experiment.data
     log_scale = (scale == 'log')
 
+    norm = (normalization or "").lower().strip()
+    if norm in {"none", "original", "raw"}:
+        norm = "original"
+    elif norm in {"modal", "mode"}:
+        norm = "modal"
+    elif norm in {"total", "count", "total_count", "area", "density"}:
+        norm = "total"
+    else:
+        # Backward-safe default that matches KDE-style behavior
+        norm = "total"
+
     # If no hue, simple histogram (Individual Plots)
     if not hue or hue not in df.columns:
         fig, ax = plt.subplots(figsize=(8, 6))
         
         c = color if color is not None else 'gray'
-        
-        # Use histplot with KDE and step element for "bin wise with curve" style
-        sns.histplot(
-            data=df, x=channel, log_scale=log_scale, bins=bins,
-            kde=True, 
-            element="step", 
-            fill=True, 
-            color=c, 
-            alpha=0.5,
-            line_kws={'linewidth': 2},
-            ax=ax
-        )
+
+        x, y = _histogram_curve(df[channel].values, bins=bins, log_scale=log_scale)
+        if x.size > 0:
+            if norm == "total":
+                s = y.sum()
+                y = y / s if s > 0 else y
+            elif norm == "modal":
+                m = y.max()
+                y = y / m if m > 0 else y
+
+            y_s = _smooth_1d(y, smooth_sigma)
+            ax.fill_between(x, y_s, step="mid", alpha=0.5, color=c)
+            ax.plot(x, y_s, color=c, linewidth=2)
+
+        if log_scale:
+            ax.set_xscale('log')
+
         if title:
             ax.set_title(title)
         else:
@@ -117,6 +185,28 @@ def plot_1d_histogram(experiment, channel, hue=None, scale='log', bins=100, colo
         x_max = df[channel].max()
 
     axes = []
+    y_max_global = 0.0
+    cached_curves: list[tuple[np.ndarray, np.ndarray]] = []
+
+    # Precompute curves so we can enforce consistent y limits across rows
+    for group in groups:
+        subset = df[df[hue] == group]
+        x, y = _histogram_curve(subset[channel].values, bins=bins, log_scale=log_scale)
+        if x.size == 0:
+            cached_curves.append((x, y))
+            continue
+
+        if norm == "total":
+            s = y.sum()
+            y = y / s if s > 0 else y
+        elif norm == "modal":
+            m = y.max()
+            y = y / m if m > 0 else y
+
+        y = _smooth_1d(y, smooth_sigma)
+        cached_curves.append((x, y))
+        if y.size > 0:
+            y_max_global = max(y_max_global, float(np.nanmax(y)))
     
     for i, group in enumerate(groups):
         # Plot Axis (Left Column)
@@ -127,19 +217,12 @@ def plot_1d_histogram(experiment, channel, hue=None, scale='log', bins=100, colo
             
         axes.append(ax)
         
-        subset = df[df[hue] == group]
         color = palette[i]
-        
-        # Plot
-        # Use KDE for smooth appearance as requested ("like the plot provided")
-        sns.kdeplot(
-            data=subset, x=channel, 
-            log_scale=log_scale, 
-            fill=True, 
-            color=color, alpha=0.5, linewidth=1.5,
-            edgecolor=color,
-            ax=ax
-        )
+
+        x, y = cached_curves[i]
+        if x.size > 0:
+            ax.fill_between(x, y, step="mid", alpha=0.5, color=color)
+            ax.plot(x, y, color=color, linewidth=1.5)
         
         # Aesthetics
         ax.set_ylabel("")
@@ -152,6 +235,8 @@ def plot_1d_histogram(experiment, channel, hue=None, scale='log', bins=100, colo
         
         # X Axis
         ax.set_xlim(x_min, x_max)
+        if y_max_global > 0:
+            ax.set_ylim(0, y_max_global * 1.05)
         if i < n_groups - 1:
             ax.set_xlabel("")
             ax.set_xticklabels([])
@@ -160,6 +245,9 @@ def plot_1d_histogram(experiment, channel, hue=None, scale='log', bins=100, colo
         else:
             ax.set_xlabel(channel)
             ax.spines['bottom'].set_visible(True)
+
+        if log_scale:
+            ax.set_xscale('log')
 
     # Table (Right Column)
     if show_table:
@@ -208,7 +296,5 @@ def plot_1d_histogram(experiment, channel, hue=None, scale='log', bins=100, colo
                  cell = tbl[(i+1, j)]
                  if j == 1: # Usually the ID column
                      cell.set_text_props(weight='bold')
-
-    return fig
 
     return fig

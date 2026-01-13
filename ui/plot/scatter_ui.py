@@ -2,6 +2,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import importlib
 from glow.plotting import plots
+from glow.canvas.functions import add_plot_to_canvas
 
 def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditions, scale):
     """
@@ -50,16 +51,29 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
          with c2: st.caption("Individual splitting handled by Facet selection")
 
     if st.button("Generate Plot", type="primary", key="btn_scatter"):
+        st.session_state.scatter_generated = True
+
+    if st.session_state.get('scatter_generated'):
         from glow.plotting import scatter, plots as main_plots
         importlib.reload(scatter)
         importlib.reload(main_plots)
-        
+
+        base_title = f"Scatter: {x_channel} vs {y_channel}"
+        if hue_var:
+            base_title += f" by {hue_var}"
+        if facet_var:
+            base_title += f" (facet: {facet_var})"
+        if show_trend:
+            base_title += " + trend"
+        if show_dots:
+            base_title += " + dots"
+
         with st.spinner("Generating plots..."):
             try:
                 if show_merged:
                     if not show_trend:
                         st.subheader("Merged Plot")
-                        
+
                     res = main_plots.plot_2d_scatter(
                         filtered_experiment,
                         x_channel=x_channel,
@@ -72,20 +86,29 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                         show_dots=show_dots,
                         show_grid=show_grid
                     )
-                    
+
                     if isinstance(res, tuple):
                         fig_facets, fig_summary = res
                         st.subheader("Merged Comparison")
                         st.pyplot(fig_summary)
+                        if st.button("Add Summary Plot to Canvas", key="add_scatter_summary_to_canvas"):
+                            add_plot_to_canvas(fig_summary, base_title + " (summary)")
+                            st.success("Plot added to canvas!")
                         plt.close(fig_summary)
-                        
+
                         st.subheader("Separate Panels (Detailed)")
                         st.pyplot(fig_facets)
+                        if st.button("Add Facet Plot to Canvas", key="add_scatter_facets_to_canvas"):
+                            add_plot_to_canvas(fig_facets, base_title + " (facets)")
+                            st.success("Plot added to canvas!")
                         plt.close(fig_facets)
                     else:
                         st.pyplot(res)
+                        if st.button("Add Plot to Canvas", key="add_scatter_to_canvas"):
+                            add_plot_to_canvas(res, base_title)
+                            st.success("Plot added to canvas!")
                         plt.close(res)
-                
+
                 if show_individual and hue_var and not show_trend:
                     st.subheader("Individual Plots")
                     groups = sorted(filtered_experiment.data[hue_var].unique())
@@ -93,14 +116,21 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                     for i, group in enumerate(groups):
                         sub_exp = plots.filter_experiment(filtered_experiment, hue_var, [group])
                         with cols[i % 2]:
-                            # st.markdown(f"**{group}**")
                             fig = main_plots.plot_2d_scatter(
-                                sub_exp, x_channel=x_channel, y_channel=y_channel, 
-                                hue=None, xscale=scale, yscale=scale, show_trend=False,
+                                sub_exp,
+                                x_channel=x_channel,
+                                y_channel=y_channel,
+                                hue=None,
+                                xscale=scale,
+                                yscale=scale,
+                                show_trend=False,
                                 title=f"Experiment: {group}"
                             )
                             st.pyplot(fig)
+                            if st.button(f"Add \"{group}\" to Canvas", key=f"add_scatter_ind_{i}_to_canvas"):
+                                add_plot_to_canvas(fig, base_title + f" ({group})")
+                                st.success("Plot added to canvas!")
                             plt.close(fig)
-                            
+
             except Exception as e:
                 st.error(f"Error: {e}")

@@ -29,6 +29,7 @@ except ImportError:
 from gating.view import render_gating_tab
 from analysis.view import render_analysis_tab
 from plot.view import render_plot_tab
+from canvas.view import render_canvas_tab
 from gating.ui_file_loader import clear_experiment_state
 
 st.title("Glow Flow Analysis Pipeline")
@@ -50,6 +51,7 @@ if st.session_state.gating_complete:
     tabs.append("Analysis")
 # if st.session_state.analysis_complete: # Bypassed for debugging
 tabs.append("Plot")
+tabs.append("Canvas")
 
 # Ensure current tab is valid
 if st.session_state.current_tab not in tabs:
@@ -85,3 +87,6 @@ elif selected_tab == "Analysis":
 
 elif selected_tab == "Plot":
     render_plot_tab()
+
+elif selected_tab == "Canvas":
+    render_canvas_tab()
