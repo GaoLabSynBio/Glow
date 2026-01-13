@@ -1,224 +1,300 @@
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 import numpy as np
-from scipy.stats import gaussian_kde
+from matplotlib import gridspec
 
-def plot_1d_histogram(experiment, channel, hue=None, scale='log', bins=100, color=None, legend_cols=None, legend_font_size=10, title=None):
+def _gaussian_kernel1d(sigma: float, radius: int | None = None) -> np.ndarray:
+    if sigma is None or sigma <= 0:
+        return np.array([1.0])
+    if radius is None:
+        radius = int(np.ceil(3 * float(sigma)))
+    x = np.arange(-radius, radius + 1)
+    k = np.exp(-(x ** 2) / (2 * float(sigma) ** 2))
+    k /= k.sum()
+    return k
+
+
+def _smooth_1d(y: np.ndarray, sigma: float) -> np.ndarray:
+    k = _gaussian_kernel1d(sigma)
+    if k.size == 1:
+        return y
+    return np.convolve(y, k, mode="same")
+
+
+def _histogram_curve(values: np.ndarray, bins: int, log_scale: bool) -> tuple[np.ndarray, np.ndarray]:
+    values = np.asarray(values)
+    values = values[np.isfinite(values)]
+    if log_scale:
+        values = values[values > 0]
+    if values.size == 0:
+        return np.array([]), np.array([])
+
+    if log_scale:
+        vmin = values.min()
+        vmax = values.max()
+        if vmin <= 0:
+            vmin = np.min(values[values > 0]) if np.any(values > 0) else 1e-3
+        edges = np.logspace(np.log10(vmin), np.log10(vmax), int(bins) + 1)
+    else:
+        edges = np.linspace(values.min(), values.max(), int(bins) + 1)
+
+    counts, edges = np.histogram(values, bins=edges)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    return centers, counts.astype(float)
+
+
+def plot_1d_histogram(
+    experiment,
+    channel,
+    hue=None,
+    scale='log',
+    bins=100,
+    color=None,
+    legend_cols=None,
+    legend_font_size=10,
+    title=None,
+    smooth_sigma: float = 2.0,
+    normalization: str = "total",
+):
     """
-    Generates a 1D Ridge Plot (stacked histograms) using Plotly.
-    Each group is separated into its own subplot (row).
+    Generates a 1D Ridge Plot (stacked histograms) if hue is provided.
+    Includes a statistics table matching the visual style of the reference.
     """
     df = experiment.data
     log_scale = (scale == 'log')
 
-    # Define groups
-    if hue and hue in df.columns:
-        groups = sorted(df[hue].unique())
+    norm = (normalization or "").lower().strip()
+    if norm in {"none", "original", "raw"}:
+        norm = "original"
+    elif norm in {"modal", "mode"}:
+        norm = "modal"
+    elif norm in {"total", "count", "total_count", "area", "density"}:
+        norm = "total"
     else:
-        # Single group wrapper - Use a simple Plotly Figure (No Subplots)
-        groups = [channel]
-        n_groups = 1
+        # Backward-safe default that matches KDE-style behavior
+        norm = "total"
+
+    # If no hue, simple histogram (Individual Plots)
+    if not hue or hue not in df.columns:
+        fig, ax = plt.subplots(figsize=(8, 6))
         
-        fig = go.Figure()
-        
-        data_vals = df[channel].values
+        c = color if color is not None else 'gray'
+
+        x, y = _histogram_curve(df[channel].values, bins=bins, log_scale=log_scale)
+        if x.size > 0:
+            if norm == "total":
+                s = y.sum()
+                y = y / s if s > 0 else y
+            elif norm == "modal":
+                m = y.max()
+                y = y / m if m > 0 else y
+
+            y_s = _smooth_1d(y, smooth_sigma)
+            ax.fill_between(x, y_s, step="mid", alpha=0.5, color=c)
+            ax.plot(x, y_s, color=c, linewidth=2)
+
         if log_scale:
-            data_for_kde = data_vals[data_vals > 0]
-            if len(data_for_kde) < 2: 
-                return fig # Empty
-            data_log = np.log10(data_for_kde)
-            x_grid = np.linspace(data_log.min(), data_log.max(), bins)
-            x_plot = 10**x_grid
-            eval_grid = x_grid
+            ax.set_xscale('log')
+
+        if title:
+            ax.set_title(title)
         else:
-            x_plot = np.linspace(data_vals.min(), data_vals.max(), bins)
-            data_log = data_vals
-            eval_grid = x_plot
-
-        kde = gaussian_kde(data_log)
-        density = kde(eval_grid)
-        
-        # Normalize
-        density = density / density.max() if density.max() > 0 else density
-
-        c = color if color else 'rgb(31, 119, 180)'
-        # Fix for tuple color from seaborn palette
-        if isinstance(c, tuple):
-            if len(c) == 3:
-                c = f"rgb({int(c[0]*255)}, {int(c[1]*255)}, {int(c[2]*255)})"
-            elif len(c) == 4:
-                c = f"rgba({int(c[0]*255)}, {int(c[1]*255)}, {int(c[2]*255)}, {c[3]})"
-
-        fig.add_trace(go.Scatter(
-            x=x_plot, y=density, mode='lines', 
-            fill='tozeroy', name=channel,
-            line=dict(color=c, width=2)
-        ))
-        
-        fig.update_layout(
-            title=title if title else f"Histogram of {channel}",
-            xaxis_title=channel + (" (Log)" if log_scale else ""),
-            yaxis_title="Relative Density",
-            showlegend=True,
-            plot_bgcolor='white', paper_bgcolor='white',
-            xaxis=dict(type="log" if log_scale else "linear", showgrid=True, gridcolor='lightgrey', color='black'),
-            yaxis=dict(showticklabels=False, showgrid=False),
-            font=dict(color='black'),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="center",
-                x=0.5,
-                font=dict(color='black'),
-                bgcolor="rgba(255,255,255,0.6)"
-            )
-        )
+            ax.set_title(f"Histogram of {channel}")
         return fig
 
-    # --- Merged / Ridge Plot (Multi-group) ---
+    # Ridge Plot Logic
+    groups = sorted(df[hue].unique())
     n_groups = len(groups)
     
-    # Create Subplots
-    fig = make_subplots(
-        rows=n_groups, cols=1, 
-        shared_xaxes=True, 
-        vertical_spacing=0.01, # Tight stacking
-        print_grid=False
-    )
+    if n_groups == 0:
+        return plt.figure()
 
-    # Color Palette - Use a distinct set of colors
-    colors = px.colors.qualitative.Plotly
-    if len(groups) > len(colors):
-        colors = colors * (len(groups) // len(colors) + 1)
+    # Determine columns to show in legend table
+    if legend_cols is None:
+        legend_cols = [hue, "Mean"]
+    
+    # If legend_cols is empty, user might want to hide table, but we will show at least colors?
+    # Or just return plot without table?
+    show_table = len(legend_cols) > 0
+    
+    # Calculate stats for the table
+    table_data = []
+    
+    for g in groups:
+        sub = df[df[hue] == g]
+        row_vals = []
+        
+        # First col is always Color Block (added later during table construction) hence strict loop over requested cols
+        for col_key in legend_cols:
+            if col_key == "Mean":
+                vals = sub[channel]
+                if log_scale:
+                     v = vals[vals > 0]
+                     mean_val = np.exp(np.log(v).mean()) if len(v) > 0 else 0
+                else:
+                    mean_val = vals.mean()
+                row_vals.append(f"{mean_val:.2f}")
+                
+            elif col_key == "Median":
+                 median_val = sub[channel].median()
+                 row_vals.append(f"{median_val:.2f}")
+                 
+            elif col_key == "Count":
+                 row_vals.append(str(len(sub)))
+                 
+            elif col_key == hue:
+                row_vals.append(str(g))
+                
+            elif col_key in df.columns:
+                # Try to get unique value
+                u_vals = sub[col_key].unique()
+                if len(u_vals) == 1:
+                    row_vals.append(str(u_vals[0]))
+                else:
+                    row_vals.append("Mixed")
+            else:
+                row_vals.append("-")
+                
+        table_data.append(row_vals)
 
-    # Determine Global Range for X-axis comparison across all subplots
+    # Layout
+    plt.rcParams.update({'font.size': 10})
+    
+    # Responsive height
+    if show_table:
+        fig = plt.figure(figsize=(10, max(4, n_groups * 0.8)))
+        # GridSpec: 4 parts plot, 1 part table (or wider if more cols)
+        gs = gridspec.GridSpec(n_groups, 2, width_ratios=[3, 1 + 0.2*len(legend_cols)], wspace=0.1, hspace=0)
+    else:
+        fig = plt.figure(figsize=(8, max(4, n_groups * 0.8)))
+        gs = gridspec.GridSpec(n_groups, 1, hspace=0)
+    
+    palette = sns.color_palette("bright", n_groups)
+
+    # Determine x limits
     if log_scale:
         valid_data = df[df[channel] > 0][channel]
         if len(valid_data) > 0:
-            x_min_log = np.log10(valid_data.min())
-            x_max_log = np.log10(valid_data.max())
+            x_min = 10**(np.floor(np.log10(valid_data.min())))
+            x_max = 10**(np.ceil(np.log10(valid_data.max())))
         else:
-            x_min_log, x_max_log = 0, 4
-        x_grid = np.linspace(x_min_log, x_max_log, bins)
-        x_plot = 10**x_grid
+            x_min, x_max = 0.1, 1000
     else:
         x_min = df[channel].min()
         x_max = df[channel].max()
-        x_plot = np.linspace(x_min, x_max, bins)
 
-    for i, g in enumerate(groups):
-        subset = df[df[hue] == g]
-        label = str(g)
-        c = colors[i]
+    axes = []
+    y_max_global = 0.0
+    cached_curves: list[tuple[np.ndarray, np.ndarray]] = []
 
-        if len(subset) < 2:
-            # Add dummy trace to maintain row index if empty
-            fig.add_trace(go.Scatter(x=[x_plot[0]], y=[0], showlegend=False), row=i+1, col=1)
+    # Precompute curves so we can enforce consistent y limits across rows
+    for group in groups:
+        subset = df[df[hue] == group]
+        x, y = _histogram_curve(subset[channel].values, bins=bins, log_scale=log_scale)
+        if x.size == 0:
+            cached_curves.append((x, y))
             continue
 
-        data_vals = subset[channel].values
-        
-        try:
-            if log_scale:
-                data_for_kde = data_vals[data_vals > 0]
-                if len(data_for_kde) < 2: continue
-                data_for_kde = np.log10(data_for_kde)
-                eval_grid = x_grid
-            else:
-                data_for_kde = data_vals
-                eval_grid = x_plot
+        if norm == "total":
+            s = y.sum()
+            y = y / s if s > 0 else y
+        elif norm == "modal":
+            m = y.max()
+            y = y / m if m > 0 else y
 
-            kde = gaussian_kde(data_for_kde)
-            density = kde(eval_grid)
-            
-            # Normalize density for consistent visual height (0 to 1) in ridge plot
-            if density.max() > 0:
-                density = density / density.max()
-            
-            row_idx = i + 1
-            
-            # Use rgba for transparency in the filled area
-            # Plotly handles hex->rgba or rgb->rgba if we specify opacity in fillcolor
-            
-            # Fix for tuple color from seaborn palette
-            if isinstance(c, tuple):
-                if len(c) == 3:
-                    c = f"rgb({int(c[0]*255)}, {int(c[1]*255)}, {int(c[2]*255)})"
-                elif len(c) == 4:
-                    c = f"rgba({int(c[0]*255)}, {int(c[1]*255)}, {int(c[2]*255)}, {c[3]})"
-            
-            # Use rgba for transparency in the filled area
-            fill_color = c
-            if isinstance(c, str):
-                if c.startswith('#'):
-                    r = int(c[1:3], 16)
-                    g_val = int(c[3:5], 16)
-                    b = int(c[5:7], 16)
-                    fill_color = f"rgba({r}, {g_val}, {b}, 0.5)"
-                elif c.startswith('rgb('):
-                    fill_color = c.replace('rgb(', 'rgba(').replace(')', ', 0.5)')
-
-            fig.add_trace(go.Scatter(
-                x=x_plot, 
-                y=density, 
-                mode='lines',
-                name=label,
-                fill='tozeroy',
-                line=dict(width=2, color=c),
-                fillcolor=fill_color,
-                showlegend=True
-            ), row=row_idx, col=1)
-            
-            # Performance/Aesthetics: Hide Y axis for this subplot
-            fig.update_yaxes(
-                showticklabels=False, 
-                showgrid=False, 
-                zeroline=False, 
-                range=[0, 1.1], # Keep normalized height consistent
-                row=row_idx, col=1
-            )
-            
-            # Set X-axis type for this subplot
-            fig.update_xaxes(
-                type="log" if log_scale else "linear",
-                showgrid=True,
-                gridcolor='rgba(200,200,200,0.2)',
-                row=row_idx, col=1
-            )
-
-        except Exception as e:
-            print(f"KDE failed for {label}: {e}")
-
-    # Final Layout Cleanup
-    fig.update_layout(
-        title=title if title else f"Density Plot of {channel}",
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="center",
-            x=0.5,
-            font=dict(color='black', size=12),
-            title=dict(text=f"{hue}: " if hue else "", font=dict(color='black')),
-            bgcolor="rgba(255,255,255,0.6)"
-        ),
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        font=dict(color='black'),
-        height=max(400, n_groups * 100),
-        margin=dict(t=100, b=60, l=60, r=60) # Balanced margins
-    )
+        y = _smooth_1d(y, smooth_sigma)
+        cached_curves.append((x, y))
+        if y.size > 0:
+            y_max_global = max(y_max_global, float(np.nanmax(y)))
     
-    # Hide labels for all except bottom X axis
-    if n_groups > 1:
-        for i in range(1, n_groups):
-            fig.update_xaxes(showticklabels=False, title_text="", row=i, col=1)
-        # Label bottom
-        fig.update_xaxes(title_text=channel + (" (Log)" if log_scale else ""), row=n_groups, col=1, color='black')
+    for i, group in enumerate(groups):
+        # Plot Axis (Left Column)
+        if show_table:
+            ax = fig.add_subplot(gs[i, 0])
+        else:
+            ax = fig.add_subplot(gs[i])
+            
+        axes.append(ax)
+        
+        color = palette[i]
+
+        x, y = cached_curves[i]
+        if x.size > 0:
+            ax.fill_between(x, y, step="mid", alpha=0.5, color=color)
+            ax.plot(x, y, color=color, linewidth=1.5)
+        
+        # Aesthetics
+        ax.set_ylabel("")
+        ax.set_yticks([]) 
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        ax.grid(False) 
+        ax.set_facecolor('white') 
+        
+        # X Axis
+        ax.set_xlim(x_min, x_max)
+        if y_max_global > 0:
+            ax.set_ylim(0, y_max_global * 1.05)
+        if i < n_groups - 1:
+            ax.set_xlabel("")
+            ax.set_xticklabels([])
+            ax.spines['bottom'].set_visible(False)
+            ax.axhline(0, color='gray', linewidth=0.5, alpha=0.5)
+        else:
+            ax.set_xlabel(channel)
+            ax.spines['bottom'].set_visible(True)
+
+        if log_scale:
+            ax.set_xscale('log')
+
+    # Table (Right Column)
+    if show_table:
+        ax_table = fig.add_subplot(gs[:, 1])
+        ax_table.axis('off')
+        
+        # Legend Table Header
+        col_labels = [""] + legend_cols
+        
+        # Use a Unicode block for the color box: ■ (U+25A0)
+        # Prepend color block char to each row
+        table_content = [["■"] + row for row in table_data]
+    
+        # Dynamic column widths
+        n_cols = len(col_labels)
+        # First col (color) small, others equal
+        widths = [0.05] + [0.95/(n_cols-1)] * (n_cols-1)
+    
+        tbl = ax_table.table(
+            cellText=table_content,
+            colLabels=col_labels,
+            loc='center',
+            cellLoc='left',
+            colWidths=widths, 
+            edges='horizontal'
+        )
+        
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(legend_font_size)
+        tbl.scale(1, 1.5)
+        
+        # Style stats
+        for i in range(n_groups):
+            # Row index i+1 (header is 0)
+            
+            # 1. Color Block (Column 0)
+            cell_color = tbl[(i+1, 0)]
+            # Set TEXT color to the palette color
+            cell_color.set_text_props(color=palette[i], weight='bold', size=14)
+            # Clear background/borders for cleaner look
+            cell_color.set_facecolor('white')
+            cell_color.set_edgecolor('white')
+            
+            # 2. Style other cells?
+            for j in range(1, n_cols):
+                 cell = tbl[(i+1, j)]
+                 if j == 1: # Usually the ID column
+                     cell.set_text_props(weight='bold')
 
     return fig
-

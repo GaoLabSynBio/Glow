@@ -23,6 +23,9 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
         defaults = [c for c in all_ch if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])]
         if not defaults: defaults = all_ch
         st.session_state.persistent_selected_channels = defaults
+        # Initialize checkbox keys for UI sync
+        for ch in all_ch:
+            st.session_state[f"checkbox_ch_{ch}"] = (ch in defaults)
 
     with col1:
         if 'base_experiment' in st.session_state and st.session_state.base_experiment is not None:
@@ -34,13 +37,26 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
             b1, b2, _ = st.columns([1, 1, 2])
             if b1.button("Select All", key="gating_sel_all"):
                 st.session_state.persistent_selected_channels = list(all_channels)
+                # Update individual checkbox keys for UI sync
+                for ch in all_channels:
+                    st.session_state[f"checkbox_ch_{ch}"] = True
                 st.rerun()
             if b2.button("Clear All", key="gating_clear_all"):
                 st.session_state.persistent_selected_channels = []
+                # Update individual checkbox keys for UI sync
+                for ch in all_channels:
+                    st.session_state[f"checkbox_ch_{ch}"] = False
                 st.rerun()
 
             # Dynamic Checkbox Selection (Click 1 to Include, Click again to Delete/Exclude)
             current_selected = set(st.session_state.get('persistent_selected_channels', []))
+            
+            # Ensure session state keys exist for all channels to prevent UI desync
+            for ch in all_channels:
+                k = f"checkbox_ch_{ch}"
+                if k not in st.session_state:
+                    st.session_state[k] = (ch in current_selected)
+
             new_selection = []
             
             # Display channels in a structured grid for easier selection
@@ -50,7 +66,7 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                 for i, ch in enumerate(all_channels):
                     with grid_cols[i % n_cols]:
                         # A checkbox is the most literal "Click to Include / Click to Delete" UI
-                        if st.checkbox(ch, value=(ch in current_selected), key=f"checkbox_ch_{ch}"):
+                        if st.checkbox(ch, key=f"checkbox_ch_{ch}"):
                             new_selection.append(ch)
             
             # Sync the final selection back to session state

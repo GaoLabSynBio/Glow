@@ -42,15 +42,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     x_axis = st.selectbox("X Axis", channels, index=channels.index(default_x) if default_x in channels else 0, key="csv_x")
                     y_axis = st.selectbox("Y Axis", channels, index=channels.index(default_y) if default_y in channels else 0, key="csv_y")
                     
-                    viz_col1, viz_col2, _ = st.columns([1, 1, 3])
-                    with viz_col1:
+                    c_opt1, c_opt2, c_opt3 = st.columns([1, 1, 1])
+                    with c_opt1:
                         scale_opt = st.radio("Scale", ["Linear", "Log"], index=1, horizontal=True, key="csv_scale")
                         is_log = (scale_opt == "Log")
-                with viz_col1:
-                    drag_tool = st.radio("Interaction", ["Pan", "Box Select"], index=0, horizontal=True, key="csv_interaction_mode")
-                    drag_mode = "pan" if drag_tool == "Pan" else "select"
-                    with viz_col2:
-                         cmap_selected = st.selectbox("Colormap", ["Viridis", "Plasma"], index=0, key="csv_cmap")
+                    with c_opt2:
+                        drag_tool = st.radio("Interaction", ["Pan", "Box Select"], index=0, horizontal=True, key="csv_interaction_mode")
+                        drag_mode = "pan" if drag_tool == "Pan" else "select"
+                    with c_opt3:
+                        cmap_selected = st.selectbox("Colormap", ["Viridis", "Plasma"], index=0, key="csv_cmap")
 
                     # High performance plotting - Downsample for interaction speed if necessary, but density calc on full relevant set
                     df_viz = exp.data.copy()
@@ -112,17 +112,18 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     fig.update_layout(
                         plot_bgcolor='white',
                         paper_bgcolor='white',
+                        height=600,
+                        margin=dict(l=40, r=40, t=60, b=40),
                         xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
                         yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
                         font=dict(color="black"),
                         legend=dict(font=dict(color="black"))
                     )
 
-                    st.plotly_chart(fig)
-
-                    # Add to Canvas Button
-                    if st.button(f"Add \"Population Density\" to Canvas", key="add_density_to_canvas"):
-                        add_plot_to_canvas(fig, "Population Density")
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    if st.button("Save Pop Density to Canvas", key="btn_save_csv_density"):
+                        add_plot_to_canvas(fig, "Processed Population Density")
                         st.success("Plot added to canvas!")
             
             return
@@ -159,11 +160,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 unique_cell_lines = []
                 
                 # Inspect metadata for cell line information
+                # NOTE: We treat *any* detected cell-line column (even a single unique value)
+                # as "Per Cell Line" mode so downstream manual gating and singlet gating follow
+                # the same (more robust) code path.
                 potential_cols = ['Cell Line', 'Cell_Line', 'cell_line', 'CellType', 'cell_type', 'Strain', 'strain']
                 for c in potential_cols:
                     if c in base_exp.data.columns:
                         unique_vals = base_exp.data[c].dropna().astype(str).unique()
-                        if len(unique_vals) > 1:
+                        if len(unique_vals) >= 1:
                             cell_line_col = c
                             unique_cell_lines = sorted(unique_vals)
                             break
@@ -174,7 +178,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 working_exp = base_exp
                 
                 if is_multi_line_meta:
-                    st.info(f"Detected multiple cell lines in '{cell_line_col}': {', '.join(unique_cell_lines)}")
+                    if len(unique_cell_lines) > 1:
+                        st.info(f"Detected multiple cell lines in '{cell_line_col}': {', '.join(unique_cell_lines)}")
+                    else:
+                        st.info(f"Detected cell line in '{cell_line_col}': {', '.join(unique_cell_lines)}")
                     gating_mode = "Per Cell Line"
                     
                     # Selector for current cell line
@@ -183,7 +190,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     # Filter Experiment for this cell line
                     import cytoflow
                     try:
-                        subset_data = base_exp.data[base_exp.data[cell_line_col] == active_cell_line].copy()
+                        subset_mask = base_exp.data[cell_line_col].astype(str) == str(active_cell_line)
+                        subset_data = base_exp.data[subset_mask].copy()
                         subset_data.reset_index(drop=True, inplace=True)
                         
                         # Correctly rebuild metadata for Cytoflow
@@ -626,10 +634,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                         st.plotly_chart(fig_val, use_container_width=True)
 
-                        if st.button("Add \"Live Classification\" to Canvas", key="add_val_to_canvas"):
-                            add_plot_to_canvas(fig_val, "Live Classification")
-                            st.success("Plot added to canvas!")
-
 
                     # --- Manual Gate Visualization ---
 
@@ -667,6 +671,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     # Render Plot
                     # Use selection_mode='points' for clicking individual cells
                     selection = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points" if drag_mode=="pan" else "box", key=f"live_gating_plot_{len(df)}_{st.session_state.get('plot_id', 0)}")
+
+                    canvas_title = "Live/Dead Gating"
+                    if active_cell_line:
+                        canvas_title += f" ({active_cell_line})"
+                    if st.button(f"Add \"{canvas_title}\" to Canvas", key=f"add_live_gate_to_canvas{ukey}"):
+                        add_plot_to_canvas(fig, canvas_title)
+                        st.success("Plot added to canvas!")
                     render_labeling_controls(exp, x_channel, y_channel, selection, plot_df=plot_df)
                     
                     # Check for NEW selection
@@ -956,17 +967,59 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     vertices.append((float(p[0].strip()), float(p[1].strip())))
                                 
                                 gater = GatingManager()
-                                total_cells = len(base_exp.data)
                                 
-                                # Apply to BASE experiment
-                                manual_exp = gater.apply_manual_gate(base_exp, "ManualLiveGate", x_channel, y_channel, vertices)
+                                # Apply manual gate in the same "Per Cell Line" path when cell-line metadata exists
+                                # (even if only one line), so Singlet Detection can reliably re-apply the saved gate.
+                                total_cells = len(base_exp.data)
+                                manual_target_exp = base_exp
+                                active_for_log = None
+                                
+                                if is_multi_line_meta and active_cell_line:
+                                    active_for_log = active_cell_line
+                                    try:
+                                        import cytoflow
+                                        subset_mask = base_exp.data[cell_line_col].astype(str) == str(active_cell_line)
+                                        subset_data = base_exp.data[subset_mask].copy()
+                                        subset_data.reset_index(drop=True, inplace=True)
+                                        total_cells = len(subset_data)
+
+                                        new_metadata = {}
+                                        for col in subset_data.columns:
+                                            if col in base_exp.metadata:
+                                                new_metadata[col] = base_exp.metadata[col]
+                                            else:
+                                                if subset_data[col].dtype.name in ['object', 'category']:
+                                                    new_metadata[col] = {'type': 'condition', 'class': 'category'}
+                                                else:
+                                                    new_metadata[col] = {'type': 'channel'}
+
+                                        manual_target_exp = cytoflow.Experiment(data=subset_data, metadata=new_metadata)
+                                    except Exception:
+                                        manual_target_exp = base_exp
+
+                                # Apply to chosen experiment (subset or full)
+                                manual_exp = gater.apply_manual_gate(manual_target_exp, "ManualLiveGate", x_channel, y_channel, vertices)
 
                                 # Store params for Export
-                                st.session_state.live_gate_params = {
-                                    'type': 'polygon',
-                                    'vertices': vertices,
-                                    'channels': [x_channel, y_channel]
-                                }
+                                if is_multi_line_meta and active_cell_line:
+                                    if 'cell_line_gates' not in st.session_state:
+                                        st.session_state.cell_line_gates = {}
+                                    st.session_state.cell_line_gates[active_cell_line] = {
+                                        'type': 'polygon',
+                                        'vertices': vertices,
+                                        'channels': [x_channel, y_channel]
+                                    }
+                                    st.session_state.live_gate_params = {
+                                        'type': 'per_cell_line',
+                                        'gates': st.session_state.cell_line_gates,
+                                        'col': cell_line_col
+                                    }
+                                else:
+                                    st.session_state.live_gate_params = {
+                                        'type': 'polygon',
+                                        'vertices': vertices,
+                                        'channels': [x_channel, y_channel]
+                                    }
                                 
                                 # Filter manually to match Auto behavior
                                 if "ManualLiveGate" in manual_exp.data.columns:
@@ -980,8 +1033,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.session_state.manual_vertices = vertices # Save for visualization
                                 
                                 # Determine Cell Line for logging
-                                current_cell_line = "Unknown"
-                                if st.session_state.get('loaded_files'):
+                                current_cell_line = active_for_log or "Unknown"
+                                if not active_for_log and st.session_state.get('loaded_files'):
                                     lines = set()
                                     for f in st.session_state.loaded_files:
                                         cl = f.get('Cell_Line') or f.get('Cell Line') or 'Unknown'
@@ -1005,6 +1058,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 
                                 st.session_state.gate_accepted = True
                                 st.session_state.doublets_removed = False # Reset downstream step
+                                st.session_state.show_manual_gating = False
                                 st.rerun()
                                     
                             except Exception as e:
@@ -1027,13 +1081,17 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         # --- Per Cell Line Mode Detection for Singlets ---
                         active_line_singlets = None
                         if is_multi_line_meta:
-                            st.info(f"Detected multiple cell lines. Process singlets per cell line.")
+                            if len(unique_cell_lines) > 1:
+                                st.info("Detected multiple cell lines. Process singlets per cell line.")
+                            else:
+                                st.info("Processing singlets for detected cell line.")
                             
                             # Selector for current cell line (independent from Step 1)
                             active_line_singlets = st.selectbox("Select Cell Line for Singlet Gating", unique_cell_lines, key="singlet_cell_line_sel")
                             
                             # Filter Base Experiment for this cell line
-                            subset_data = base_exp.data[base_exp.data[cell_line_col] == active_line_singlets].copy()
+                            subset_mask = base_exp.data[cell_line_col].astype(str) == str(active_line_singlets)
+                            subset_data = base_exp.data[subset_mask].copy()
                             subset_data.reset_index(drop=True, inplace=True)
                             
                             # Re-Apply the Live/Dead Gate previously saved for this cell line
@@ -1255,10 +1313,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 # Selection Interaction
                                 # User req for Shift selection is handled by Plotly standard behavior with clickmode
                                 sel_d = st.plotly_chart(fig_d, use_container_width=True, on_select="rerun", selection_mode="points", key="doublet_chart")
-
-                                if st.button("Add \"Singlet Detection\" to Canvas", key="add_singlet_to_canvas"):
-                                    add_plot_to_canvas(fig_d, "Singlet Detection")
-                                    st.success("Plot added to canvas!")
                                 
                                 # Counter for selection
                                 if is_manual_active:
@@ -1585,6 +1639,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             st.header("4. Export Data")
                             
                             export_mode = st.radio("Export Mode", ["Gated Population (Live + Singlets)", "Full Population (Annotated)"], horizontal=True)
+
+                            export_only_selected_channels = st.checkbox(
+                                "Only include selected channels (drop other channel columns)",
+                                value=False,
+                                help="By default exports ALL channels + ALL metadata columns. Enable this only if you intentionally want to reduce file size by dropping unselected channel columns."
+                            )
                             
                             # Determine Experiment Name for filename
                             import os
@@ -1602,10 +1662,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             if export_mode == "Gated Population (Live + Singlets)":
                                 df_gated = st.session_state.gated_experiment.data.copy()
                                 
-                                # Filter channels if requested
-                                if st.session_state.get('selected_channels'):
-                                    all_ch = st.session_state.base_experiment.channels
-                                    to_drop = [c for c in all_ch if c not in st.session_state.selected_channels]
+                                # Optional: drop unselected CHANNEL columns only (never drop metadata/conditions)
+                                if export_only_selected_channels and st.session_state.get('selected_channels'):
+                                    all_ch = list(getattr(st.session_state.base_experiment, 'channels', []))
+                                    keep_ch = list(st.session_state.selected_channels)
+                                    to_drop = [c for c in all_ch if c not in keep_ch]
                                     df_gated = df_gated.drop(columns=[c for c in to_drop if c in df_gated.columns])
 
                                 # Unify columns to represent the state of this data
@@ -1624,13 +1685,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     # Clone base
                                     full_exp = st.session_state.base_experiment.clone()
 
-                                    # Filter channels if requested
-                                    if st.session_state.get('selected_channels'):
-                                        all_ch = st.session_state.base_experiment.channels
-                                        to_drop = [c for c in all_ch if c not in st.session_state.selected_channels]
+                                    # Optional: drop unselected CHANNEL columns only (never drop metadata/conditions)
+                                    if export_only_selected_channels and st.session_state.get('selected_channels'):
+                                        all_ch = list(getattr(st.session_state.base_experiment, 'channels', []))
+                                        keep_ch = list(st.session_state.selected_channels)
+                                        to_drop = [c for c in all_ch if c not in keep_ch]
                                         full_exp.data = full_exp.data.drop(columns=[c for c in to_drop if c in full_exp.data.columns])
                                         if hasattr(full_exp, 'channels'):
-                                            full_exp.channels = st.session_state.selected_channels
+                                            full_exp.channels = keep_ch
 
                                     bgater = GatingManager()
                                     

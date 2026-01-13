@@ -2,6 +2,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import importlib
 from glow.plotting import plots
+from glow.canvas.functions import add_plot_to_canvas
 
 def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scale):
     """
@@ -36,6 +37,30 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
     show_individual = False
     legend_columns = None
     legend_font_size = 10
+
+    st.markdown("#### Histogram Rendering")
+    smooth_sigma = st.slider(
+        "Smoothing (0 = none)",
+        min_value=0.0,
+        max_value=10.0,
+        value=2.0,
+        step=0.2,
+        help="Controls smoothing strength of the histogram curve. Higher values = smoother curve."
+    )
+
+    normalization_mode = "total"
+    if hue_var:
+        normalization_mode = st.selectbox(
+            "Merged Plot Normalization",
+            options=[
+                ("Original (raw counts)", "original"),
+                ("Modal normalization (FlowJo-style)", "modal"),
+                ("Total count normalization", "total"),
+            ],
+            index=2,
+            format_func=lambda x: x[0],
+            help="Original: preserve event count differences. Modal: scale each group so peaks match. Total: scale each group so total area sums to 1."
+        )[1]
     
     c1, c2 = st.columns(2)
     with c1: show_merged = st.checkbox("Show Merged/Main Plot", value=True)
@@ -60,48 +85,57 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
         from glow.plotting import histogram, plots as main_plots
         importlib.reload(histogram)
         importlib.reload(main_plots)
-        
+
         with st.spinner("Generating plots..."):
             try:
                 # Merged Plot
                 if show_merged:
                     st.subheader("Merged Plot")
                     fig = main_plots.plot_1d_histogram(
-                        filtered_experiment, 
-                        channel=selected_channel, 
-                        hue=hue_var, 
+                        filtered_experiment,
+                        channel=selected_channel,
+                        hue=hue_var,
                         scale=scale,
                         legend_cols=legend_columns,
-                        legend_font_size=legend_font_size
+                        legend_font_size=legend_font_size,
+                        smooth_sigma=smooth_sigma,
+                        normalization=normalization_mode
                     )
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    from glow.canvas.functions import add_plot_to_canvas
+                    st.pyplot(fig)
+
+                    canvas_title = f"Histogram: {selected_channel} by {hue_var}" if hue_var else f"Histogram: {selected_channel}"
                     if st.button("Add Merged Plot to Canvas", key="add_merged_hist_to_canvas"):
-                        add_plot_to_canvas(fig, f"Histogram: {selected_channel} by {hue_var}" if hue_var else f"Histogram: {selected_channel}")
+                        add_plot_to_canvas(fig, canvas_title)
                         st.success("Plot added to canvas!")
-                
+
+                    plt.close(fig)
+
                 # Individual Plots
                 if show_individual and hue_var:
                     st.subheader("Individual Plots")
                     groups = sorted(filtered_experiment.data[hue_var].unique())
-                    
+
                     import seaborn as sns
                     palette = sns.color_palette("bright", len(groups))
-                    
+
                     cols = st.columns(2)
                     for i, group in enumerate(groups):
                         sub_exp = plots.filter_experiment(filtered_experiment, hue_var, [group])
                         with cols[i % 2]:
-                            # st.markdown(f"**{group}**")
                             fig = main_plots.plot_1d_histogram(
-                                sub_exp, 
-                                channel=selected_channel, 
-                                hue=None, 
+                                sub_exp,
+                                channel=selected_channel,
+                                hue=None,
                                 scale=scale,
                                 color=palette[i],
-                                title=f"Experiment: {group}"
+                                title=f"Experiment: {group}",
+                                smooth_sigma=smooth_sigma,
+                                normalization="total"
                             )
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.pyplot(fig)
+                            if st.button(f"Add \"{group}\" Histogram to Canvas", key=f"add_hist_ind_{i}_to_canvas"):
+                                add_plot_to_canvas(fig, f"Histogram: {selected_channel} ({group})")
+                                st.success("Plot added to canvas!")
+                            plt.close(fig)
             except Exception as e:
                 st.error(f"Error: {e}")

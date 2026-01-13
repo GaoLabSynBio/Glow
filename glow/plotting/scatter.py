@@ -14,6 +14,14 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
     """
     df = experiment.data
     
+    # User requested: no matter what is chosen for color and facet, each experiment name should has its own curve.
+    # We use "Experiment Name" as the internal grouping variable for trend lines.
+    exp_col = None
+    for c in ["Experiment Name", "Experiment_Name", "Sample", "sample"]:
+        if c in df.columns:
+            exp_col = c
+            break
+
     # 1. Determine Facets (Axes)
     if facet_col and facet_col in df.columns:
         facets = sorted(df[facet_col].unique())
@@ -28,21 +36,24 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
         axs = [axs]
         
     # 2. Determine Hues (Lines within each facet)
+    # The 'Hues' here determine the COLOR of the lines.
+    # If hue_col is provided, we color by that. 
+    # Otherwise, if we group by experiment, we might want unique colors for experiments or a single color.
+    # To satisfy the request: each experiment gets a curve. 
+    # We will iterate over unique experiments within each facet.
     if hue_col and hue_col in df.columns:
-        hues = sorted(df[hue_col].unique())
+        unique_colors = sorted(df[hue_col].unique())
     else:
-        hues = [None]
+        unique_colors = [None]
         
-    # Color Palette per Hue
-    palette = sns.color_palette("bright", len(hues)) if len(hues) > 0 else ['black']
-    hue_color_map = {h: palette[i] for i, h in enumerate(hues)}
+    # Color Palette per Color Category
+    palette = sns.color_palette("bright", len(unique_colors)) if len(unique_colors) > 0 else ['black']
+    color_map = {h: palette[i] for i, h in enumerate(unique_colors)}
     
     # 3. Pre-calculate all trend lines
-    # Structure: all_traces = [ {'facet': f, 'hue': h, 'x': series, 'y': series, 'color': c}, ... ]
     all_traces = []
     
     for facet in facets:
-        # Filter for Facet
         if facet == "All Data":
             facet_df = df
         else:
@@ -50,43 +61,45 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
             
         if len(facet_df) == 0: continue
             
-        for hue in hues:
-            # Filter for Hue
-            if hue is None:
-                subset_df = facet_df
-                color = 'black'
-            else:
-                subset_df = facet_df[facet_df[hue_col] == hue]
-                color = hue_color_map[hue]
+        # Group by Experiment Name (the requested individual curve)
+        if exp_col:
+            groups = facet_df.groupby(exp_col)
+        else:
+            groups = [(None, facet_df)]
+
+        for group_name, subset_df in groups:
+            if len(subset_df) < (batch_size // 5): continue
                 
-            if len(subset_df) < (batch_size // 5): # heuristic min size
-                continue
+            # Determine color and label based on hue_col
+            if hue_col and hue_col in df.columns:
+                # Assuming one hue per experiment in a facet (common in flow)
+                # If an experiment has multiple hues, this takes the first one found
+                h_val = subset_df[hue_col].iloc[0]
+                color = color_map.get(h_val, 'black')
+                label = f"{h_val} ({group_name})" if group_name is not None else str(h_val)
+            else:
+                color = 'black'
+                label = str(group_name) if group_name is not None else "Mean"
                 
             # Calculate Rolling Mean
-            # Logic adapted from snippet: sort by X, then roll
             subset_df = subset_df.sort_values(by=x_channel)
             
-            # Using simple integer-based rolling on sorted data
-            # Check effective batch size
             eff_batch = batch_size
             if len(subset_df) < eff_batch:
                 eff_batch = max(5, int(len(subset_df) * 0.1))
             
             roller = subset_df.rolling(window=eff_batch, min_periods=eff_batch//2, center=True)
-            
-            # Note: roller.mean() returns a DF with same index. 
-            # We want the x and y coordinates of the mean line.
-            # rolling mean of X is also needed to center the line correctly on x-axis
             roll_x = roller[x_channel].mean()
             roll_y = roller[y_channel].mean()
             
             all_traces.append({
                 'facet': facet,
-                'hue': hue,
+                'group': group_name,
                 'x': roll_x,
                 'y': roll_y,
                 'color': color,
-                'label': str(hue) if hue else "Mean"
+                'label': label,
+                'hue_val': h_val if hue_col else None
             })
 
     # 4. Plotting Loop
@@ -190,18 +203,30 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
     for trace in all_traces:
         # Plot all traces on summary
-        # Use label only if not already labeled? 
-        # But we have multiple lines with same Hue (one per experiment).
-        # Label should probably be "Mean" or "Hue". 
-        # If we just use trace['label'], we get duplicates in legend.
+        # For the legend, we still want to group by Hue if labels are messy
         ax_sum.plot(trace['x'], trace['y'], color=trace['color'], linewidth=2.5, alpha=0.8, label=trace['label'], zorder=10)
 
         
-    # De-duplicate legend
+    # De-duplicate legend to show unique Hues or group names
     handles, labels = ax_sum.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    if by_label:
-        ax_sum.legend(by_label.values(), by_label.keys(), loc='best', fontsize='small')
+    # If we have many lines but few hues, we can simplify legend to show just hues
+    if hue_col:
+        # Map back to hue label only for a cleaner legend
+        clean_labels = []
+        clean_handles = []
+        seen = set()
+        for h, l in zip(handles, labels):
+             # Extract the hue part from "Hue (Experiment)"
+             base_l = l.split(" (")[0]
+             if base_l not in seen:
+                  clean_labels.append(base_l)
+                  clean_handles.append(h)
+                  seen.add(base_l)
+        ax_sum.legend(clean_handles, clean_labels, loc='best', fontsize='small', title=hue_col)
+    else:
+        by_label = dict(zip(labels, handles))
+        if by_label:
+            ax_sum.legend(by_label.values(), by_label.keys(), loc='best', fontsize='small')
         
     if xscale == 'log': ax_sum.set_xscale('log')
     if yscale == 'log': ax_sum.set_yscale('log')

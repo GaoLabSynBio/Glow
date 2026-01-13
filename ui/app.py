@@ -3,7 +3,7 @@ import os
 import sys
 
 # Set page config must be the first streamlit command
-st.set_page_config(page_title="Glow Flow Analysis", layout="wide", page_icon="assets/xjgao.jpg")
+st.set_page_config(page_title="Glow Flow Analysis", layout="wide")
 
 # Add parent directory to path to import pipeline modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -32,89 +32,7 @@ from plot.view import render_plot_tab
 from canvas.view import render_canvas_tab
 from gating.ui_file_loader import clear_experiment_state
 
-import base64
-
-def get_base64_image(image_path):
-    with open(image_path, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-
-try:
-    img_b64 = get_base64_image("assets/xjgao.jpg")
-except Exception:
-    img_b64 = ""
-
-st.markdown(f"""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@800&display=swap');
-
-    .glow-header {{
-        display: flex;
-        align-items: center;
-        gap: 20px;
-        padding-bottom: 20px;
-        border-bottom: 1px solid #333;
-        margin-bottom: 30px;
-    }}
-    
-    @keyframes move-gradient {{
-        0% {{ background-position: 0% 50%; }}
-        50% {{ background-position: 100% 50%; }}
-        100% {{ background-position: 0% 50%; }}
-    }}
-    
-    .shiny-text {{
-        font-family: 'Montserrat', sans-serif;
-        font-size: 4rem;
-        font-weight: 800;
-        background: linear-gradient(
-            to right,
-            #BF953F,
-            #FCF6BA,
-            #B38728,
-            #FBF5B7,
-            #AA771C
-        );
-        background-size: 200% auto;
-        animation: move-gradient 4s linear infinite;
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-        text-shadow: 0px 0px 10px rgba(191, 149, 63, 0.4);
-        letter-spacing: -2px;
-    }}
-    
-    .logo-container {{
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;
-        overflow: hidden;
-        border: 4px solid transparent;
-        background: linear-gradient(
-            to right,
-            #BF953F,
-            #FCF6BA,
-            #B38728,
-            #FBF5B7,
-            #AA771C
-        ) border-box;
-        box-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
-    }}
-    
-    .logo-img {{
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }}
-</style>
-
-<div class="glow-header">
-    <div class="logo-container">
-        <img src="data:image/jpeg;base64,{img_b64}" class="logo-img">
-    </div>
-    <div class="shiny-text">GLOW</div>
-</div>
-""", unsafe_allow_html=True)
+st.title("Glow Flow Analysis Pipeline")
 
 # Initialize Session State for Workflow
 if 'gating_complete' not in st.session_state:
