@@ -233,7 +233,22 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     mlp_cell_type = "colo"
                     if gating_method == "MLP":
                         cell_type_opts = ["colo", "hek", "hug1n", "snu", "b16", "cho"]
-                        mlp_cell_type = st.selectbox("Cell Type (Model Context)", cell_type_opts, index=0, key=f"ctype{ukey}")
+                        
+                        # Auto-select based on active_cell_line if it matches one of the options
+                        default_idx = 0
+                        if active_cell_line:
+                            normalized_line = str(active_cell_line).lower()
+                            # 1. Exact Match
+                            if normalized_line in cell_type_opts:
+                                default_idx = cell_type_opts.index(normalized_line)
+                            else:
+                                # 2. Partial/Fuzzy Match (e.g. "hek293" -> "hek")
+                                for i, opt in enumerate(cell_type_opts):
+                                    if opt in normalized_line:
+                                        default_idx = i
+                                        break
+
+                        mlp_cell_type = st.selectbox("Cell Line (Model Context)", cell_type_opts, index=default_idx, format_func=lambda x: x.upper(), key=f"ctype{ukey}")
                 
                 # Default values to prevent unbound errors
                 eps = 0.05
