@@ -336,9 +336,10 @@ class MLPGating(AutomaticGating):
     """
     MLP-based gating using a pre-trained neural network.
     """
-    def __init__(self, name: str, channels: List[str], model_path: str = "data/gating_model_full.pkl", outlier_detector: Optional[OutlierDetector] = None):
+    def __init__(self, name: str, channels: List[str], model_path: str = "data/gating_model_full.pkl", outlier_detector: Optional[OutlierDetector] = None, cell_type: str = "colo"):
         super().__init__(name, channels, outlier_detector)
         self.model_path = model_path
+        self.cell_type = cell_type
 
     def apply(self, experiment):
         from glow.active_learning.models import GatingClassifier
@@ -362,14 +363,22 @@ class MLPGating(AutomaticGating):
         # Heuristic Log Transform if data seems linear (max > 10)
         # The model 'gating_model_full.pkl' was trained on Log data.
         if np.max(xs) > 10:
-            xs = np.log1p(xs)
+            xs = np.log10(xs)
         if np.max(ys) > 10:
-            ys = np.log1p(ys)
+            ys = np.log10(ys)
             
         X = np.column_stack([xs, ys])
         
+        # Prepare Metadata for Cell-Type Aware Inference
+        # 1. Dataset ID: We treat the current experiment as a single batch (ID=0)
+        #    so the DensityCenteringTransformer calculates the mode of THIS specific data.
+        dataset_ids = np.zeros(len(X), dtype=int)
+        
+        # 2. Cell Type: Broadcast user selection
+        cell_types = np.array([self.cell_type] * len(X))
+        
         # Predict
-        preds = clf.predict(X)
+        preds = clf.predict(X, dataset_ids=dataset_ids, cell_types=cell_types)
         
         # Result
         res = experiment.clone()

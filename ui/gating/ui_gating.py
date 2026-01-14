@@ -223,11 +223,32 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 # Gating Method Selection
                 col_g1, col_g2 = st.columns(2)
                 with col_g1:
-                    options = ["Density", "GMM", "DBSCAN"]
+                    options = ["MLP", "Density", "GMM", "DBSCAN"]
                     if gating_mode == "Mixed Population (Cluster)":
                         options = ["GMM", "DBSCAN"]
                     
                     gating_method = st.selectbox("Gating Method", options, index=0, key=f"method{ukey}")
+
+                    # Context for MLP
+                    mlp_cell_type = "colo"
+                    if gating_method == "MLP":
+                        cell_type_opts = ["colo", "hek", "hug1n", "snu", "b16", "cho"]
+                        
+                        # Auto-select based on active_cell_line if it matches one of the options
+                        default_idx = 0
+                        if active_cell_line:
+                            normalized_line = str(active_cell_line).lower()
+                            # 1. Exact Match
+                            if normalized_line in cell_type_opts:
+                                default_idx = cell_type_opts.index(normalized_line)
+                            else:
+                                # 2. Partial/Fuzzy Match (e.g. "hek293" -> "hek")
+                                for i, opt in enumerate(cell_type_opts):
+                                    if opt in normalized_line:
+                                        default_idx = i
+                                        break
+
+                        mlp_cell_type = st.selectbox("Cell Line (Model Context)", cell_type_opts, index=default_idx, format_func=lambda x: x.upper(), key=f"ctype{ukey}")
                 
                 # Default values to prevent unbound errors
                 eps = 0.05
@@ -244,10 +265,16 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         sigma_val = 2.0
                         num_comp = 2 # Unused
                         min_samples = 50
-                    else:
+                    elif gating_method == "GMM":
                         num_comp = st.number_input("Num Components", min_value=1, max_value=5, value=2, key=f"comp{ukey}")
                         keep_percent = 0.9 # Unused
                         sigma_val = 2.0 # Unused
+                        min_samples = 50
+                    else: # MLP
+                        st.caption("Using Pre-trained MLP Model")
+                        num_comp = 2
+                        keep_percent = 0.9
+                        sigma_val = 2.0
                         min_samples = 50
 
                 use_outliers = st.checkbox("Remove Outliers before Estimation", value=False, key=f"outliers{ukey}")
@@ -270,7 +297,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 'eps': eps,
                 'min_samples': min_samples,
                 'use_outliers': use_outliers,
-                'working_exp_id': id(working_exp) # Ensure we re-run if the subset/file changes
+                'working_exp_id': id(working_exp), # Ensure we re-run if the subset/file changes
+                'model_cell_type': mlp_cell_type
             }
             
             # Key for storing last params needs to be unique per cell line too, 
@@ -294,7 +322,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                                     sigma=sigma_val,
                                                                     use_outlier_removal=use_outliers,
                                                                     eps=eps,
-                                                                    min_samples=min_samples)
+                                                                    min_samples=min_samples,
+                                                                    cell_type=mlp_cell_type)
                         
                         # Update State
                         st.session_state.gated_experiment = gated_experiment
