@@ -67,12 +67,13 @@ class DensityCenteringTransformer(BaseEstimator, TransformerMixin):
 
         return X_out
 
+
 class GatingClassifier:
     """
     A neural network classifier for distinguishing In-Gate (Live) vs Out-Gate (Debris/Outlier) events.
     Architecture:
-    - Input: 2 Features (Log_FSC, Log_SSC)
-    - Preprocessing: DensityCentering -> StandardScaler
+    - Input: 2 Features (Log_FSC, Log_SSC) + 16 Cell Type Features (One-Hot)
+    - Preprocessing: DensityCentering -> StandardScaler (on continuous) + OneHot (on categorical)
     - Network: MLP with 3 hidden layers (128, 64, 32 neurons)
     - Activation: ReLU
     - Output: Binary classification probability
@@ -96,18 +97,55 @@ class GatingClassifier:
             verbose=False
         )
         self.is_fitted = False
+        self.max_cell_types = 16
+        self.cell_type_map = {'colo': 0}
+
+    def _encode_cell_types(self, cell_types, n_samples):
+        # Result placeholder
+        X_cat = np.zeros((n_samples, self.max_cell_types))
+        
+        target_indices = []
+        if cell_types is None:
+            # Default to 'colo', which is index 0
+            default_idx = self.cell_type_map.get('colo', 0)
+            target_indices = [default_idx] * n_samples
+        else:
+            if isinstance(cell_types, str):
+                cell_types = [cell_types] * n_samples
+            
+            for ct in cell_types:
+                if ct not in self.cell_type_map:
+                    if len(self.cell_type_map) < self.max_cell_types:
+                        self.cell_type_map[ct] = len(self.cell_type_map)
+                    else:
+                        # Fallback to colo if we exceed capacity
+                        pass
+                target_indices.append(self.cell_type_map.get(ct, 0))
+                
+        X_cat[np.arange(n_samples), target_indices] = 1
+        return X_cat
+
+    def _prepare_input(self, X_centered_scaled, cell_types):
+        # Handle backward compatibility for models trained on just 2 features
+        if hasattr(self.mlp, 'n_features_in_') and self.mlp.n_features_in_ == 2:
+            return X_centered_scaled
+
+        dataset_len = X_centered_scaled.shape[0]
+        X_cat = self._encode_cell_types(cell_types, dataset_len)
+        return np.hstack([X_centered_scaled, X_cat])
 
     def set_context_mode(self, mode):
         """Pass context (dataset mode) to the centerer."""
         self.centerer.set_reference_mode(mode)
 
-    def fit(self, X, y, dataset_ids=None):
+    def fit(self, X, y, dataset_ids=None, cell_types=None):
         """
         Train the model.
         Args:
             X: Features (Log_FSC, Log_SSC)
             y: Labels
             dataset_ids: Optional, array of dataset identifiers for correct per-dataset centering.
+            cell_types: Optional, list of cell type strings.
         """
         # 1. Center
         X_centered = self.centerer.transform(X, dataset_ids=dataset_ids)
@@ -115,12 +153,15 @@ class GatingClassifier:
         # 2. Scale
         X_scaled = self.scaler.fit_transform(X_centered)
 
-        # 3. Train
-        self.mlp.fit(X_scaled, y)
+        # 3. Prepare
+        X_final = self._prepare_input(X_scaled, cell_types)
+
+        # 4. Train
+        self.mlp.fit(X_final, y)
         self.is_fitted = True
         return self
 
-    def partial_fit(self, X, y, classes=None, dataset_ids=None):
+    def partial_fit(self, X, y, classes=None, dataset_ids=None, cell_types=None):
         """
         Incremental update of the model.
         """
@@ -134,12 +175,15 @@ class GatingClassifier:
         self.scaler.partial_fit(X_centered)
         X_scaled = self.scaler.transform(X_centered)
 
-        # 3. Update MLP
-        self.mlp.partial_fit(X_scaled, y, classes=classes)
+        # 3. Prepare
+        X_final = self._prepare_input(X_scaled, cell_types)
+
+        # 4. Update MLP
+        self.mlp.partial_fit(X_final, y, classes=classes)
         self.is_fitted = True
         return self
 
-    def predict(self, X, dataset_ids=None):
+    def predict(self, X, dataset_ids=None, cell_types=None):
         """Returns class predictions (0 or 1)."""
         if not self.is_fitted:
             # Fallback for unfitted predictions (e.g. init)
@@ -147,28 +191,31 @@ class GatingClassifier:
 
         X_centered = self.centerer.transform(X, dataset_ids=dataset_ids)
         X_scaled = self.scaler.transform(X_centered)
-        return self.mlp.predict(X_scaled)
+        X_final = self._prepare_input(X_scaled, cell_types)
+        return self.mlp.predict(X_final)
 
-    def predict_proba(self, X, dataset_ids=None):
+    def predict_proba(self, X, dataset_ids=None, cell_types=None):
         """
         Returns probability of class 1 (Live).
         """
         X_centered = self.centerer.transform(X, dataset_ids=dataset_ids)
         X_scaled = self.scaler.transform(X_centered)
-        probs = self.mlp.predict_proba(X_scaled)
+        X_final = self._prepare_input(X_scaled, cell_types)
+        probs = self.mlp.predict_proba(X_final)
         return probs[:, 1]
 
-    def score(self, X, y, dataset_ids=None):
+    def score(self, X, y, dataset_ids=None, cell_types=None):
         """Returns accuracy."""
         X_centered = self.centerer.transform(X, dataset_ids=dataset_ids)
         X_scaled = self.scaler.transform(X_centered)
-        return self.mlp.score(X_scaled, y)
+        X_final = self._prepare_input(X_scaled, cell_types)
+        return self.mlp.score(X_final, y)
 
-    def uncertainty(self, X, dataset_ids=None):
+    def uncertainty(self, X, dataset_ids=None, cell_types=None):
         """
         Calculates uncertainty metric.
         """
-        probs = self.predict_proba(X, dataset_ids=dataset_ids) # P(Live)
+        probs = self.predict_proba(X, dataset_ids=dataset_ids, cell_types=cell_types) # P(Live)
         uncertainty = 1.0 - np.abs(probs - 0.5) * 2.0
         return uncertainty
 
@@ -190,6 +237,11 @@ class GatingClassifier:
         loaded = joblib.load(filepath)
 
         if isinstance(loaded, cls):
+            # Migration check: ensure new attributes exist if loading old version
+            if not hasattr(loaded, 'max_cell_types'):
+                loaded.max_cell_types = 16
+            if not hasattr(loaded, 'cell_type_map'):
+                loaded.cell_type_map = {'colo': 0}
             return loaded
         elif hasattr(loaded, 'predict'):
             # Legacy Pipeline support
