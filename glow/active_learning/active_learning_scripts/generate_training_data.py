@@ -21,9 +21,9 @@ print(f"Generating {N_DATASETS} datasets of {N_POINTS} points...")
 
 for i in range(N_DATASETS):
     # Suppress print output from generate_synthetic_data using a context manager or just let it print if checking progress?
-    # The function prints to stdout. 1000 datasets * 4 lines = 4000 lines. 
+    # The function prints to stdout. 1000 datasets * 4 lines = 4000 lines.
     # That's a lot of spam. I should redirect stdout temporarily.
-    
+
     # Simple stdout capture
     with open(os.devnull, 'w') as fnull:
         original_stdout = sys.stdout
@@ -37,15 +37,15 @@ for i in range(N_DATASETS):
     # In-gate: Live, Out-gate: Debris, Outliers
     df['Label'] = (df['TrueLabel'] == 'Live').astype(int)
     df['DatasetID'] = i
-    
+
     # Add Log columns for convenience
     df["Log_FSC"] = np.log10(df["FSC-A"] + 1e-1)
     df["Log_SSC"] = np.log10(df["SSC-A"] + 1e-1)
-    
+
     # Select columns
     keep_cols = ["DatasetID", "FSC-A", "SSC-A", "Log_FSC", "Log_SSC", "Label", "TrueLabel"]
     all_dfs.append(df[keep_cols])
-    
+
     if (i+1) % 100 == 0:
         print(f"  Generated {i+1}/{N_DATASETS} datasets")
 

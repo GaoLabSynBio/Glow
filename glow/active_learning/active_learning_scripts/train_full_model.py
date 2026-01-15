@@ -35,10 +35,10 @@ def train_and_plot():
     # Features: Log_FSC, Log_SSC
     # Note: df already has Log_FSC, Log_SSC calculated.
     X = df[['Log_FSC', 'Log_SSC']].to_numpy()
-    
+
     # Label: 0 or 1
     y = df['Label'].to_numpy()
-    
+
     # Metadata for GatingClassifier
     dataset_ids = df['DatasetID'].to_numpy()
     cell_types = df['CellType'].to_numpy()
@@ -63,12 +63,12 @@ def train_and_plot():
     model.mlp.n_iter_no_change = 5
 
     print("Starting training (Standard fit)...")
-    
+
     # model.fit expects: X, y, dataset_ids, cell_types
     model.fit(
-        X_train, 
-        y_train, 
-        dataset_ids=id_train, 
+        X_train,
+        y_train,
+        dataset_ids=id_train,
         cell_types=ct_train
     )
 
@@ -79,7 +79,7 @@ def train_and_plot():
     # ---------------------------------------------------------
     print("Evaluating on Validation Set...")
     y_pred = model.predict(X_val, dataset_ids=id_val, cell_types=ct_val)
-    
+
     acc = accuracy_score(y_val, y_pred)
     print(f"Validation Accuracy: {acc:.4%}")
     print("\nClassification Report:")
@@ -94,7 +94,7 @@ def train_and_plot():
     # The user asked to save to data/
     with open(output_path, 'wb') as f:
         joblib.dump(model, f)
-        
+
     print("Model saved.")
 
     # ---------------------------------------------------------
@@ -104,7 +104,7 @@ def train_and_plot():
         print("Generating loss curve...")
         plt.figure(figsize=(10, 6))
         plt.plot(model.mlp.loss_curve_, label='Training Loss')
-        
+
         # If early stopping was used, validation scores might be available in validation_scores_
         if hasattr(model.mlp, 'validation_scores_') and model.mlp.validation_scores_:
              plt.plot(model.mlp.validation_scores_, label='Validation Score (Accuracy)')
@@ -114,7 +114,7 @@ def train_and_plot():
         plt.xlabel('Iterations')
         plt.ylabel('Loss')
         plt.grid(True)
-        
+
         plot_path = "data/training_loss_curve.png"
         plt.savefig(plot_path)
         print(f"Saved loss curve to {plot_path}")

@@ -1,8 +1,21 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import importlib
+import io
 from glow.plotting import plots
 from glow.canvas.functions import add_plot_to_canvas
+
+def download_btn(fig, key):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="svg")
+    buf.seek(0)
+    st.download_button(
+        label="Download SVG",
+        data=buf,
+        file_name=f"plot_{key}.svg",
+        mime="image/svg+xml",
+        key=key
+    )
 
 def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditions, scale):
     """
@@ -11,7 +24,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
     col1, col2 = st.columns(2)
     with col1: x_channel = st.selectbox("X Axis Channel", channels, index=0)
     with col2: y_channel = st.selectbox("Y Axis Channel", channels, index=1 if len(channels) > 1 else 0)
-    
+
     # Move selection here
     c_grp1, c_grp2 = st.columns(2)
     with c_grp1:
@@ -21,27 +34,27 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
             index=0 if not conditions else 1
         )
         hue_var = None if compare_by == "None" else compare_by
-        
+
     with c_grp2:
         # Default to Experiment Name if available
         default_idx = 0
-        if "Experiment Name" in conditions: 
+        if "Experiment Name" in conditions:
             try:
                 default_idx = (["None"] + conditions).index("Experiment Name")
             except:
                 default_idx = 0
         facet_by = st.selectbox("Facet By (Subplots)", ["None"] + conditions, index=default_idx)
         facet_var = None if facet_by == "None" else facet_by
-    
+
     # Scatter specific settings
     c_opt1, c_opt2, c_opt3 = st.columns(3)
     with c_opt1: show_trend = st.checkbox("Show Trend Line (Moving Mean)", value=True)
     with c_opt2: show_dots = st.checkbox("Show Dots (Density Color)", value=True)
     with c_opt3: show_grid = st.checkbox("Show Grid", value=False)
-    
+
     show_merged = True
     show_individual = False
-    
+
     # Logic for merging/individual view selection based on trend mode
     c1, c2 = st.columns(2)
     with c1: show_merged = st.checkbox("Show Merged/Main Plot", value=True)
@@ -91,6 +104,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                         fig_facets, fig_summary = res
                         st.subheader("Merged Comparison")
                         st.pyplot(fig_summary)
+                        download_btn(fig_summary, "scatter_summary_svg")
                         if st.button("Add Summary Plot to Canvas", key="add_scatter_summary_to_canvas"):
                             add_plot_to_canvas(fig_summary, base_title + " (summary)")
                             st.success("Plot added to canvas!")
@@ -98,12 +112,14 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
 
                         st.subheader("Separate Panels (Detailed)")
                         st.pyplot(fig_facets)
+                        download_btn(fig_facets, "scatter_facets_svg")
                         if st.button("Add Facet Plot to Canvas", key="add_scatter_facets_to_canvas"):
                             add_plot_to_canvas(fig_facets, base_title + " (facets)")
                             st.success("Plot added to canvas!")
                         plt.close(fig_facets)
                     else:
                         st.pyplot(res)
+                        download_btn(res, "scatter_svg")
                         if st.button("Add Plot to Canvas", key="add_scatter_to_canvas"):
                             add_plot_to_canvas(res, base_title)
                             st.success("Plot added to canvas!")
@@ -127,6 +143,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 title=f"Experiment: {group}"
                             )
                             st.pyplot(fig)
+                            download_btn(fig, f"scatter_ind_{i}_svg")
                             if st.button(f"Add \"{group}\" to Canvas", key=f"add_scatter_ind_{i}_to_canvas"):
                                 add_plot_to_canvas(fig, base_title + f" ({group})")
                                 st.success("Plot added to canvas!")

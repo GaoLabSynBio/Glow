@@ -7,7 +7,7 @@ from .bar_ui import render_bar_ui
 
 def render_plot_tab():
     st.header("Plotting")
-    
+
     if 'analysis_experiment' in st.session_state and st.session_state.analysis_experiment is not None:
         experiment = st.session_state.analysis_experiment
     elif 'base_experiment' in st.session_state and st.session_state.base_experiment is not None:
@@ -25,7 +25,7 @@ def render_plot_tab():
 
     # 2. Main Plot Type Selection
     all_available_channels = plots.get_channels(filtered_experiment)
-    
+
     # Filter channels based on selection in Gating tab if available
     # Use persistent state to survive tab switch
     user_selected = st.session_state.get('persistent_selected_channels')
@@ -33,7 +33,7 @@ def render_plot_tab():
         channels = [c for c in all_available_channels if c in user_selected]
     else:
         channels = all_available_channels
-    
+
     with st.sidebar:
         st.subheader("Plot Settings")
         plot_type = st.selectbox(
@@ -54,7 +54,7 @@ def render_plot_tab():
         col_s, _ = st.columns([1,2])
         with col_s:
             scale = st.selectbox("Scale", scale_opts, index=0)
-    
+
     # 4. Delegate to specific sub-modules
     if plot_type == "1D Histogram":
         render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scale)

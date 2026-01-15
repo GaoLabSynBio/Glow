@@ -21,12 +21,12 @@ def get_channels(experiment):
              return sorted(experiment.channels)
     except Exception:
         pass # Fallback if cytoflow property crashes
-    
+
     # Fallback if channels attribute is missing but data exists
     if hasattr(experiment, 'data'):
         # Filter for numeric columns
         return [c for c in experiment.data.columns if pd.api.types.is_numeric_dtype(experiment.data[c])]
-    
+
     return []
 
 def get_conditions(experiment):
@@ -38,11 +38,11 @@ def get_conditions(experiment):
             return sorted(experiment.conditions) # if list
     except Exception:
         pass # Fallback if cytoflow property crashes
-        
+
     # Fallback
     if hasattr(experiment, 'data'):
          return sorted([c for c in experiment.data.columns if not pd.api.types.is_numeric_dtype(experiment.data[c])])
-    
+
     return []
 
 def filter_experiment(experiment, condition, values):
@@ -53,9 +53,9 @@ def filter_experiment(experiment, condition, values):
     data = experiment.data
     if condition not in data.columns:
         return experiment
-    
+
     subset_df = data[data[condition].isin(values)].copy()
-    
+
     # Return a new object of the same type if possible, or a basic wrapper
     # Using the same class if possible
     cls = type(experiment)
@@ -83,7 +83,7 @@ def get_point_density(x, y, bins=100, log_x=False, log_y=False):
 
     x = x[mask]
     y = y[mask]
-    
+
     if len(x) == 0:
         return np.array([]), mask
 
@@ -94,33 +94,33 @@ def get_point_density(x, y, bins=100, log_x=False, log_y=False):
 
     # Histogram
     hh, locx, locy = np.histogram2d(tx, ty, bins=bins)
-    
+
     # Compute density for each point
     # Digitizing coordinates
-    # np.searchsorted gives index to insert. 
-    # Bin i is [edges[i], edges[i+1]). 
-    # searchsorted returns i if x < edges[i]. 
+    # np.searchsorted gives index to insert.
+    # Bin i is [edges[i], edges[i+1]).
+    # searchsorted returns i if x < edges[i].
     # We want bin index.
-    
+
     ix = np.searchsorted(locx, tx) - 1
     iy = np.searchsorted(locy, ty) - 1
-    
+
     # Clip indices
     ix = np.clip(ix, 0, bins-1)
     iy = np.clip(iy, 0, bins-1)
-    
+
     # Lookup density
     z = hh[ix, iy]
-    
+
     # Log normalize
     z = np.log1p(z)
-    
+
     # Normalize 0..1
     if z.max() > z.min():
         z = (z - z.min()) / (z.max() - z.min())
     else:
         z = np.zeros_like(z)
-        
+
     return z, mask
 
 def calculate_gated_mean(df, gate_channel, value_channel, threshold, statistic='mean'):
@@ -134,12 +134,12 @@ def calculate_gated_mean(df, gate_channel, value_channel, threshold, statistic='
         gated_df = df[(df[gate_channel] >= low) & (df[gate_channel] <= high)]
     else:
         gated_df = df[df[gate_channel] > threshold]
-    
+
     if len(gated_df) == 0:
         return np.nan
-        
+
     vals = gated_df[value_channel]
-    
+
     if statistic == 'mean':
         return vals.mean()
     elif statistic == 'median':
@@ -149,7 +149,7 @@ def calculate_gated_mean(df, gate_channel, value_channel, threshold, statistic='
         pos_vals = vals[vals > 0]
         if len(pos_vals) == 0: return np.nan
         return np.exp(np.log(pos_vals).mean())
-    
+
     return np.nan
 
 def get_percentile_threshold(df, channel, percentile=99.9):
@@ -188,15 +188,15 @@ def calculate_significance(data1, data2):
     # Remove NaNs
     d1 = d1[np.isfinite(d1)]
     d2 = d2[np.isfinite(d2)]
-    
+
     if len(d1) < 2 or len(d2) < 2:
         return 1.0, "ns", 1.0
-        
+
     # Calculate Fold Change (Mean based)
     m1 = np.mean(d1)
     m2 = np.mean(d2)
     fc = m2 / m1 if m1 != 0 else 0
-    
+
     try:
         stat, p = stats.ttest_ind(d1, d2, equal_var=False)
         if p < 0.001:
@@ -224,18 +224,18 @@ def adjust_pvalues(p_values, method='t-test'):
     Returns adjusted p-values.
     """
     if not p_values: return []
-    
+
     if method in ['t-test', 'none'] or mt is None:
         return p_values
-        
+
     method_map = {
         'bonferroni': 'bonferroni',
         'fdr': 'fdr_bh', # False Discovery Rate (Benjamini-Hochberg)
         'fdr_bh': 'fdr_bh'
     }
-    
+
     m = method_map.get(method.lower(), 'fdr_bh')
-    
+
     try:
         reject, pvals_corrected, _, _ = mt.multipletests(p_values, method=m)
         return pvals_corrected

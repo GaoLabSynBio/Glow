@@ -49,9 +49,9 @@ class DensityCenteringTransformer(BaseEstimator, TransformerMixin):
         for uid in unique_ids:
             mask = (dataset_ids == uid)
             X_sub = X[mask]
-            
+
             key = str(uid)
-            
+
             if X_sub.shape[0] >= 50:
                 mode = self._find_mode(X_sub)
                 self.dataset_modes[key] = mode
@@ -62,7 +62,7 @@ class DensityCenteringTransformer(BaseEstimator, TransformerMixin):
                     mode = self.reference_mode
                 else:
                     mode = self._find_mode(X_sub)
-            
+
             X_out[mask] = X_sub - mode
 
         return X_out
@@ -103,7 +103,7 @@ class GatingClassifier:
     def _encode_cell_types(self, cell_types, n_samples):
         # Result placeholder
         X_cat = np.zeros((n_samples, self.max_cell_types))
-        
+
         target_indices = []
         if cell_types is None:
             # Default to 'colo', which is index 0
@@ -112,7 +112,7 @@ class GatingClassifier:
         else:
             if isinstance(cell_types, str):
                 cell_types = [cell_types] * n_samples
-            
+
             for ct in cell_types:
                 if ct not in self.cell_type_map:
                     if len(self.cell_type_map) < self.max_cell_types:
@@ -121,7 +121,7 @@ class GatingClassifier:
                         # Fallback to colo if we exceed capacity
                         pass
                 target_indices.append(self.cell_type_map.get(ct, 0))
-                
+
         X_cat[np.arange(n_samples), target_indices] = 1
         return X_cat
 

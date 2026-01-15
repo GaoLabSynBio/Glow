@@ -78,7 +78,7 @@ def plot_1d_histogram(
     # If no hue, simple histogram (Individual Plots)
     if not hue or hue not in df.columns:
         fig, ax = plt.subplots(figsize=(8, 6))
-        
+
         c = color if color is not None else 'gray'
 
         x, y = _histogram_curve(df[channel].values, bins=bins, log_scale=log_scale)
@@ -106,25 +106,25 @@ def plot_1d_histogram(
     # Ridge Plot Logic
     groups = sorted(df[hue].unique())
     n_groups = len(groups)
-    
+
     if n_groups == 0:
         return plt.figure()
 
     # Determine columns to show in legend table
     if legend_cols is None:
         legend_cols = [hue, "Mean"]
-    
+
     # If legend_cols is empty, user might want to hide table, but we will show at least colors?
     # Or just return plot without table?
     show_table = len(legend_cols) > 0
-    
+
     # Calculate stats for the table
     table_data = []
-    
+
     for g in groups:
         sub = df[df[hue] == g]
         row_vals = []
-        
+
         # First col is always Color Block (added later during table construction) hence strict loop over requested cols
         for col_key in legend_cols:
             if col_key == "Mean":
@@ -135,17 +135,17 @@ def plot_1d_histogram(
                 else:
                     mean_val = vals.mean()
                 row_vals.append(f"{mean_val:.2f}")
-                
+
             elif col_key == "Median":
                  median_val = sub[channel].median()
                  row_vals.append(f"{median_val:.2f}")
-                 
+
             elif col_key == "Count":
                  row_vals.append(str(len(sub)))
-                 
+
             elif col_key == hue:
                 row_vals.append(str(g))
-                
+
             elif col_key in df.columns:
                 # Try to get unique value
                 u_vals = sub[col_key].unique()
@@ -155,12 +155,12 @@ def plot_1d_histogram(
                     row_vals.append("Mixed")
             else:
                 row_vals.append("-")
-                
+
         table_data.append(row_vals)
 
     # Layout
     plt.rcParams.update({'font.size': 10})
-    
+
     # Responsive height
     if show_table:
         fig = plt.figure(figsize=(10, max(4, n_groups * 0.8)))
@@ -169,7 +169,7 @@ def plot_1d_histogram(
     else:
         fig = plt.figure(figsize=(8, max(4, n_groups * 0.8)))
         gs = gridspec.GridSpec(n_groups, 1, hspace=0)
-    
+
     palette = sns.color_palette("bright", n_groups)
 
     # Determine x limits
@@ -207,32 +207,32 @@ def plot_1d_histogram(
         cached_curves.append((x, y))
         if y.size > 0:
             y_max_global = max(y_max_global, float(np.nanmax(y)))
-    
+
     for i, group in enumerate(groups):
         # Plot Axis (Left Column)
         if show_table:
             ax = fig.add_subplot(gs[i, 0])
         else:
             ax = fig.add_subplot(gs[i])
-            
+
         axes.append(ax)
-        
+
         color = palette[i]
 
         x, y = cached_curves[i]
         if x.size > 0:
             ax.fill_between(x, y, step="mid", alpha=0.5, color=color)
             ax.plot(x, y, color=color, linewidth=1.5)
-        
+
         # Aesthetics
         ax.set_ylabel("")
-        ax.set_yticks([]) 
+        ax.set_yticks([])
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_visible(False)
-        ax.grid(False) 
-        ax.set_facecolor('white') 
-        
+        ax.grid(False)
+        ax.set_facecolor('white')
+
         # X Axis
         ax.set_xlim(x_min, x_max)
         if y_max_global > 0:
@@ -253,36 +253,36 @@ def plot_1d_histogram(
     if show_table:
         ax_table = fig.add_subplot(gs[:, 1])
         ax_table.axis('off')
-        
+
         # Legend Table Header
         col_labels = [""] + legend_cols
-        
+
         # Use a Unicode block for the color box: ■ (U+25A0)
         # Prepend color block char to each row
         table_content = [["■"] + row for row in table_data]
-    
+
         # Dynamic column widths
         n_cols = len(col_labels)
         # First col (color) small, others equal
         widths = [0.05] + [0.95/(n_cols-1)] * (n_cols-1)
-    
+
         tbl = ax_table.table(
             cellText=table_content,
             colLabels=col_labels,
             loc='center',
             cellLoc='left',
-            colWidths=widths, 
+            colWidths=widths,
             edges='horizontal'
         )
-        
+
         tbl.auto_set_font_size(False)
         tbl.set_fontsize(legend_font_size)
         tbl.scale(1, 1.5)
-        
+
         # Style stats
         for i in range(n_groups):
             # Row index i+1 (header is 0)
-            
+
             # 1. Color Block (Column 0)
             cell_color = tbl[(i+1, 0)]
             # Set TEXT color to the palette color
@@ -290,7 +290,7 @@ def plot_1d_histogram(
             # Clear background/borders for cleaner look
             cell_color.set_facecolor('white')
             cell_color.set_edgecolor('white')
-            
+
             # 2. Style other cells?
             for j in range(1, n_cols):
                  cell = tbl[(i+1, j)]

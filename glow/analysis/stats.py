@@ -5,10 +5,10 @@ def get_summary_statistics(experiment):
     """
     Returns a DataFrame with summary statistics for the experiment.
     Include: Sample Name, Total Events, Live %, Singlets %.
-    
+
     Args:
         experiment: Cytoflow Experiment object.
-        
+
     Returns:
         pd.DataFrame
     """
@@ -17,7 +17,7 @@ def get_summary_statistics(experiment):
 
     results = []
     data = experiment.data
-    
+
     # Identify sample grouping column
     group_cols = []
     try:
@@ -28,7 +28,7 @@ def get_summary_statistics(experiment):
     except Exception:
         # Fallback if Cytoflow metadata is corrupted or mismatching data columns
         pass
-    
+
     # If no conditions found in experiment metadata, check columns for typical names
     if not group_cols:
         possible_cols = ['Sample', 'sample', 'Name', 'name', 'folder_name']
@@ -36,7 +36,7 @@ def get_summary_statistics(experiment):
             if c in data.columns:
                 group_cols = [c]
                 break
-    
+
     if group_cols:
         grouped = data.groupby(group_cols)
     else:
@@ -51,7 +51,7 @@ def get_summary_statistics(experiment):
             sample_name = str(name)
 
         total_events = len(group)
-        
+
         # --- Resolve LIVE Column ---
         # Candidates for Live/Dead flag
         # Order: 'cells' (CSV standard), 'Is_Live', 'AutoLiveGate', 'Live'
@@ -60,7 +60,7 @@ def get_summary_statistics(experiment):
             if cand in group.columns:
                 live_col_name = cand
                 break
-        
+
         # Calculate Live Mask
         if live_col_name:
             col = group[live_col_name]
@@ -76,7 +76,7 @@ def get_summary_statistics(experiment):
             live_mask = pd.Series([False] * total_events, index=group.index)
 
         live_count = live_mask.sum()
-        
+
         # --- Resolve SINGLETS Column ---
         # Candidates for Singlet flag
         # Order: 'singlets', 'Singlets', 'Is_Singlet', 'Singlet', 'LearnedSinglet'
@@ -85,7 +85,7 @@ def get_summary_statistics(experiment):
             if cand in group.columns:
                 singlet_col_name = cand
                 break
-        
+
         # Calculate Singlet Mask (Subset of Live)
         # Requirement: "singlets percentage should be further determined among cells=TRUE"
         if singlet_col_name:
@@ -95,7 +95,7 @@ def get_summary_statistics(experiment):
             else:
                 vals = pd.to_numeric(col, errors='coerce')
                 raw_singlet_mask = (vals >= 0)
-            
+
             # Intersection: Must be Live AND Singlet
             # This ensures we count the subset.
             final_singlet_mask = live_mask & raw_singlet_mask
@@ -106,10 +106,10 @@ def get_summary_statistics(experiment):
         # Calculate percentages
         # Live %: Fraction of Total
         live_pct = (live_count / total_events * 100) if total_events > 0 else 0
-        
+
         # Singlets %: Fraction of Live Population (per user instruction)
         singlet_pct = (singlet_count / live_count * 100) if live_count > 0 else 0
-        
+
         row = {
             'Sample': sample_name,
             'Total Events': total_events,

@@ -15,7 +15,7 @@ class ParquetBatchLoader:
         self.parquet_file = pq.ParquetFile(file_path)
         self.num_row_groups = self.parquet_file.num_row_groups
         self.total_rows = self.parquet_file.metadata.num_rows
-        
+
         if row_group_indices is not None:
             self.row_group_indices = row_group_indices
         else:

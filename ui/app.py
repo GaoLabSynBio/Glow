@@ -57,7 +57,7 @@ tabs.append("Canvas")
 if st.session_state.current_tab not in tabs:
     st.session_state.current_tab = "Gating" # Default fallback
 
-# Use a key to sync state, but handle manual changes via callback if needed. 
+# Use a key to sync state, but handle manual changes via callback if needed.
 # Simple approach: use the radio value.
 selected_tab = st.sidebar.radio("Go to", tabs, index=tabs.index(st.session_state.current_tab))
 
@@ -78,7 +78,7 @@ if selected_tab == "Gating":
             st.session_state.analysis_complete = False
             clear_experiment_state() # Ensure fresh state when unlocking
             st.rerun()
-            
+
     # Render the gating tab content
     render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE)
 
