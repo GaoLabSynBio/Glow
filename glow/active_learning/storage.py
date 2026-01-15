@@ -35,7 +35,7 @@ class ActiveLearningLogger:
         """
         Saves a batch of labeled data (features + labels) to a Parquet file.
         Useful for accumulating training data for the neural network.
-        
+
         Args:
             X (np.ndarray): N x 2 array of features (Log_FSC, Log_SSC).
             y (np.ndarray): N array of labels (0/1).
@@ -43,12 +43,12 @@ class ActiveLearningLogger:
         """
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = os.path.join(self.storage_dir, f"labeled_batch_{timestamp}.parquet")
-        
+
         df = pd.DataFrame(X, columns=["Log_FSC", "Log_SSC"])
         df["Label"] = y
         df["Source"] = source
         df["Timestamp"] = datetime.datetime.now().isoformat()
-        
+
         try:
             df.to_parquet(filename, index=False)
             print(f"Saved labeled batch to {filename} ({len(df)} samples)")
@@ -77,7 +77,7 @@ class ActiveLearningLogger:
                             except json.JSONDecodeError:
                                 pass
         return all_feedback
-    
+
     def load_all_labeled_data(self):
         """
         Loads and concatenates all saving labeled batches.
@@ -86,7 +86,7 @@ class ActiveLearningLogger:
         dfs = []
         if not os.path.exists(self.storage_dir):
              return None, None
-             
+
         for filename in sorted(os.listdir(self.storage_dir)):
             if filename.startswith("labeled_batch_") and filename.endswith(".parquet"):
                 try:
@@ -94,10 +94,10 @@ class ActiveLearningLogger:
                     dfs.append(df)
                 except Exception as e:
                     print(f"Error reading {filename}: {e}")
-                    
+
         if not dfs:
             return None, None
-            
+
         full_df = pd.concat(dfs, ignore_index=True)
         X = full_df[["Log_FSC", "Log_SSC"]].values
         y = full_df["Label"].values

@@ -4,14 +4,14 @@ import numpy as np
 def parse_metadata_file(uploaded_file, header_row_idx, data_start_idx, global_exp_name_coords=None, df_raw=None):
     """
     Parses a CSV or Excel file into a DataFrame.
-    
+
     Args:
         uploaded_file: The file object (from st.file_uploader or open()). Used if df_raw is None.
         header_row_idx: Index of the row containing headers.
         data_start_idx: Index of the row where data starts.
         global_exp_name_coords: Optional tuple (row, col) to extract experiment name.
         df_raw: Optional pre-loaded DataFrame (raw with no header).
-        
+
     Returns:
         pd.DataFrame: The parsed metadata.
     """
@@ -60,16 +60,16 @@ def parse_metadata_file(uploaded_file, header_row_idx, data_start_idx, global_ex
 
     # 4. Data Slice
     df_parsed = df_raw.iloc[data_start_idx:].copy()
-    
+
     # 5. Assign Headers
     if len(df_parsed.columns) == len(final_headers):
         df_parsed.columns = final_headers
-    
+
     df_parsed.reset_index(drop=True, inplace=True)
 
     # 6. Apply Global Experiment Name
     if global_exp_name:
-        # Determine if we overwrite or fillna. 
+        # Determine if we overwrite or fillna.
         # For simplicity, if we extracted it globally, we probably want to apply it globally.
         df_parsed["Experiment_Name"] = global_exp_name
 

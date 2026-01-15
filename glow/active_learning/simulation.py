@@ -25,7 +25,7 @@ def analyze_data_for_gating(data_df, channels):
     # Standardize for clustering stability
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    
+
     # Compute a simple 1D "Brightness Score" for ranking (Sum of standardized Log channels)
     # This aligns with the diagonal elongation of populations.
     brightness_scores = X_scaled.sum(axis=1)
@@ -39,7 +39,7 @@ def analyze_data_for_gating(data_df, channels):
 
     clusters = []
     noise_mask = (labels == -1)
-    
+
     # Collect Cluster Stats
     for l in unique_labels:
         mask = (labels == l)
@@ -47,23 +47,23 @@ def analyze_data_for_gating(data_df, channels):
         mean_brightness = np.mean(brightness_scores[mask])
 
         clusters.append({
-            "id": l, 
-            "count": count, 
-            "brightness": mean_brightness, 
+            "id": l,
+            "count": count,
+            "brightness": mean_brightness,
             "mask": mask
         })
 
     print(f"    DBSCAN found {len(clusters)} clusters.")
     for c in clusters:
         print(f"      Cluster {c['id']}: N={c['count']}, Brightness={c['brightness']:.2f}")
-        
+
     # Initialize outlier_low estimate
     suggested_outlier_low = 0.0
 
     # --- Step 2: Identify Debris & Cutoff ---
     if len(clusters) == 0:
         print("    WARNING: No clusters found. Assuming sparse data/noise.")
-        suggested_outlier_low = np.mean(noise_mask) 
+        suggested_outlier_low = np.mean(noise_mask)
 
     elif len(clusters) == 1:
         print("    Single cluster detected (Live+Debris merged). Running GMM for internal separation...")
@@ -72,32 +72,32 @@ def analyze_data_for_gating(data_df, channels):
         c = clusters[0]
         mask = c['mask']
         X_cluster = X_scaled[mask]
-        
+
         gmm = GaussianMixture(n_components=2, random_state=42)
         gmm.fit(X_cluster)
-        
+
         # Analyze components
         means = gmm.means_ # Shape (2, 2)
         comp_brightness = means.sum(axis=1) # Projected means
-        
+
         idx_sorted = np.argsort(comp_brightness)
         low_idx = idx_sorted[0]
         high_idx = idx_sorted[1]
-        
+
         mu_debris = comp_brightness[low_idx]
         mu_live = comp_brightness[high_idx]
-        
+
         weight_debris = gmm.weights_[low_idx]
-        
+
         print(f"      Debris Mode: {mu_debris:.2f} (Weight={weight_debris:.1%})")
         print(f"      Live Mode:   {mu_live:.2f}")
-        
+
         # --- RECALL OPTIMIZATION ---
         # User wants to capture as many Live cells as possible, even overlapping ones.
         # We place the cut boundary "conservatively" - closer to the Debris center than the Live center.
         # Standard midpoint would be 0.5. We use 0.35 to bias towards keeping data.
         # boundary = mu_debris + 0.35 * (mu_live - mu_debris)
-        
+
         # Ideally, we want to cut the "core" of the debris, effectively using the GMM to tell us
         # where the debris density drops off.
         # A simple heuristic: Cut where the Debris is dominant?
@@ -108,14 +108,14 @@ def analyze_data_for_gating(data_df, channels):
         # This translates our "Intensity Cut" into a "Quantile Cut" for OutlierDetector
         n_below_boundary = np.sum(brightness_scores < boundary_val)
         suggested_outlier_low = n_below_boundary / len(data_df)
-        
+
         print(f"      Calculated 'Safe' Cutoff Boundary: {boundary_val:.2f} (Percentile: {suggested_outlier_low:.1%})")
-        
+
     else:
         # Multiple clusters. We assume the darkest one is Debris.
         sorted_clusters = sorted(clusters, key=lambda c: c['brightness'])
         debris_cluster = sorted_clusters[0]
-        
+
         # In a multi-cluster scenario, the debris cluster is likely well-separated.
         # However, to be safe (maximize recall), we should check if we really want to cut *all* of it?
         # Usually yes, if it's a distinct cluster.
@@ -123,14 +123,14 @@ def analyze_data_for_gating(data_df, channels):
         total_debris = debris_cluster["count"] + np.sum(noise_mask)
         suggested_outlier_low = total_debris / len(data_df)
         print(f"    lowest-intensity cluster ({debris_cluster['id']}) identified as Debris.")
-        
+
     # --- Step 3: Configure Parameters ---
     suggested_outlier_low = min(0.60, suggested_outlier_low)
     suggested_outlier_low = max(0.01, suggested_outlier_low)
 
     # Keep Ratio:
-    # Since we are being conservative with outlier removal (allowing some debris in), 
-    # we should trust DensityGating to find the peak. 
+    # Since we are being conservative with outlier removal (allowing some debris in),
+    # we should trust DensityGating to find the peak.
     # 0.95 keeps the core 95%.
     ratio = 0.95
 
@@ -147,7 +147,7 @@ def generate_synthetic_data(n_samples=5000):
     # 1. Randomize Proportions
     prop_outliers = np.random.uniform(0.01, 0.05)
     remaining = 1.0 - prop_outliers
-    
+
     prop_main = np.random.uniform(0.50, remaining - 0.1)
     prop_debris = remaining - prop_main
 
@@ -160,14 +160,14 @@ def generate_synthetic_data(n_samples=5000):
     print(f"  Debris: {n_debris} ({prop_debris:.1%})")
 
     # 2. Debris: Concentrated near Log10 5.5 - 6.5 (Real data range matches ~10^6 range)
-    debris_fsc_center = np.random.uniform(5.5, 6.2) 
+    debris_fsc_center = np.random.uniform(5.5, 6.2)
     debris_ssc_center = np.random.uniform(5.5, 6.2)
-    
+
     # Dense (sigma 0.15-0.25 in Log10 space -> ~0.35-0.6 in Ln space)
     sigma_debris = np.random.uniform(0.15, 0.25)
-    cov_debris = [[sigma_debris**2, 0.5*sigma_debris*sigma_debris], 
+    cov_debris = [[sigma_debris**2, 0.5*sigma_debris*sigma_debris],
                   [0.5*sigma_debris*sigma_debris, sigma_debris**2]]
-    
+
     debris_data = np.random.multivariate_normal(
         [debris_fsc_center, debris_ssc_center], cov_debris, n_debris
     )
@@ -176,17 +176,17 @@ def generate_synthetic_data(n_samples=5000):
     # dist_offset ensures separation but we want explicit placement
     live_fsc_center = np.random.uniform(7.5, 7.9)
     live_ssc_center = np.random.uniform(7.3, 7.7) # SSC usually slightly lower
-    
+
     # Elongated - tighter distribution
     sigma_live_fsc = np.random.uniform(0.15, 0.25)
     sigma_live_ssc = np.random.uniform(0.15, 0.25)
-    correlation = np.random.uniform(0.6, 0.8) 
-    
+    correlation = np.random.uniform(0.6, 0.8)
+
     cov_main = [
-        [sigma_live_fsc**2, correlation * sigma_live_fsc * sigma_live_ssc], 
+        [sigma_live_fsc**2, correlation * sigma_live_fsc * sigma_live_ssc],
         [correlation * sigma_live_fsc * sigma_live_ssc, sigma_live_ssc**2]
     ]
-    
+
     main_data = np.random.multivariate_normal(
         [live_fsc_center, live_ssc_center], cov_main, n_main
     )
@@ -196,17 +196,17 @@ def generate_synthetic_data(n_samples=5000):
     out_ssc = np.random.uniform(8.0, 9.0)
     cov_out = [[0.2, 0], [0, 0.2]]
     out_cluster_data = np.random.multivariate_normal([out_fsc, out_ssc], cov_out, int(n_outliers/2))
-    
+
     out_noise_data = np.random.uniform(4.0, 9.5, (n_outliers - int(n_outliers/2), 2))
-    
+
     # Combine
     all_data_log = np.vstack([main_data, debris_data, out_cluster_data, out_noise_data])
-    all_data_log = np.maximum(all_data_log, -1.0) 
-    
+    all_data_log = np.maximum(all_data_log, -1.0)
+
     all_data_linear = 10**all_data_log
-    
+
     df = pd.DataFrame(all_data_linear, columns=["FSC-A", "SSC-A"])
-    
+
     labels = (["Live"] * n_main) + \
              (["Debris"] * n_debris) + \
              (["Outliers"] * len(out_cluster_data)) + \
@@ -225,21 +225,21 @@ def run_simulation():
     df["Sample"] = "Synthetic"
 
     outlier_low, keep_ratio = analyze_data_for_gating(df, ["Log_FSC", "Log_SSC"])
-    
+
     # Gating
     od = OutlierDetector(method="quantile", outlier_low=outlier_low, outlier_high=0.99)
     gating = DensityGating(name="Live", channels=["Log_FSC", "Log_SSC"], keep=keep_ratio, sigma=0.5, outlier_detector=od)
-    
+
     exp = cytoflow.Experiment(data=df, metadata={"Sample": "category"})
     gated_exp = gating.apply(exp)
 
     # Eval
     is_live = gated_exp.data["Live"]
-    
+
     true_live = (df["TrueLabel"] == "Live")
     recall = (is_live & true_live).sum() / true_live.sum()
     precision = (is_live & true_live).sum() / is_live.sum()
-    
+
     print(f"Evaluation:")
     print(f"  Yield (Predicted Live): {is_live.sum()} / {len(df)} ({is_live.mean():.1%})")
     print(f"  Recall (True Live Recovered): {recall:.1%}")
@@ -254,7 +254,7 @@ def run_simulation():
     ax1.set_xscale("log"); ax1.set_yscale("log")
     ax1.set_xlabel("FSC-A"); ax1.set_ylabel("SSC-A")
     ax1.set_title(f"Gating Prediction\nRecall={recall:.2f}, Precision={precision:.2f}")
-    
+
     # Plot 2: Ground Truth
     ax2 = axes[1]
     colors = {"Live": "green", "Debris": "black", "Outliers": "orange"}
@@ -265,7 +265,7 @@ def run_simulation():
     ax2.set_xlabel("FSC-A"); ax2.set_ylabel("SSC-A")
     ax2.legend()
     ax2.set_title("Ground Truth")
-    
+
     plt.tight_layout()
     plt.savefig("density_gating_simulation.png")
     print("Saved density_gating_simulation.png")

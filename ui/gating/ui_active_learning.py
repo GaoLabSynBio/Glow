@@ -10,17 +10,17 @@ def get_active_learner():
     # Ensure module is up to date if we are relying on recent changes
     # (Optional: only do this if we suspect staleness, but it's safer during dev)
     # importlib.reload(glow.active_learning.learner)
-    
+
     if 'active_learner' not in st.session_state:
         st.session_state.active_learner = ActiveLearner()
-        
+
     # Auto-heal: If the cached object is from an old class definition without reset_model
     if not hasattr(st.session_state.active_learner, 'reset_model'):
         print("Detecting stale ActiveLearner instance (missing reset_model). Reloading...")
         importlib.reload(glow.active_learning.learner)
         from glow.active_learning.learner import ActiveLearner as NewActiveLearner
         st.session_state.active_learner = NewActiveLearner()
-        
+
     return st.session_state.active_learner
 
 def render_reset_controls():
@@ -32,7 +32,7 @@ def render_reset_controls():
         learner = get_active_learner()
         with st.spinner("Resetting model..."):
             success = learner.reset_model()
-            
+
         if success:
             st.success("Model reset successfully!")
             # Clear UI state
@@ -42,7 +42,7 @@ def render_reset_controls():
                 del st.session_state.gated_experiment
             if 'current_auto_boundary' in st.session_state:
                 del st.session_state.current_auto_boundary
-            
+
             # Force refresh to update plots
             st.session_state.plot_id = st.session_state.get('plot_id', 0) + 1
             st.rerun()
@@ -252,7 +252,7 @@ def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None,
 
     # Dynamic weighting based on selection size and user strength
     # Goal: Allow gentle updates for single points, stronger updates for bulk selection.
-    
+
     effective_X = []
     effective_y = []
 
@@ -277,7 +277,7 @@ def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None,
     y_train = np.concatenate(effective_y)
 
     print(f"[ActiveLearning] Updating with {len(X_new)} samples (Expanded to {len(X_train)} training points via strength {repetition_factor}).")
-    
+
     # Single update step
     learner.teach(X_train, y_train)
 

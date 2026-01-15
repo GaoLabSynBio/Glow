@@ -9,10 +9,10 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     """
     Renders UI and plot logic for Bar Plot.
     """
-    
+
     # --- Grouping Settings ---
     st.markdown("#### Grouping Settings")
-    
+
     # Force Group By to Experiment_Name/Sample if possible, as requested
     # Search for Experiment_Name variants
     target_group_cols = ["Experiment_Name", "Experiment Name", "Sample", "sample"]
@@ -21,7 +21,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         if t in conditions:
             found_group_col = t
             break
-            
+
     if found_group_col:
         hue_var = found_group_col
         st.info(f"Grouping by **{hue_var}**")
@@ -31,21 +31,21 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
     if hue_var:
         all_groups = sorted(filtered_experiment.data[hue_var].unique())
-        
+
         # User requested explicit ordering capability
         # Multiselect is good for selection but tricky for reordering existing list
         # We provide a "Sort Order" text area for power users
-        
+
         c_sel, c_ord = st.columns([3, 1])
         with c_sel:
             # Default to all
             selected_groups = st.multiselect("Select Groups to Plot", all_groups, default=all_groups, help="Select which groups to include.")
-        
+
         with c_ord:
             manual_order = st.checkbox("Manual Order", value=False)
-            
+
         final_order = selected_groups
-        
+
         if manual_order and selected_groups:
              st.caption("Drag items here? No, Streamlit doesn't support that yet. Use the text area below.")
              order_text = st.text_area("Specify Order (comma separated)", value=", ".join(selected_groups))
@@ -57,10 +57,10 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                  # Append any selected but not in custom order?
                  remaining = [x for x in selected_groups if x not in final_order]
                  final_order.extend(remaining)
-                 
+
                  if len(final_order) < len(selected_groups):
                      st.warning("Some selected groups are missing from the custom order list.")
-        
+
     else:
         selected_groups = None
         final_order = None
@@ -69,13 +69,13 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     st.markdown("#### 2. Plot Settings")
     col1, col2 = st.columns(2)
     with col1: selected_channel = st.selectbox("Output Channel (Y-axis)", channels)
-    with col2: 
+    with col2:
         correction_method = st.selectbox(
             "Visual Significance Method",
             ["t-test", "Bonferroni Correction", "FDR (Benjamini-Hochberg)"],
             help="Selects how p-values are adjusted for multiple comparisons."
         )
-        
+
         # Map friendly name to backend key
         corr_map = {
             "t-test": "t-test",
@@ -86,37 +86,37 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
     # --- Gating Logic ---
     st.markdown("#### 3. Gating (Optional)")
-    
+
     # NEW: Import Analysis Gates
     analysis_gates_to_apply = []
     if ('positive_gates' in st.session_state and st.session_state.positive_gates) or \
        ('cells' in filtered_experiment.data.columns) or ('singlets' in filtered_experiment.data.columns):
-        
+
         with st.expander("Import Gates from Analysis Tab"):
             st.info("You can choose to apply gates defined in the Analysis tab to this plot.")
-            
+
             # 1. Fundamental Gates (if present)
             built_in_options = []
             if 'cells' in filtered_experiment.data.columns: built_in_options.append("Pre-Gate: Live Cells")
             if 'singlets' in filtered_experiment.data.columns: built_in_options.append("Pre-Gate: Singlets")
-            
+
             # 2. Positive Gates from Analysis
             pos_gate_labels = [g['label'] for g in st.session_state.get('positive_gates', [])]
-            
+
             gate_options = built_in_options + pos_gate_labels
             selected_analysis_labels = st.multiselect("Select Analysis Gates to Apply", options=gate_options, default=built_in_options)
-            
+
             # Map selected labels back to gate objects
             def resolve_gate_chain(labels_to_res):
                 to_apply = []
                 seen_labels = set()
-                
+
                 # Use a queue-like approach to find all parents
                 remaining = list(labels_to_res)
                 while remaining:
                     lbl = remaining.pop(0)
                     if lbl in seen_labels: continue
-                    
+
                     found = False
                     # 1. Check Built-ins
                     if lbl == "Pre-Gate: Live Cells":
@@ -130,7 +130,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                         if "Pre-Gate: Live Cells" not in seen_labels:
                             remaining.append("Pre-Gate: Live Cells")
                         found = True
-                    
+
                     # 2. Check Positive Gates
                     if not found:
                         for g in st.session_state.get('positive_gates', []):
@@ -153,7 +153,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
     if 'bar_gates' not in st.session_state:
         st.session_state.bar_gates = []
-        
+
     with st.expander("Active Local Gates", expanded=True):
         if not st.session_state.bar_gates:
             st.info("No local gates defined for this plot.")
@@ -170,7 +170,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
     with st.expander("Add New Local Gate"):
         importlib.reload(utils)
-        
+
         c1, c2 = st.columns(2)
         with c1:
             # Suggest a different channel for marker if possible
@@ -178,13 +178,13 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
             if len(channels) > 1 and channels[0] == selected_channel:
                 default_marker_idx = 1
             new_gate_channel = st.selectbox("Marker Channel for New Local Gate", channels, index=default_marker_idx)
-        
+
         # --- Two-Dot Range Selection Linked with Raw Score ---
-        
+
         # Initialize Temporary State for the "New" gate being configured
         if 'new_gate_range_p' not in st.session_state:
             st.session_state['new_gate_range_p'] = (95.0, 99.9)
-        
+
         # Define Callbacks
         def on_new_slider_change():
             p_min, p_max = st.session_state['new_gate_range_p']
@@ -212,17 +212,17 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         # Handle Channel Change
         if 'last_new_gate_channel' not in st.session_state:
             st.session_state.last_new_gate_channel = new_gate_channel
-        
+
         if st.session_state.last_new_gate_channel != new_gate_channel:
              st.session_state.last_new_gate_channel = new_gate_channel
              on_new_slider_change()
 
         if 'new_gate_raw_min' not in st.session_state:
             on_new_slider_change()
-            
+
         st.markdown(f"**Percentile Range**")
         st.slider("Percentile", 0.0, 100.0, key='new_gate_range_p', on_change=on_new_slider_change, step=0.1)
-        
+
         st.markdown(f"**Value Range** ({new_gate_channel})")
         rc1, rc2 = st.columns(2)
         with rc1: st.number_input("Min", key='new_gate_raw_min', on_change=on_new_raw_change)
@@ -244,22 +244,22 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         with st.expander("Add Comparisons"):
             if 'bar_comparisons' not in st.session_state:
                 st.session_state.bar_comparisons = []
-            
+
             c1, c2, c3 = st.columns([3, 3, 1])
             # Only allow comparisons between visible groups
             vis_groups = sorted(selected_groups)
             if len(vis_groups) >= 2:
                 with c1: g1 = st.selectbox("Group 1", vis_groups, key="g1")
                 with c2: g2 = st.selectbox("Group 2", vis_groups, key="g2")
-                with c3: 
+                with c3:
                     st.write("") # Spacer
-                    st.write("") 
+                    st.write("")
                     if st.button("Add Pair"):
                         # Avoid duplicates
                         pair = (g1, g2)
                         if pair not in st.session_state.bar_comparisons and g1 != g2:
                             st.session_state.bar_comparisons.append(pair)
-            
+
             if st.session_state.bar_comparisons:
                 # Sanitize old session state data (remove labels if present)
                 valid_comparisons = []
@@ -271,29 +271,29 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 st.markdown("**Selected Comparisons:**")
                 # Show as a table
                 comp_df = pd.DataFrame(st.session_state.bar_comparisons, columns=["Group 1", "Group 2"])
-                st.dataframe(comp_df, hide_index=True, use_container_width=True)
-                
+                st.dataframe(comp_df, hide_index=True, width="stretch")
+
                 if st.button("Clear Comparisons"): st.session_state.bar_comparisons = []
-            
+
             comparisons = st.session_state.bar_comparisons
 
     # --- Style Settings ---
     st.markdown("#### 5. Style Settings")
     show_dist = st.checkbox("Show Distributions", value=True)
-    
+
     use_bars = False
     if not show_dist:
         use_bars = st.checkbox("Plot as Bars", value=False, help="Draw bars indicating the mean instead of just lines.")
-        
+
     log_scale = st.checkbox("Log Scale Y-Axis", value=True)
-    
+
     c_style1, c_style2 = st.columns(2)
     with c_style1:
         font_size = st.number_input("Font Size", min_value=6, max_value=30, value=12)
     with c_style2:
         # Control step size / spacing for significance brackets
         step_fraction = st.slider("Bracket Spacing", 0.05, 0.30, 0.15, 0.01, help="Vertical distance between significance brackets.")
-    
+
     # Auto-detect Replicate Column
     replicate_col = None
     all_columns = filtered_experiment.data.columns.tolist()

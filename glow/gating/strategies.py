@@ -250,7 +250,7 @@ class DBSCANGating(AutomaticGating):
             indices = np.random.choice(n_samples, MAX_SAMPLES, replace=False)
             X_subset = X[indices]
             X_scaled_subset = scaler.fit_transform(X_subset) # Fit scaler on subset
-            
+
             # Scale min_samples relative to downsampling
             ratio = MAX_SAMPLES / n_samples
             adjusted_min_samples = max(3, int(self.min_samples * ratio))
@@ -344,49 +344,49 @@ class MLPGating(AutomaticGating):
     def apply(self, experiment):
         from glow.active_learning.models import GatingClassifier
         import os
-        
+
         if not os.path.exists(self.model_path):
-             # Fallback or Error? 
+             # Fallback or Error?
              # Check if we can find it in the generic path
              self.model_path = "data/gating_model_full.pkl"
              if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"MLP Model not found at {self.model_path}")
 
         clf = GatingClassifier.load(self.model_path)
-        
+
         data = experiment.data
-        
+
         # Prepare Features: Model expects 2 columns, usually Log transformed.
         xs = data[self.channels[0]].values
         ys = data[self.channels[1]].values
-        
+
         # Heuristic Log Transform if data seems linear (max > 10)
         # The model 'gating_model_full.pkl' was trained on Log data.
         if np.max(xs) > 10:
             xs = np.log10(xs)
         if np.max(ys) > 10:
             ys = np.log10(ys)
-            
+
         X = np.column_stack([xs, ys])
-        
+
         # Prepare Metadata for Cell-Type Aware Inference
         # 1. Dataset ID: We treat the current experiment as a single batch (ID=0)
         #    so the DensityCenteringTransformer calculates the mode of THIS specific data.
         dataset_ids = np.zeros(len(X), dtype=int)
-        
+
         # 2. Cell Type: Broadcast user selection
         cell_types = np.array([self.cell_type] * len(X))
-        
+
         # Predict
         preds = clf.predict(X, dataset_ids=dataset_ids, cell_types=cell_types)
-        
+
         # Result
         res = experiment.clone()
-        
+
         # Map 0/1 to meaningful labels if desired, or keep as is.
         # User UI expects 'AutoLiveGate' to split population.
         # 1 = Live, 0 = Debris usually.
         # We'll cast to string or int to match expectations of categorical gate
-        res.data[self.name] = preds 
-        
+        res.data[self.name] = preds
+
         return res

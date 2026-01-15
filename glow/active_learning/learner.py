@@ -15,7 +15,7 @@ class ActiveLearner:
     def __init__(self, storage_dir="data/active_learning_data", model_path="data/gating_model_full.pkl"):
         self.storage_dir = storage_dir
         self.model_path = model_path
-        
+
         # Ensure backup exists for reset functionality
         self.backup_path = self.model_path + ".base"
         if os.path.exists(self.model_path) and not os.path.exists(self.backup_path):
@@ -24,7 +24,7 @@ class ActiveLearner:
 
         self.logger = ActiveLearningLogger(storage_dir)
         self.model = self._load_or_init_model()
-        
+
     def _load_or_init_model(self):
         """Loads model from disk or creates valid fallback if missing."""
         if os.path.exists(self.model_path):
@@ -33,7 +33,7 @@ class ActiveLearner:
                 return GatingClassifier.load(self.model_path)
             except Exception as e:
                 print(f"Error loading model: {e}")
-        
+
         print("Initializing new/empty GatingClassifier.")
         return GatingClassifier()
 
@@ -46,7 +46,7 @@ class ActiveLearner:
         if not os.path.exists(self.backup_path):
             print("Cannot reset: Base backup file not found.")
             return False
-            
+
         print(f"Resetting model from {self.backup_path}...")
         try:
             # Restore file
@@ -73,27 +73,27 @@ class ActiveLearner:
         """
         Selects the top N most uncertain instances for labeling.
         Strategy: Uncertainty Sampling (Margin).
-        
+
         Returns:
             pd.DataFrame: Subset of df containing the uncertain instances.
             np.ndarray: Indices of these instances in the original df.
         """
         X = self._extract_features(df)
         uncertainties = self.model.uncertainty(X)
-        
+
         # Get indices of top N uncertainties
         # argsort assumes ascending, so we take the end (largest uncertainty)
         # However, uncertainty() returns 1.0 (High Uncert) to 0.0 (Low).
         # So we sort usually.
         # sort descending
         query_indices = np.argsort(uncertainties)[::-1][:n_instances]
-        
+
         return df.iloc[query_indices], query_indices
 
     def teach(self, X_new, y_new):
         """
         Updates the model with new labeled data.
-        
+
         Args:
             X_new (np.ndarray): N x 2 features.
             y_new (np.ndarray): Labels.
@@ -102,7 +102,7 @@ class ActiveLearner:
             return
 
         print(f"Teaching model with {len(X_new)} new samples...")
-        
+
         # 1. Update Model (Incremental)
         try:
             self.model.partial_fit(X_new, y_new)
@@ -114,10 +114,10 @@ class ActiveLearner:
 
         # 2. Save Model checkpoint
         self.model.save(self.model_path)
-        
+
         # 3. Log/Save this training batch for future full-retraining
         self.logger.save_labeled_batch(X_new, y_new, source="active_learning_feedback")
-    
+
     def retrain_full(self):
         """
         Reloads ALL stored labeled data (initial + feedback) and fully retrains the model.
@@ -125,13 +125,13 @@ class ActiveLearner:
         """
         print("Starting full retraining...")
         # 1. Load Initial Data (if we want to keep it frozen or mix it)
-        # Usually we would have a 'seed' dataset path. 
+        # Usually we would have a 'seed' dataset path.
         # For this setup, we assume load_all_labeled_data gets everything relevant stored in storage_dir.
         # OR we combine 'synthetic_training_data.parquet' + 'active_learning_data/*.parquet'.
-        
+
         # Load accumulated feedback
         X_feed, y_feed = self.logger.load_all_labeled_data()
-        
+
         if X_feed is None:
             print("No feedback data found to retrain on.")
             return
@@ -139,7 +139,7 @@ class ActiveLearner:
         print(f"Retraining on {len(X_feed)} accumulated feedback samples.")
         # Re-init model to fresh state? Or fine tune?
         # Usually full retrain = fresh state.
-        self.model = GatingClassifier() 
+        self.model = GatingClassifier()
         self.model.fit(X_feed, y_feed)
         self.model.save(self.model_path)
         print("Full retraining complete.")
