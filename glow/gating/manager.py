@@ -71,7 +71,7 @@ class GatingManager:
                              num_components=1)
         return strategy.apply(experiment)
 
-    def auto_gate_live_cells(self, experiment, x_channel="FSC-A", y_channel="SSC-A", method="density", num_components=2, keep=0.9, sigma=2.0, outlier_low=0.01, outlier_high=0.99, return_model=False, use_outlier_removal=False, eps=0.05, min_samples=50):
+    def auto_gate_live_cells(self, experiment, x_channel="FSC-A", y_channel="SSC-A", method="density", num_components=2, keep=0.9, sigma=2.0, outlier_low=0.01, outlier_high=0.99, return_model=False, use_outlier_removal=False, eps=0.05, min_samples=50, cell_type="colo"):
         """
         Uses AutoGatingStrategy (GMM, Density).
         method: 'gmm', 'density', or 'smart' (legacy alias for density + outliers).
@@ -109,7 +109,8 @@ class GatingManager:
         elif method == 'mlp':
             strategy = MLPGating(name="AutoLiveGate",
                                  channels=[x_channel, y_channel],
-                                 outlier_detector=outlier_detector)
+                                 outlier_detector=outlier_detector,
+                                 cell_type=cell_type)
         else:
             raise ValueError(f"Unknown gating method: {method}")
 

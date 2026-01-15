@@ -1,7 +1,21 @@
 import streamlit as st
 import os
+import re
 import pandas as pd
 from .ui_metadata import render_metadata_upload_section
+
+# Helper for Cell Line Detection
+def detect_cell_line_from_path(path):
+    if not path: return "COLO"
+    filename = os.path.basename(path)
+    dirname = os.path.basename(os.path.dirname(path))
+    full_str = f"{dirname}_{filename}"
+    match = re.search(r'(?:cell[_\-]?line|cl)[_\-]?([a-zA-Z0-9]+)', full_str, re.IGNORECASE)
+    if match: return match.group(1).upper()
+    known_lines = ["colo", "hek", "hug1n", "snu", "b16", "cho", "hela", "jurkat"]
+    for line in known_lines:
+        if line.lower() in full_str.lower(): return line.upper().upper()
+    return "COLO"
 
 # Mock Experiment Class to emulate Cytoflow structure for downstream compatibility
 class MockExperiment:
@@ -102,7 +116,10 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     st.session_state.preview_meta = []
 
                 if st.button("Generate Preview from Directory"):
-                    st.session_state.preview_meta = loader.generate_preview_metadata(st.session_state.scanned_paths, rename_strategy=rename_strategy)
+                    meta = loader.generate_preview_metadata(st.session_state.scanned_paths, rename_strategy=rename_strategy)
+                    for m in meta:
+                        m['Cell_Line'] = detect_cell_line_from_path(m.get('original_path'))
+                    st.session_state.preview_meta = meta
                 
                 if st.session_state.preview_meta:
                     st.subheader("Edit Metadata Structure")
@@ -157,6 +174,9 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     if st.button("Confirm and Load Directory files"):
                         with st.spinner("Processing files..."):
                             clear_experiment_state()
+                            # Auto-Uppercase Manual Input for Cell_Line
+                            if 'Cell_Line' in edited_df.columns:
+                                edited_df['Cell_Line'] = edited_df['Cell_Line'].astype(str).str.upper()
                             final_meta = edited_df.to_dict('records')
                             loaded_files = loader.process_files(final_meta, output_dir="processed_fcs_ui")
                             st.session_state.loaded_files = loaded_files
@@ -192,7 +212,10 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                      st.session_state.preview_meta = []
                 
                 if st.button("Generate Preview from Uploads"):
-                     st.session_state.preview_meta = loader.generate_preview_metadata(st.session_state.uploaded_paths, rename_strategy=rename_strategy)
+                     meta = loader.generate_preview_metadata(st.session_state.uploaded_paths, rename_strategy=rename_strategy)
+                     for m in meta:
+                        m['Cell_Line'] = detect_cell_line_from_path(m.get('original_path'))
+                     st.session_state.preview_meta = meta
                 
                 if st.session_state.preview_meta:
                     st.subheader("Edit Metadata Structure")
@@ -235,6 +258,9 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     if st.button("Confirm and Load Uploaded files"):
                         with st.spinner("Processing files..."):
                             clear_experiment_state()
+                            # Auto-Uppercase Manual Input for Cell_Line
+                            if 'Cell_Line' in edited_df.columns:
+                                edited_df['Cell_Line'] = edited_df['Cell_Line'].astype(str).str.upper()
                             final_meta = edited_df.to_dict('records')
                             loaded_files = loader.process_files(final_meta, output_dir="processed_fcs_ui")
                             st.session_state.loaded_files = loaded_files
