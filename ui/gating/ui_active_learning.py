@@ -6,60 +6,76 @@ import importlib
 import glow.active_learning.learner
 from glow.active_learning.learner import ActiveLearner
 
-def get_active_learner():
+def get_active_learner(model_type='gating'):
+    key = f"active_learner_{model_type}"
+
     # Ensure module is up to date if we are relying on recent changes
-    # (Optional: only do this if we suspect staleness, but it's safer during dev)
     # importlib.reload(glow.active_learning.learner)
 
-    if 'active_learner' not in st.session_state:
-        st.session_state.active_learner = ActiveLearner()
+    if key not in st.session_state:
+        print(f"Initializing ActiveLearner for {model_type}")
+        model_path = "data/gating_model_full.pkl" if model_type == 'gating' else "data/singlet_model_full.pkl"
+        try:
+             st.session_state[key] = ActiveLearner(model_path=model_path, model_type=model_type)
+        except Exception as e:
+             st.error(f"Failed to load ActiveLearner for {model_type}: {e}")
+             return None
 
-    # Auto-heal: If the cached object is from an old class definition without reset_model
-    if not hasattr(st.session_state.active_learner, 'reset_model'):
-        print("Detecting stale ActiveLearner instance (missing reset_model). Reloading...")
+    # Auto-heal check (optional, can be removed if stable)
+    learner = st.session_state[key]
+    if not hasattr(learner, 'reset_model'):
         importlib.reload(glow.active_learning.learner)
         from glow.active_learning.learner import ActiveLearner as NewActiveLearner
-        st.session_state.active_learner = NewActiveLearner()
+        st.session_state[key] = NewActiveLearner(model_path=learner.model_path, model_type=learner.model_type)
 
-    return st.session_state.active_learner
+    return st.session_state[key]
 
-def render_reset_controls():
+def render_reset_controls(model_type='gating'):
     """
     Renders a button to reset the model to its initial state.
     """
     st.divider()
-    if st.button("Start Over (Reset Model)", help="Reverts the model to the initial pre-trained state. All interactive learning will be lost."):
-        learner = get_active_learner()
-        with st.spinner("Resetting model..."):
-            success = learner.reset_model()
+    label = "Start Over (Reset Model)"
+    if model_type == 'singlet':
+        label = "Start Over (Reset Singlet Model)"
 
-        if success:
-            st.success("Model reset successfully!")
-            # Clear UI state
-            if 'uncertain_indices' in st.session_state:
-                del st.session_state.uncertain_indices
-            if 'gated_experiment' in st.session_state:
-                del st.session_state.gated_experiment
-            if 'current_auto_boundary' in st.session_state:
-                del st.session_state.current_auto_boundary
+    if st.button(label, help="Reverts the model to the initial pre-trained state. All interactive learning will be lost.", key=f"reset_btn_{model_type}"):
+        learner = get_active_learner(model_type)
+        if learner:
+            with st.spinner("Resetting model..."):
+                success = learner.reset_model()
 
-            # Force refresh to update plots
-            st.session_state.plot_id = st.session_state.get('plot_id', 0) + 1
-            st.rerun()
-        else:
-            st.error("Could not reset model. Base model not found.")
+            if success:
+                st.success("Model reset successfully!")
+                # Clear UI state - slightly drastic but safe
+                # We should only clear relevant state
+                if model_type == 'gating':
+                    if 'uncertain_indices' in st.session_state: del st.session_state.uncertain_indices
+                    if 'gated_experiment' in st.session_state: del st.session_state.gated_experiment
+                elif model_type == 'singlet':
+                    if 'doublets_removed' in st.session_state: del st.session_state.doublets_removed
 
-def render_uncertainty_controls(experiment, x_col, y_col):
+                # Force refresh
+                st.session_state.plot_id = st.session_state.get('plot_id', 0) + 1
+                st.rerun()
+            else:
+                st.error("Could not reset model. Base model not found.")
+
+def render_uncertainty_controls(experiment, x_col, y_col, model_type='gating'):
     """
     Renders the button to Release the Hounds (find uncertainties).
     """
+    # if model_type != 'gating': return # Not implementing singlet uncertainty viz yet
+
     st.markdown("### 🧠 Active Learning")
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🔍 Find Confusion"):
+        if st.button("🔍 Find Confusion", key=f"find_conf_{model_type}"):
             with st.spinner("Querying model..."):
-                learner = get_active_learner()
+                learner = get_active_learner(model_type)
+                if not learner: return
+
                 df = experiment.data
 
                 # Data Prep (Assume linear UI -> log Model)
@@ -71,17 +87,23 @@ def render_uncertainty_controls(experiment, x_col, y_col):
                     vals_x = np.log1p(vals_x)
                     vals_y = np.log1p(vals_y)
 
-                query_df = pd.DataFrame({
-                    "Log_FSC": vals_x,
-                    "Log_SSC": vals_y
-                }, index=df.index)
+                if model_type == 'singlet':
+                     query_df = pd.DataFrame({
+                        "Log_FSC_A": vals_x,
+                        "Log_FSC_H": vals_y
+                    }, index=df.index)
+                else:
+                    query_df = pd.DataFrame({
+                        "Log_FSC": vals_x,
+                        "Log_SSC": vals_y
+                    }, index=df.index)
 
                 _, indices = learner.query_uncertainty(query_df, n_instances=5)
                 st.session_state.uncertain_indices = indices
                 st.rerun()
 
     with col2:
-        if st.button("Clear Highlights"):
+        if st.button("Clear Highlights", key=f"clear_highlights_{model_type}"):
             st.session_state.uncertain_indices = []
             st.rerun()
 
@@ -126,7 +148,7 @@ def get_uncertainty_trace(experiment, x_col, y_col):
     except Exception as e:
         return None
 
-def render_labeling_controls(experiment, x_col, y_col, selection, plot_df=None):
+def render_labeling_controls(experiment, x_col, y_col, selection, plot_df=None, model_type='gating'):
     """
     Renders buttons to label the selected points.
     """
@@ -148,20 +170,32 @@ def render_labeling_controls(experiment, x_col, y_col, selection, plot_df=None):
         value=10,
         step=1,
         help="Higher values up-weight your labels so the boundary moves more visibly.",
+        key=f"strength_{model_type}"
     )
 
     col1, col2 = st.columns(2)
 
-    learner = get_active_learner()
+    learner = get_active_learner(model_type)
+    if not learner:
+        st.error("Active Learning Model not initialized.")
+        return
 
-    if col1.button("✅ In Gate"):
-        with st.spinner("Updating model..."):
-            _teach_batch(learner, experiment, x_col, y_col, pts, label=1, plot_df=plot_df, strength=strength)
-    if col2.button("🚫 Not In Gate"):
-        with st.spinner("Updating model..."):
-            _teach_batch(learner, experiment, x_col, y_col, pts, label=0, plot_df=plot_df, strength=strength)
+    # Labels depend on context
+    lbl_pos = "✅ In Gate"
+    lbl_neg = "🚫 Not In Gate"
 
-def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None, strength=10):
+    if model_type == 'singlet':
+        lbl_pos = "✅ Singlet"
+        lbl_neg = "🚫 Doublet"
+
+    if col1.button(lbl_pos, key=f"lbl_pos_{model_type}"):
+        with st.spinner("Updating model..."):
+            _teach_batch(learner, experiment, x_col, y_col, pts, label=1, plot_df=plot_df, strength=strength, model_type=model_type)
+    if col2.button(lbl_neg, key=f"lbl_neg_{model_type}"):
+        with st.spinner("Updating model..."):
+            _teach_batch(learner, experiment, x_col, y_col, pts, label=0, plot_df=plot_df, strength=strength, model_type=model_type)
+
+def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None, strength=10, model_type='gating'):
     def _coerce_index_value(value):
         if value is None:
             return None
@@ -228,8 +262,14 @@ def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None,
         if real_indices:
             subset = experiment.data.loc[real_indices]
         elif plot_df is not None:
-            real_indices = plot_df.iloc[plot_indices].index
-            subset = experiment.data.loc[real_indices]
+            # Map positional plot indices to dataframe index
+            try:
+                # Handle downsampled plot_df
+                real_indices = plot_df.iloc[plot_indices].index
+                subset = experiment.data.loc[real_indices]
+            except:
+                # Fallback: Maybe plot_df IS the subset
+                subset = plot_df.iloc[plot_indices]
         else:
             subset = experiment.data.iloc[plot_indices]
     except Exception as e:
@@ -244,51 +284,44 @@ def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None,
     vals_y = subset[y_col].values
 
     if not is_x_log:
-        vals_x = np.log1p(vals_x)
-        vals_y = np.log1p(vals_y)
+        vals_x = np.log1p(vals_x + 1e-1) # Added epsilon safety
+        vals_y = np.log1p(vals_y + 1e-1)
 
     X_new = np.column_stack([vals_x, vals_y])
     y_new = np.full(len(X_new), label)
 
     # Dynamic weighting based on selection size and user strength
-    # Goal: Allow gentle updates for single points, stronger updates for bulk selection.
+    repetition_factor = int(strength) if strength is not None else 5
+    repetition_factor = max(1, repetition_factor)
 
     effective_X = []
     effective_y = []
 
-    # Slider value (1-30) determines repetition factor directly
-    # This acts as a pseudo-sample_weight for the MLP
-    repetition_factor = int(strength) if strength is not None else 5
-    repetition_factor = max(1, repetition_factor)
-
-    # If the user selects many points, we naturally get a larger batch which provides a stronger signal.
-    # If the user selects 1 point, we get a small batch (gentle update).
-    # We apply the repetition factor uniformly.
-
     for i in range(len(X_new)):
-        # Create copies of the sample to simulate weight
         X_repeated = np.tile(X_new[i], (repetition_factor, 1))
         y_repeated = np.full(repetition_factor, y_new[i])
-
         effective_X.append(X_repeated)
         effective_y.append(y_repeated)
 
     X_train = np.vstack(effective_X)
     y_train = np.concatenate(effective_y)
 
-    print(f"[ActiveLearning] Updating with {len(X_new)} samples (Expanded to {len(X_train)} training points via strength {repetition_factor}).")
+    print(f"[ActiveLearning:{model_type}] Updating with {len(X_new)} samples (Expanded to {len(X_train)} training points via strength {repetition_factor}).")
 
     # Single update step
     learner.teach(X_train, y_train)
 
-    st.session_state.uncertain_indices = []  # Clear highlights
+    # Clear generic state that might impact viz
+    if 'uncertain_indices' in st.session_state: st.session_state.uncertain_indices = []
 
-    # Force re-gating next cycle
-    if 'gated_experiment' in st.session_state:
-        del st.session_state.gated_experiment
-
-    if 'current_auto_boundary' in st.session_state:
-        del st.session_state.current_auto_boundary
+    # Reset specific state to force re-render with new model
+    if model_type == 'gating':
+        if 'gated_experiment' in st.session_state: del st.session_state.gated_experiment
+        if 'current_auto_boundary' in st.session_state: del st.session_state.current_auto_boundary
+    elif model_type == 'singlet':
+        # Don't delete 'doublets_removed' or we lose the page state completely?
+        # Maybe we want to just invalidate the viz cache.
+        pass
 
     # Increment plot ID to force clear selection state
     st.session_state.plot_id = st.session_state.get('plot_id', 0) + 1
