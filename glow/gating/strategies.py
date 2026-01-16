@@ -103,8 +103,7 @@ class OutlierDetector:
             x_low, x_high = data[x].quantile([self.outlier_low, self.outlier_high])
             if len(channels) > 1:
                 y_low, y_high = data[y].quantile([self.outlier_low, self.outlier_high])
-                mask = (data[x] >= x_low) & (data[x] <= x_high) & \
-                       (data[y] >= y_low) & (data[y] <= y_high)
+                mask = (data[x] >= x_low) & (data[x] <= x_high) &                        (data[y] >= y_low) & (data[y] <= y_high)
             else:
                 mask = (data[x] >= x_low) & (data[x] <= x_high)
 
@@ -363,9 +362,9 @@ class MLPGating(AutomaticGating):
         # Heuristic Log Transform if data seems linear (max > 10)
         # The model 'gating_model_full.pkl' was trained on Log data.
         if np.max(xs) > 10:
-            xs = np.log10(xs)
+            xs = np.log10(xs + 1)
         if np.max(ys) > 10:
-            ys = np.log10(ys)
+            ys = np.log10(ys + 1)
 
         X = np.column_stack([xs, ys])
 
@@ -389,4 +388,48 @@ class MLPGating(AutomaticGating):
         # We'll cast to string or int to match expectations of categorical gate
         res.data[self.name] = preds
 
+        return res
+
+class MLPSingletGating(AutomaticGating):
+    """
+    MLP-based singlet gating using a pre-trained neural network.
+    """
+    def __init__(self, name: str, channels: List[str], model_path: str = "data/singlet_model_full.pkl", outlier_detector: Optional[OutlierDetector] = None, cell_type: str = "colo"):
+        super().__init__(name, channels, outlier_detector)
+        self.model_path = model_path
+        self.cell_type = cell_type
+
+    def apply(self, experiment):
+        from glow.active_learning.models import SingletClassifier
+        import os
+
+        if not os.path.exists(self.model_path):
+             self.model_path = "data/singlet_model_full.pkl"
+             if not os.path.exists(self.model_path):
+                raise FileNotFoundError(f"Singlet Model not found at {self.model_path}")
+
+        clf = SingletClassifier.load(self.model_path)
+
+        data = experiment.data
+
+        # Prepare Features: Model expects Log_FSC_A, Log_FSC_H
+        xs = data[self.channels[0]].values  # Area
+        ys = data[self.channels[1]].values  # Height
+
+        # Heuristic Log Transform if data seems linear
+        if np.max(xs) > 10:
+            xs = np.log10(xs + 1)
+        if np.max(ys) > 10:
+            ys = np.log10(ys + 1)
+
+        X = np.column_stack([xs, ys])
+
+        dataset_ids = np.zeros(len(X), dtype=int)
+        cell_types = np.array([self.cell_type] * len(X))
+
+        # Predict: 1 = Singlet, 0 = Doublet
+        preds = clf.predict(X, dataset_ids=dataset_ids, cell_types=cell_types)
+
+        res = experiment.clone()
+        res.data[self.name] = preds == 1 # Boolean mask for ease of use
         return res

@@ -81,7 +81,7 @@ def get_summary_statistics(experiment):
         # Candidates for Singlet flag
         # Order: 'singlets', 'Singlets', 'Is_Singlet', 'Singlet', 'LearnedSinglet'
         singlet_col_name = None
-        for cand in ['singlets', 'Singlets', 'Is_Singlet', 'Singlet', 'LearnedSinglet']:
+        for cand in ['singlets', 'Singlets', 'Is_Singlet', 'IsSinglet', 'Singlet', 'LearnedSinglet']:
             if cand in group.columns:
                 singlet_col_name = cand
                 break
