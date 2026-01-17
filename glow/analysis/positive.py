@@ -1,6 +1,13 @@
 import pandas as pd
 import numpy as np
 
+# Define internal gating columns to exclude from grouping (Shared with stats.py)
+EXCLUDE_CONDITIONS = [
+    'cells', 'singlets', 'IsSinglet', 'Is_Singlet',
+    'Population', 'AutoLiveGate', 'LiveGate', 'SingletGate',
+    'Is_Live', 'Live', 'Density'
+]
+
 def calculate_positive_stats(experiment, channel, threshold, suffix=""):
     """
     Returns positive % per sample for a given channel and threshold.
@@ -22,10 +29,9 @@ def calculate_positive_stats(experiment, channel, threshold, suffix=""):
 
     # Robust Check: attributes might raise KeyError if metadata is partial
     try:
-        # We manually access the list to see if it works
-        # hasattr doesn't catch KeyError
         if hasattr(experiment, 'conditions'):
-             group_cols = list(experiment.conditions.keys())
+             all_conditions = list(experiment.conditions.keys())
+             group_cols = [c for c in all_conditions if c not in EXCLUDE_CONDITIONS and not c.startswith('__')]
     except Exception:
         group_cols = []
 
@@ -38,7 +44,11 @@ def calculate_positive_stats(experiment, channel, threshold, suffix=""):
                 break
 
     if group_cols:
-        grouped = df.groupby(group_cols)
+        valid_cols = [c for c in group_cols if c in df.columns]
+        if valid_cols:
+            grouped = df.groupby(valid_cols, observed=True)
+        else:
+             grouped = [('All', df)]
     else:
         grouped = [('All', df)]
 
@@ -188,7 +198,9 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
     # Grouping Logic
     group_cols = []
     try:
-        if hasattr(experiment, 'conditions'): group_cols = list(experiment.conditions.keys())
+        if hasattr(experiment, 'conditions'):
+             all_conditions = list(experiment.conditions.keys())
+             group_cols = [c for c in all_conditions if c not in EXCLUDE_CONDITIONS and not c.startswith('__')]
     except: group_cols = []
 
     if not group_cols:
@@ -196,7 +208,12 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
         for c in possible_cols:
             if c in df.columns: group_cols = [c]; break
 
-    if group_cols: grouped = df.groupby(group_cols)
+    if group_cols:
+        valid_cols = [c for c in group_cols if c in df.columns]
+        if valid_cols:
+             grouped = df.groupby(valid_cols, observed=True)
+        else:
+             grouped = [('All', df)]
     else: grouped = [('All', df)]
 
     col_name = f"{label} %"
@@ -271,13 +288,20 @@ def get_channel_data_for_samples(experiment, channel, sample_names, parent_gate_
     # Grouping Logic reuse
     group_cols = []
     try:
-        if hasattr(experiment, 'conditions'): group_cols = list(experiment.conditions.keys())
+        if hasattr(experiment, 'conditions'):
+             all_conditions = list(experiment.conditions.keys())
+             group_cols = [c for c in all_conditions if c not in EXCLUDE_CONDITIONS and not c.startswith('__')]
     except: pass
     if not group_cols:
         for c in ['Sample', 'sample', 'Name', 'name']:
             if c in df.columns: group_cols = [c]; break
 
-    if group_cols: grouped = filtered_df.groupby(group_cols)
+    if group_cols:
+        valid_cols = [c for c in group_cols if c in df.columns]
+        if valid_cols:
+             grouped = filtered_df.groupby(valid_cols, observed=True)
+        else:
+             grouped = [('All', filtered_df)]
     else: grouped = [('All', filtered_df)]
 
     for name, group in grouped:

@@ -29,60 +29,57 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
             st.session_state[f"checkbox_ch_{ch}"] = (ch in defaults)
 
     with col1:
-        if 'base_experiment' in st.session_state and st.session_state.base_experiment is not None:
-            all_channels = st.session_state.base_experiment.channels
-            st.subheader("Final Data Settings")
-            st.info("Select fluorescence channels to include in your analysis. Unselected channels will be hidden.")
+        if st.session_state.get('doublets_removed'):
+            if 'base_experiment' in st.session_state and st.session_state.base_experiment is not None:
+                all_channels = st.session_state.base_experiment.channels
+                st.subheader("Final Data Settings")
+                st.info("Select fluorescence channels to include in your analysis. Unselected channels will be hidden.")
 
-            # Action buttons for quick management
-            b1, b2, _ = st.columns([1, 1, 2])
-            if b1.button("Select All", key="gating_sel_all"):
-                st.session_state.persistent_selected_channels = list(all_channels)
-                # Update individual checkbox keys for UI sync
+                # Action buttons for quick management
+                b1, b2, _ = st.columns([1, 1, 2])
+                if b1.button("Select All", key="gating_sel_all"):
+                    st.session_state.persistent_selected_channels = list(all_channels)
+                    # Update individual checkbox keys for UI sync
+                    for ch in all_channels:
+                        st.session_state[f"checkbox_ch_{ch}"] = True
+                    st.rerun()
+                if b2.button("Clear All", key="gating_clear_all"):
+                    st.session_state.persistent_selected_channels = []
+                    # Update individual checkbox keys for UI sync
+                    for ch in all_channels:
+                        st.session_state[f"checkbox_ch_{ch}"] = False
+                    st.rerun()
+
+                # Dynamic Checkbox Selection (Click 1 to Include, Click again to Delete/Exclude)
+                current_selected = set(st.session_state.get('persistent_selected_channels', []))
+
+                # Ensure session state keys exist for all channels to prevent UI desync
                 for ch in all_channels:
-                    st.session_state[f"checkbox_ch_{ch}"] = True
-                st.rerun()
-            if b2.button("Clear All", key="gating_clear_all"):
-                st.session_state.persistent_selected_channels = []
-                # Update individual checkbox keys for UI sync
-                for ch in all_channels:
-                    st.session_state[f"checkbox_ch_{ch}"] = False
-                st.rerun()
+                    k = f"checkbox_ch_{ch}"
+                    if k not in st.session_state:
+                        st.session_state[k] = (ch in current_selected)
 
-            # Dynamic Checkbox Selection (Click 1 to Include, Click again to Delete/Exclude)
-            current_selected = set(st.session_state.get('persistent_selected_channels', []))
+                new_selection = []
 
-            # Ensure session state keys exist for all channels to prevent UI desync
-            for ch in all_channels:
-                k = f"checkbox_ch_{ch}"
-                if k not in st.session_state:
-                    st.session_state[k] = (ch in current_selected)
+                # Display channels in a structured grid for easier selection
+                with st.expander("Available Channels List", expanded=True):
+                    n_cols = 3
+                    grid_cols = st.columns(n_cols)
+                    for i, ch in enumerate(all_channels):
+                        with grid_cols[i % n_cols]:
+                            # A checkbox is the most literal "Click to Include / Click to Delete" UI
+                            if st.checkbox(ch, key=f"checkbox_ch_{ch}"):
+                                new_selection.append(ch)
 
-            new_selection = []
-
-            # Display channels in a structured grid for easier selection
-            with st.expander("Available Channels List", expanded=True):
-                n_cols = 3
-                grid_cols = st.columns(n_cols)
-                for i, ch in enumerate(all_channels):
-                    with grid_cols[i % n_cols]:
-                        # A checkbox is the most literal "Click to Include / Click to Delete" UI
-                        if st.checkbox(ch, key=f"checkbox_ch_{ch}"):
-                            new_selection.append(ch)
-
-            # Sync the final selection back to session state
-            st.session_state.persistent_selected_channels = new_selection
-            st.session_state.selected_channels = new_selection
-        else:
-            st.info("Load data to enable channel selection.")
+                # Sync the final selection back to session state
+                st.session_state.persistent_selected_channels = new_selection
+                st.session_state.selected_channels = new_selection
+            else:
+                st.info("Load data to enable channel selection.")
 
     if st.button("Finish Gating & Proceed to Analysis", type="primary"):
         # Check if critical data exists
         if 'base_experiment' in st.session_state and st.session_state.base_experiment is not None:
-
-            # --- Reconstruct Fully Annotated Experiment for Analysis ---
-            # We need to apply the specific gates to the ORIGINAL dataset to get boolean flags ('cells', 'singlets')
-            # instead of filtering rows. This allows correct calculation of Live % and Singlets %.
 
             with st.spinner("Finalizing analysis dataset..."):
                 try:
@@ -90,13 +87,15 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                     base = st.session_state.base_experiment
                     full_exp = base.clone() if hasattr(base, 'clone') else base
 
+                    # Initialize standard flags to avoid KeyError + Register Metadata
+                    full_exp.data['cells'] = False
+                    full_exp.metadata['cells'] = {'type': 'condition'}
+
+                    full_exp.data['singlets'] = False
+                    full_exp.metadata['singlets'] = {'type': 'condition'}
+
                     # Note: We NO LONGER drop channels here to keep the full dataset intact.
                     # The channel selection will be used to filter UI options in Analysis and Plot tabs.
-
-                    # Initialize flags to False if not present (safeguard)
-                    # We use 'cells' and 'singlets' as the standard flags
-                    # If columns don't exist, we add them as boolean False generally?
-                    # Actually, better to compute them fresh.
 
                     gater = GatingManager()
 
@@ -141,29 +140,31 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                                 return res
 
                             full_exp.data['Population'] = full_exp.data['AutoLiveGate'].apply(map_label)
+                            full_exp.metadata['Population'] = {'type': 'condition'}
 
                             # Mark as 'cells' (Live) if not Debris (and not Unknown)
                             full_exp.data['cells'] = (full_exp.data['Population'] != "Debris") & (full_exp.data['Population'] != "Unknown")
+                            # Metadata 'cells' already exists from init
 
                             # Update Condition
                             if 'Condition' in full_exp.data.columns:
                                 full_exp.data['Condition'] = full_exp.data['Condition'].astype(str) + "_" + full_exp.data['Population'].astype(str)
                             else:
                                 full_exp.data['Condition'] = full_exp.data['Population']
+                            full_exp.metadata['Condition'] = {'type': 'condition'}
 
                         elif l_params['type'] == 'per_cell_line':
                             from matplotlib.path import Path
 
-                            # Initialize decision column
+                            # Initialize decision column (redundant but safe)
                             full_exp.data['cells'] = False
+                            # Metadata 'cells' already exists
 
                             col_name = l_params['col']
                             gates_dict = l_params['gates']
 
                             for cell_line, gate in gates_dict.items():
                                 # Find relevant events
-                                # Note: Cytoflow/Pandas data types for categories might be strict or strings
-                                # Safe bet is to convert both to string for comparison
                                 mask = (full_exp.data[col_name].astype(str) == str(cell_line))
                                 if not mask.any():
                                     continue
@@ -177,21 +178,14 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                                         points = full_exp.data.loc[mask, [x_ch, y_ch]].values
 
                                         # Check inclusion
-                                        # radius=0 ensures strict boundary
                                         is_in = path.contains_points(points)
                                         full_exp.data.loc[mask, 'cells'] = is_in
 
                                 elif gate['type'] == 'label':
-                                    # This path requires re-running clustering on the subset
-                                    # For now, if the UI promotes Polygon (which it does via 'current_auto_boundary'),
-                                    # we might not hit this often.
-                                    # Implementing robustly requires recreating the subset Experiment.
                                     pass
 
                         elif l_params['type'] == 'label':
                             # Re-run auto gating to get labels if needed
-                            # Note: If AutoLiveGate is already in base, we good.
-                            # Check if AutoLiveGate exists in full_exp
                             if 'AutoLiveGate' not in full_exp.data.columns:
                                 gp = st.session_state.get('last_gating_params', {})
                                 if gp:
@@ -210,22 +204,32 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                             # Define mask from label
                             lbl = l_params['label']
                             full_exp.data['cells'] = (full_exp.data['AutoLiveGate'] == lbl)
+                            # Metadata 'cells' exists
 
                     # If we have a named gate column, map it to 'cells'
                     if live_mask_col and live_mask_col in full_exp.data.columns:
                          full_exp.data['cells'] = full_exp.data[live_mask_col].astype(bool)
-                    elif 'cells' not in full_exp.data.columns:
-                         # Fallback: Assume all live if no gate? Or False?
-                         # If file loaded via CSV bypass, 'cells' might already be there.
-                         if 'cells' not in full_exp.data.columns: # Check again
-                             full_exp.data['cells'] = False
+
+                    # FALLBACK: Ensure 'cells' column exists and has metadata
+                    if 'cells' not in full_exp.data.columns:
+                        full_exp.data['cells'] = False
+                    if 'cells' not in full_exp.metadata:
+                        full_exp.metadata['cells'] = {'type': 'condition'}
 
                     # 3. Re-Apply SINGLET Gate
                     s_params = st.session_state.get('singlet_gate_params')
 
+                    # Ensure singlets initialized just in case
+                    if 'singlets' not in full_exp.data.columns:
+                        full_exp.data['singlets'] = False
+                    if 'singlets' not in full_exp.metadata:
+                        full_exp.metadata['singlets'] = {'type': 'condition'}
+
                     if s_params:
+                        # Check SingletGate metadata if we create it
                         if s_params['type'] == 'polygon':
                             full_exp = gater.apply_manual_gate(full_exp, "SingletGate", s_params['channels'][0], s_params['channels'][1], s_params['vertices'])
+                            # apply_manual_gate uses PolygonOp which updates metadata for the new column (SingletGate)
                             if 'SingletGate' in full_exp.data.columns:
                                 full_exp.data['singlets'] = full_exp.data['SingletGate'].astype(bool)
 
@@ -246,8 +250,8 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
 
                                     preds = learner.model.predict(X_pred, dataset_ids=ids, cell_types=types)
                                     full_exp.data['singlets'] = (preds == 1)
-                                    # Forward compatibility with view.py patch
                                     full_exp.data['IsSinglet'] = (preds == 1)
+                                    full_exp.metadata['IsSinglet'] = {'type': 'condition'}
 
                         elif s_params['type'] == 'gmm_mahalanobis':
                             # Calculate manually on full data
@@ -268,6 +272,8 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
 
                             # Initialize decision column
                             full_exp.data['singlets'] = False
+                            if 'singlets' not in full_exp.metadata:
+                                full_exp.metadata['singlets'] = {'type': 'condition'}
 
                             col_name_s = s_params['col']
                             gates_dict_s = s_params['gates']
@@ -298,9 +304,12 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                                     d_sq = np.sum((df_s @ i_c) * df_s, axis=1)
                                     full_exp.data.loc[mask_s, 'singlets'] = (np.sqrt(d_sq) <= thr)
 
-                    # Ensure 'singlets' exists
-                    if 'singlets' not in full_exp.data.columns:
-                        full_exp.data['singlets'] = False
+                    # Ensure 'singlets' exists in metadata (redundant check)
+                    if 'singlets' not in full_exp.metadata:
+                        full_exp.metadata['singlets'] = {'type': 'condition'}
+
+                    # Enforce dependency: Non-live cells should not be singlets
+                    full_exp.data.loc[~full_exp.data['cells'], 'singlets'] = False
 
                     # Save to session
                     st.session_state.analysis_experiment = full_exp
@@ -309,6 +318,8 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
                     st.rerun()
 
                 except Exception as e:
+                    import traceback
+                    traceback.print_exc()
                     st.error(f"Error preparing analysis data: {e}")
         else:
             st.error("Please load data and perform gating before proceeding.")
