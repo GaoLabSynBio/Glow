@@ -42,6 +42,20 @@ def clear_experiment_state():
         if key in st.session_state:
             del st.session_state[key]
 
+def render_custom_metadata_manager(key_prefix):
+    """Simple text-based manager for custom metadata fields."""
+    st.write("---")
+    st.markdown("#### 🏷️ Custom Metadata")
+    st.caption("Enter custom labels separated by commas (e.g. 'Drug, Dose, Batch') to add them to the selection box.")
+    
+    # Use session state to persist the text between reruns
+    current_val = st.session_state.get(f"{key_prefix}_custom_fields_raw", "")
+    new_val = st.text_input("Define Custom Columns", value=current_val, key=f"{key_prefix}_custom_fields_entry", placeholder="Drug, User, etc.")
+    st.session_state[f"{key_prefix}_custom_fields_raw"] = new_val
+    
+    fields = [f.strip() for f in new_val.split(',') if f.strip()]
+    return fields
+
 def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
     """
     Renders the File Loading section
@@ -126,6 +140,9 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
 
                     # --- Metadata Upload ---
                     render_metadata_upload_section(key_prefix="dir")
+                    
+                    # --- Custom Metadata Fields ---
+                    custom_fields = render_custom_metadata_manager(key_prefix="dir")
 
                     # 1. Define fields user wants
                     default_cols = ["Replicate", "Cell_Line", "Experiment_Name", "Timepoint", "Concentration"]
@@ -135,9 +152,12 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
                     extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path']]
 
+                    # Default selection: standard fields + anything entered in custom manager
+                    initial_selection = ["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else []) + custom_fields
+
                     cols_to_use = st.multiselect("Select columns to annotate:",
-                                                options=default_cols + extra_opts + ["Custom1", "Custom2"],
-                                                default=["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else []))
+                                                options=default_cols + extra_opts + custom_fields,
+                                                default=initial_selection)
 
                     # 2. Prepare DataFrame
                     df_preview = pd.DataFrame(st.session_state.preview_meta)
@@ -220,14 +240,20 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                 if st.session_state.preview_meta:
                     st.subheader("Edit Metadata Structure")
                     render_metadata_upload_section(key_prefix="upload")
+                    
+                    # --- Custom Metadata Fields ---
+                    custom_fields = render_custom_metadata_manager(key_prefix="upload")
 
                     default_cols = ["Replicate", "Cell_Line", "Experiment_Name", "Timepoint", "Concentration"]
                     preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
                     extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path']]
 
+                    # Default selection: standard fields + anything entered in custom manager
+                    initial_selection_up = ["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else []) + custom_fields
+
                     cols_to_use = st.multiselect("Select columns to annotate:",
-                                                options=default_cols + extra_opts + ["Custom1", "Custom2"],
-                                                default=["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else []),
+                                                options=default_cols + extra_opts + custom_fields,
+                                                default=initial_selection_up,
                                                 key="upload_cols")
 
                     df_preview = pd.DataFrame(st.session_state.preview_meta)
