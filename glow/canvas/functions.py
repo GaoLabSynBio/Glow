@@ -5,7 +5,7 @@ import warnings
 def add_plot_to_canvas(fig, title: str):
     """Store a plot in Streamlit session state for display in the Canvas tab.
 
-    Stores Matplotlib figures as PNG bytes (for display) and SVG bytes (for export).
+    Stores the figure object directly to allow for dynamic resizing and updates.
     """
 
     if "canvas_plots" not in st.session_state:
@@ -13,35 +13,25 @@ def add_plot_to_canvas(fig, title: str):
 
     try:
         import matplotlib.pyplot as plt
+
+        # Check for Matplotlib Figure
         if isinstance(fig, plt.Figure):
-            # 1. Save PNG for display
-            buf_png = io.BytesIO()
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
-                fig.savefig(buf_png, format="png", bbox_inches="tight", dpi=300)
-            buf_png.seek(0)
-
-            # 2. Save SVG for export
-            buf_svg = io.BytesIO()
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
-                fig.savefig(buf_svg, format="svg", bbox_inches="tight")
-            buf_svg.seek(0)
-
-            # Store
+            # Store Matplotlib Figure
             st.session_state.canvas_plots[title] = {
-                "type": "png",
-                "data": buf_png.getvalue(),
-                "svg_data": buf_svg.getvalue()
+                "type": "matplotlib",
+                "fig": fig, # Store the actual figure object
+                "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
             }
             return
 
         import plotly.graph_objects as go
+        # Check for Plotly Figure
         if isinstance(fig, go.Figure):
-            # Store Plotly figure directly to avoid kaleido/chrome dependency
+            # Store Plotly figure
             st.session_state.canvas_plots[title] = {
                 "type": "plotly",
-                "data": fig
+                "data": fig,
+                "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
             }
             return
     except ImportError:
@@ -60,3 +50,23 @@ def get_canvas_plots():
 def remove_plot_from_canvas(title: str):
     if "canvas_plots" in st.session_state and title in st.session_state.canvas_plots:
         del st.session_state.canvas_plots[title]
+
+
+def move_plot_in_canvas(title: str, direction: str):
+    """Move a plot up or down in the canvas order."""
+    if "canvas_plots" not in st.session_state:
+        return
+
+    plots = st.session_state.canvas_plots
+    keys = list(plots.keys())
+
+    if title not in keys:
+        return
+
+    idx = keys.index(title)
+    new_idx = idx - 1 if direction == "up" else idx + 1
+
+    if 0 <= new_idx < len(keys):
+        # Create a new dictionary with swapped retrieval order
+        keys[idx], keys[new_idx] = keys[new_idx], keys[idx]
+        st.session_state.canvas_plots = {k: plots[k] for k in keys}

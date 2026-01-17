@@ -20,11 +20,26 @@ def get_summary_statistics(experiment):
 
     # Identify sample grouping column
     group_cols = []
+
+    # Define internal gating columns to exclude from grouping
+    # These are added as 'conditions' for metadata validity but should not split the sample summary
+    EXCLUDE_CONDITIONS = [
+        'cells', 'singlets', 'IsSinglet', 'Is_Singlet',
+        'Population', 'AutoLiveGate', 'LiveGate', 'SingletGate',
+        'Is_Live', 'Live', 'Density'
+    ]
+
     try:
         # Cytoflow property access can trigger lazy evaluation looking up cached keys in metadata
         # If metadata[x] missing for a key it thinks is a condition, it crashes.
         if hasattr(experiment, 'conditions'):
-            group_cols = list(experiment.conditions.keys())
+            all_conditions = list(experiment.conditions.keys())
+            # Filter out excluded conditions
+            group_cols = [
+                c for c in all_conditions
+                if c not in EXCLUDE_CONDITIONS
+                and not c.startswith('__') # exclude internal python attrs if any
+            ]
     except Exception:
         # Fallback if Cytoflow metadata is corrupted or mismatching data columns
         pass
@@ -38,7 +53,12 @@ def get_summary_statistics(experiment):
                 break
 
     if group_cols:
-        grouped = data.groupby(group_cols)
+        # Check if columns actually exist in data to avoid KeyError
+        valid_group_cols = [c for c in group_cols if c in data.columns]
+        if valid_group_cols:
+            grouped = data.groupby(valid_group_cols, observed=True)
+        else:
+             grouped = [('All', data)]
     else:
         # specific handling if no grouping (single file?)
         grouped = [('All', data)]

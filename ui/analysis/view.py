@@ -413,8 +413,71 @@ def render_analysis_tab():
                     selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"], key=f"plot_{selected_channel}_{parent_gate}")
 
                     if st.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
-                        add_plot_to_canvas(fig, f"Density Plot: {selected_channel} (Subset: {parent_gate})")
+                        # Create Matplotlib Figure for Canvas
+                        import matplotlib.pyplot as plt
+                        mpl_fig, mpl_ax = plt.subplots(figsize=(6, 4))
+
+                        for i, s in enumerate(selected_samples):
+                            if s in data_map:
+                                vals = data_map[s]
+                                vals = vals[~np.isnan(vals)]
+                                if len(vals) < 2: continue
+
+                                try:
+                                    if use_log:
+                                        qt_vals = vals[vals > 0]
+                                        if len(qt_vals) < 2: continue
+                                        dataset = np.log10(qt_vals)
+                                        kde = gaussian_kde(dataset)
+                                        y_vals = kde(np.log10(x_domain))
+                                    else:
+                                        dataset = vals
+                                        kde = gaussian_kde(dataset)
+                                        y_vals = kde(x_domain)
+
+                                    color = colors[i % len(colors)]
+                                    mpl_ax.plot(x_domain, y_vals, color=color, label=s, linewidth=2, zorder=10)
+
+                                    # Isolate fill to catch specific errors
+                                    try:
+                                        mpl_ax.fill_between(x_domain, y_vals, y2=0, color=color, alpha=0.5, zorder=5)
+                                    except Exception as e:
+                                        st.warning(f"Fill error for {s}: {e}")
+                                except Exception as e:
+                                    st.warning(f"Plot error for {s}: {e}")
+                                    continue
+
+                        if use_log:
+                            mpl_ax.set_xscale('log')
+
+                        mpl_ax.set_title(f"Density Plot: {selected_channel} (Subset: {parent_gate})")
+                        mpl_ax.set_xlabel(selected_channel)
+                        mpl_ax.set_ylabel("Density")
+                        mpl_ax.set_ylim(bottom=0)
+                        mpl_ax.spines['top'].set_visible(False)
+                        mpl_ax.spines['right'].set_visible(False)
+
+                        # Add Threshold Line (Background)
+                        if is_range:
+                            rmin = st.session_state[min_key]
+                            rmax = st.session_state[max_key]
+                            mpl_ax.axvline(x=rmin, color='green', linestyle='--', linewidth=2, zorder=3)
+                            mpl_ax.axvline(x=rmax, color='green', linestyle='--', linewidth=2, zorder=3)
+                            mpl_ax.axvspan(rmin, rmax, color='green', alpha=0.1, zorder=1)
+                        else:
+                            mpl_ax.axvline(x=curr_val_for_line, color='red', linestyle='--', linewidth=2, zorder=3)
+                            shade_color = "red" if is_negative else "green"
+                            if is_negative:
+                                mpl_ax.axvspan(x_domain[0], curr_val_for_line, color=shade_color, alpha=0.1, zorder=1)
+                            else:
+                                mpl_ax.axvspan(curr_val_for_line, x_domain[-1], color=shade_color, alpha=0.1, zorder=1)
+
+                        mpl_ax.legend()
+                        mpl_fig.tight_layout()
+
+                        add_plot_to_canvas(mpl_fig, f"Density Plot: {selected_channel} (Subset: {parent_gate})")
                         st.success("Plot added to canvas!")
+                        plt.close(mpl_fig)
 
                     # Check selection
                     if selection and selection.selection:

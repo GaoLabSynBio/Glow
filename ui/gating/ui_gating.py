@@ -70,7 +70,7 @@ def create_canvas_figure(df, x_col, y_col, title, is_log=False, color_col=None, 
 
 def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE):
     # Gating Section showing the base functionality
-    st.subheader("2. Auto Gating & Selection")
+    st.subheader("2. Live Gating Setup")
 
     if CYTOFLOW_AVAILABLE and 'loaded_files' in st.session_state and st.session_state.loaded_files:
 
@@ -166,7 +166,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                     if color_col:
                         fig.update_traces(marker=dict(size=5))
-                        fig.update_layout(coloraxis_colorbar=dict(title="Density"))
+                        fig.update_layout(coloraxis_colorbar=dict(title=dict(text='Count', font=dict(color='black')), len=0.6, yanchor='bottom', y=0.0, tickfont=dict(color='black')))
 
                     # Improved Plot Layout (White Background, Black Axes)
                     fig.update_layout(
@@ -206,7 +206,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
             # --- Step 1 & 2: Live/Dead Gating ---
             is_live_gate_ready = st.session_state.get('gate_accepted', False)
 
-            with st.expander("1 & 2: Live/Dead Gating Parameters", expanded=True):
+            with st.expander("Live/Dead Gating Parameters", expanded=True):
                 # Channel Selection
                 st.write("Select Channels for Live/Dead Gating:")
                 channels = base_exp.channels
@@ -397,7 +397,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
             # If we have a gated experiment, show it (persisting the view)
             if 'gated_experiment' in st.session_state:
                 st.divider()
-                st.subheader("3. Verification & Active Learning")
+                st.subheader("3. Live Gating Verification")
 
                 exp = st.session_state.gated_experiment
                 df = exp.data.copy() # Safe copy
@@ -496,14 +496,17 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     # Improve marker style for density look
                     if continuous_color:
                         fig.update_traces(marker=dict(size=6)) # Increased size for easier clicking
-                        fig.update_layout(coloraxis_colorbar=dict(title="Count"))
+                        fig.update_layout(coloraxis_colorbar=dict(
+                            title=dict(text="Count", font=dict(color="black")),
+                            tickfont=dict(color="black")
+                        ))
 
                     # Improved Plot Layout (White Background)
                     fig.update_layout(
                         plot_bgcolor='white',
                         paper_bgcolor='white',
-                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
-                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
+                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
+                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
                         font=dict(color="black"),
                         legend=dict(font=dict(color="black"))
                     )
@@ -695,7 +698,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                         fig_val = px.scatter(val_df, x=x_channel, y=y_channel,
                                             color='Cond_Label',
-                                            title="MLP Classification (Points) vs. Computed Gate (Line)",
+                                            title=f"{gating_method} Classification (Points) vs. Computed Gate (Line)",
                                             color_discrete_map=color_map_val,
                                             opacity=0.6,
                                             log_x=is_log, log_y=is_log,
@@ -705,10 +708,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         fig_val.update_layout(
                             plot_bgcolor='white',
                             paper_bgcolor='white',
-                            xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
-                            yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black')),
+                            xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
+                            yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
                             font=dict(color="black"),
-                            legend=dict(font=dict(color="black"))
+                            legend=dict(
+                                font=dict(color="black"),
+                                title=dict(font=dict(color="black"))
+                            )
                         )
 
                         # Draw the same boundary on this plot for verification
@@ -723,6 +729,25 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             fig_val.data = tuple(val_data)
 
                         st.plotly_chart(fig_val, width="stretch")
+
+                        # Add to Canvas button for Classification Plot
+                        canvas_title_val = f"{gating_method} Classification Validation"
+                        if st.button(f"Add \"{canvas_title_val}\" to Canvas", key=f"add_val_gate_to_canvas{ukey}"):
+                            boundaries_to_plot_val = []
+                            if boundary_x is not None:
+                                boundaries_to_plot_val.append({'vertices': list(zip(boundary_x, boundary_y)), 'color': 'black', 'width': 2})
+
+                            mpl_fig_val = create_canvas_figure(
+                                val_df, x_channel, y_channel,
+                                canvas_title_val,
+                                is_log=is_log,
+                                color_col='Cond_Label',
+                                color_map=color_map_val,
+                                boundaries=boundaries_to_plot_val
+                            )
+                            add_plot_to_canvas(mpl_fig_val, canvas_title_val)
+                            st.success("Plot added to canvas!")
+                            plt.close(mpl_fig_val)
 
 
                     # --- Manual Gate Visualization ---
@@ -1061,7 +1086,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         if st.session_state.get('manual_vertices'):
                             current_poly_str = "\n".join([f"{v[0]}, {v[1]}" for v in st.session_state.manual_vertices])
                         else:
-                            current_poly_str = f"10000, 10000\n100000, 10000\n100000, 100000\n10000, 100000"
+                            current_poly_str = f"1000000, 1000000\n100000000, 1000000\n100000000, 100000000\n1000000, 100000000"
 
                         vertices_text = st.text_area("Polygon Vertices (x, y per line)", current_poly_str, height=150, key="manual_live_verts_input")
 
@@ -1133,6 +1158,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                      manual_exp.data = manual_exp.data[manual_exp.data["ManualLiveGate"]].copy()
 
                                 kept_cells = len(manual_exp.data)
+                                if kept_cells == 0:
+                                    st.warning('Selected gate contains 0 cells. Please select a valid region containing cells.')
+                                    st.stop()
+
                                 percent = (kept_cells / total_cells) * 100 if total_cells > 0 else 0
                                 st.session_state.live_gate_stats = f"{kept_cells} / {total_cells} ({percent:.1f}%)"
 
@@ -1179,7 +1208,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         if st.session_state.get('live_gate_stats'):
                             st.success(f"Final Live Cells: {st.session_state.live_gate_stats}")
 
-                        st.header("3. Singlet Detection")
+                        st.subheader("4. Singlet Detection")
 
                         # Automatically proceed to Singlet Detection
                         is_doublet_mode = True # not st.session_state.get('doublets_removed', False)
@@ -1302,330 +1331,623 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 viz_df_full = df_gated
 
                             # --- Auto-Gate Calculation (Singlets - GMM on Linear Data) ---
-                            singlet_method = st.radio("Singlet Method", ["GMM (Auto-Ellipse)", "MLP (Auto-Detection)"], index=1, horizontal=True, key=f"s_method{ukey}")
-                            if "MLP" in singlet_method:
-                                try:
-                                    learner = get_active_learner("singlet")
-                                    if learner:
-                                        X_lin = df_gated[[d_x, d_y]].values
-                                        X_pred = np.log10(X_lin + 1) if np.max(X_lin) > 10 else X_lin
-                                        c_type = str(active_line_singlets).lower() if active_line_singlets else "colo"
-                                        # Context
-                                        ctx_ids = np.zeros(len(X_pred), dtype=int)
-                                        ctx_types = np.array([c_type] * len(X_pred))
-                                        preds = learner.model.predict(X_pred, dataset_ids=ctx_ids, cell_types=ctx_types)
-                                        # Viz
+                            # Resolved default vs session state for singlet method
+                            # --- MANUAL MODE OVERRIDE ---
+                            is_manual_active = st.session_state.get('doublet_manual_mode', False)
+
+                            if is_manual_active:
+                                st.info("Manual Mode Active")
+                                # Define viz_df (Downsampled)
+                                subset_n = 5000
+                                viz_df = viz_df_full.sample(subset_n, random_state=42) if len(viz_df_full) > subset_n else viz_df_full
+
+                                # Visualization (Scatter)
+                                fig_m = go.Figure()
+                                if d_is_log:
+                                    x_p = np.log10(viz_df[d_x] + 1)
+                                    y_p = np.log10(viz_df[d_y] + 1)
+                                else:
+                                    x_p = viz_df[d_x]
+                                    y_p = viz_df[d_y]
+
+                                fig_m.add_trace(go.Scatter(
+                                    x=x_p, y=y_p, mode='markers',
+                                    marker=dict(size=4, color='#0d0887', opacity=0.6), name='Events'
+                                ))
+
+                                # Visualise Applied Gate
+                                if "singlet_gate_params" in st.session_state and st.session_state.singlet_gate_params.get("type") == "polygon":
+                                    apv = st.session_state.singlet_gate_params["vertices"]
+                                    apx_ = [v[0] for v in apv] + [apv[0][0]]
+                                    apy_ = [v[1] for v in apv] + [apv[0][1]]
+                                    if d_is_log:
+                                        apx_ = np.log10(np.array(apx_) + 1)
+                                        apy_ = np.log10(np.array(apy_) + 1)
+
+                                    fig_m.add_trace(go.Scatter(x=apx_, y=apy_, mode="lines",
+                                                            line=dict(color="lime", width=3, dash="dash"), name="Applied Manual Gate"))
+
+                                # Visualise Pending Selection
+                                if st.session_state.get('pending_doublet_verts'):
+                                    pv = st.session_state.pending_doublet_verts
+                                    # Close loop for viz
+                                    pv_plot = pv + [pv[0]]
+                                    pvx = [p[0] for p in pv_plot]
+                                    pvy = [p[1] for p in pv_plot]
+
+                                    if d_is_log:
+                                        pvx = np.log10(np.array(pvx) + 1)
+                                        pvy = np.log10(np.array(pvy) + 1)
+
+                                    fig_m.add_trace(go.Scatter(x=pvx, y=pvy, mode='lines+markers',
+                                                            line=dict(color='#f0f921', width=3), name="Manual Selection"))
+
+                                fig_m.update_layout(
+                                    title="Manual Singlet Gating",
+                                    xaxis_title=d_x + (" (Log)" if d_is_log else ""),
+                                    yaxis_title=d_y + (" (Log)" if d_is_log else ""),
+                                    plot_bgcolor="white", paper_bgcolor="white",
+                                    font=dict(color="black"),
+                                    xaxis=dict(
+                                        color="black",
+                                        tickfont=dict(color="black"),
+                                        title_font=dict(color="black"),
+                                        showgrid=True,
+                                        gridcolor="lightgray"
+                                    ),
+                                    yaxis=dict(
+                                        color="black",
+                                        tickfont=dict(color="black"),
+                                        title_font=dict(color="black"),
+                                        showgrid=True,
+                                        gridcolor="lightgray"
+                                    ),
+                                    legend=dict(
+                                        title=dict(font=dict(color="black")),
+                                        font=dict(color="black")
+                                    ),
+                                    dragmode="pan"
+                                )
+
+                                # Render Plot
+                                sel_m = st.plotly_chart(fig_m, width="stretch", on_select="rerun", selection_mode="points", key="singlet_manual_plot")
+
+                                if st.button("Add Plot to Canvas", key="add_canvas_manual_singlet"):
+                                    # Create MPL Figure for Canvas (Support Download SVG)
+                                    b_list = []
+                                    # 1. Applied Gate
+                                    if "singlet_gate_params" in st.session_state and st.session_state.singlet_gate_params.get("type") == "polygon":
+                                        b_list.append({
+                                            "vertices": st.session_state.singlet_gate_params["vertices"],
+                                            "color": "lime",
+                                            "width": 2
+                                        })
+                                    # 2. Pending Selection
+                                    if st.session_state.get("pending_doublet_verts"):
+                                         b_list.append({
+                                            "vertices": st.session_state.pending_doublet_verts,
+                                            "color": "#f0f921",
+                                            "width": 2
+                                        })
+
+                                    # Use fake column for purple color
+                                    v_df_c = viz_df.copy()
+                                    v_df_c["Events_"] = "Events"
+                                    # Purple #0d0887
+
+                                    mpl_fig_m = create_canvas_figure(
+                                        v_df_c, d_x, d_y, "Manual Singlet Gating",
+                                        is_log=d_is_log,
+                                        color_col="Events_",
+                                        color_map={"Events": "#0d0887"},
+                                        boundaries=b_list
+                                    )
+                                    add_plot_to_canvas(mpl_fig_m, "Manual Singlet Gating")
+                                    st.success("Plot added to canvas!")
+                                    plt.close(mpl_fig_m)
+
+                                # Selection Logic
+                                if sel_m and sel_m.get("selection"):
+                                    pts = sel_m["selection"]["points"]
+                                    if len(pts) > 0:
+                                        sx = np.array([p["x"] for p in pts])
+                                        sy = np.array([p["y"] for p in pts])
+
+                                        if d_is_log:
+                                            sx = 10**sx - 1
+                                            sy = 10**sy - 1
+
+                                        candidates = list(zip(sx, sy))
+                                        current_verts = st.session_state.get('pending_doublet_verts', [])
+                                        updated_verts = list(current_verts)
+
+                                        changed = False
+                                        for c in candidates:
+                                            is_close = False
+                                            for ex in current_verts:
+                                                 if np.isclose(c[0], ex[0], atol=1e-5) and np.isclose(c[1], ex[1], atol=1e-5):
+                                                     is_close = True
+                                                     break
+                                            if not is_close:
+                                                updated_verts.append(c)
+                                                changed = True
+
+                                        if changed:
+                                            if len(updated_verts) >= 3:
+                                                arr_u = np.array(updated_verts)
+                                                cx, cy = np.mean(arr_u[:,0]), np.mean(arr_u[:,1])
+                                                angs = np.arctan2(arr_u[:,1]-cy, arr_u[:,0]-cx)
+                                                idxs = np.argsort(angs)
+                                                updated_verts = [updated_verts[i] for i in idxs]
+
+                                            st.session_state.pending_doublet_verts = updated_verts
+                                            st.session_state.doublet_verts_input = "\n".join([f"{v[0]}, {v[1]}" for v in updated_verts])
+                                            st.rerun()
+
+                                # Manual Interface
+                                st.info("Manual Mode: Click points to define polygon \nor enter vertices coordinates directly.")
+                                current_poly_str_d = ""
+                                if st.session_state.get('pending_doublet_verts'):
+                                     current_poly_str_d = "\n".join([f"{v[0]}, {v[1]}" for v in st.session_state.pending_doublet_verts])
+                                else:
+                                     current_poly_str_d = "1000000, 1000000\n100000000, 1000000\n100000000, 100000000\n1000000, 100000000"
+
+                                def _sync_text_to_plot_d():
+                                     txt = st.session_state.doublet_verts_input
+                                     if txt:
+                                         p_verts = []
+                                         try:
+                                             for line in txt.strip().split("\n"):
+                                                 parts = line.split(",")
+                                                 if len(parts) >= 2:
+                                                     p_verts.append((float(parts[0].strip()), float(parts[1].strip())))
+                                             if len(p_verts) > 0:
+                                                 st.session_state.pending_doublet_verts = p_verts
+                                         except Exception:
+                                             pass
+
+                                vertices_text_d = st.text_area("Polygon Vertices", current_poly_str_d, height=150, key="doublet_verts_input", on_change=_sync_text_to_plot_d)
+
+                                col_m1, col_m2, col_m3 = st.columns(3)
+                                if col_m1.button("✅ Apply Manual Gate", key=f"confirm_manual_singlets{sukey}"):
+                                      # Apply logic
+                                      parsed_verts = []
+                                      try:
+                                          lines = vertices_text_d.strip().split('\n')
+                                          for line in lines:
+                                              parts = line.split(',')
+                                              if len(parts) >= 2:
+                                                  parsed_verts.append((float(parts[0].strip()), float(parts[1].strip())))
+
+                                          if len(parsed_verts) < 3:
+                                              st.error("Need 3+ points")
+                                          else:
+                                              # Save params
+                                              st.session_state.singlet_gate_params = {
+                                                  'type': 'polygon',
+                                                  'vertices': parsed_verts,
+                                                  'channels': [d_x, d_y]
+                                              }
+
+                                              # Apply Gate
+                                              from glow.gating.geometry import points_in_polygon
+
+                                              # Linear Check
+                                              X_lin_full = df_gated[[d_x, d_y]].values
+                                              mask = points_in_polygon(X_lin_full, parsed_verts)
+
+                                              kept = sum(mask)
+                                              total = len(mask)
+                                              st.session_state.singlet_gate_stats = f"{kept} / {total} ({(kept/total)*100:.1f}%)"
+
+                                              exp.data["IsSinglet"] = False
+                                              exp.data.loc[df_gated.index[mask], "IsSinglet"] = True
+                                              st.session_state.gated_experiment = exp
+                                              st.session_state.doublets_removed = True
+                                              # Keep enable to see result
+                                              st.success(f"Manual Gate Applied! {kept} events.")
+                                              st.rerun()
+
+                                      except Exception as e:
+                                          st.error(f"Error: {e}")
+
+                                if col_m2.button("Undo Last Point", key="undo_pt"):
+                                    curr = st.session_state.get('pending_doublet_verts', [])
+                                    if curr:
+                                        st.session_state.pending_doublet_verts = curr[:-1]
+                                        st.rerun()
+
+                                if col_m3.button("Exit Manual Mode", key="exit_manual_s"):
+                                    st.session_state.doublet_manual_mode = False
+                                    st.rerun()
+
+                            else:
+                                s_key = f"s_method{ukey}"
+                                if s_key not in st.session_state:
+                                    st.session_state[s_key] = "MLP (Auto-Detection)"
+                                singlet_method = st.radio("Singlet Method", ["GMM (Auto-Ellipse)", "MLP (Auto-Detection)"], horizontal=True, key=s_key)
+                                if "MLP" in singlet_method:
+                                    try:
+                                        learner = get_active_learner("singlet")
+                                        if learner:
+                                            X_lin = df_gated[[d_x, d_y]].values
+                                            X_pred = np.log10(X_lin + 1) if np.max(X_lin) > 10 else X_lin
+                                            c_type = str(active_line_singlets).lower() if active_line_singlets else "colo"
+                                            # Context
+                                            ctx_ids = np.zeros(len(X_pred), dtype=int)
+                                            ctx_types = np.array([c_type] * len(X_pred))
+                                            preds = learner.model.predict(X_pred, dataset_ids=ctx_ids, cell_types=ctx_types)
+                                            # Viz
+                                            subset_n = 5000
+                                            viz_df = viz_df_full.sample(subset_n, random_state=42) if len(viz_df_full) > subset_n else viz_df_full
+                                            v_lin = viz_df[[d_x, d_y]].values
+                                            v_pred_in = np.log10(v_lin + 1) if np.max(v_lin) > 10 else v_lin
+                                            v_ids = np.zeros(len(v_lin), dtype=int)
+                                            v_types = np.array([c_type] * len(v_lin))
+                                            viz_df["Singlet"] = learner.model.predict(v_pred_in, dataset_ids=v_ids, cell_types=v_types)
+                                            # Use categorical column for Plotly to ensure discrete colors
+                                            viz_df["Singlet_Cat"] = viz_df["Singlet"].apply(lambda x: "Singlet" if x==1 else "Doublet")
+
+                                            # Plasma Colors: Doublet (0) -> Purple (#0d0887), Singlet (1) -> Yellow (#f0f921)
+                                            color_map_singlet = {"Doublet": "#0d0887", "Singlet": "#f0f921"}
+
+                                            fig_mlp = px.scatter(viz_df, x=d_x, y=d_y, color="Singlet_Cat", title="Singlet Detection",
+                                                               color_discrete_map=color_map_singlet, opacity=0.6,
+                                                               log_x=d_is_log, log_y=d_is_log, render_mode="svg")
+                                            fig_mlp.update_layout(
+                                                plot_bgcolor="white",
+                                                paper_bgcolor="white",
+                                                dragmode="pan",
+                                                clickmode="event+select",
+                                                legend_title_text="Prediction",
+                                                font=dict(color="black"),
+                                                xaxis=dict(
+                                                    color="black",
+                                                    tickfont=dict(color="black"),
+                                                    title_font=dict(color="black"),
+                                                    showgrid=True,
+                                                    gridcolor="lightgray"
+                                                ),
+                                                yaxis=dict(
+                                                    color="black",
+                                                    tickfont=dict(color="black"),
+                                                    title_font=dict(color="black"),
+                                                    showgrid=True,
+                                                    gridcolor="lightgray"
+                                                ),
+                                                legend=dict(
+                                                    title=dict(text="Prediction", font=dict(color="black")),
+                                                    font=dict(color="black")
+                                                )
+                                            )
+                                            unc_trace = get_uncertainty_trace(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y)
+                                            if unc_trace: fig_mlp.add_trace(unc_trace)
+                                            selection = st.plotly_chart(fig_mlp, width="stretch", on_select="rerun", selection_mode="box", key="mlp_singlet_plot")
+
+                                            canvas_title_s = "Singlet Detection"
+                                            if active_line_singlets:
+                                                canvas_title_s += f" ({active_line_singlets})"
+
+                                            if st.button(f"Add '{canvas_title_s}' to Canvas", key=f"add_singlet_mlp_gate_{sukey}"):
+                                                mpl_fig = create_canvas_figure(viz_df, d_x, d_y, canvas_title_s, is_log=d_is_log, color_col="Singlet_Cat", color_map=color_map_singlet)
+                                                add_plot_to_canvas(mpl_fig, canvas_title_s)
+                                                st.success("Plot added to canvas!")
+                                                plt.close(mpl_fig)
+                                            render_uncertainty_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, model_type="singlet")
+                                            render_labeling_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, selection, plot_df=viz_df, model_type="singlet")
+                                            render_reset_controls("singlet")
+                                            st.divider()
+                                            col_ma, col_mr = st.columns(2)
+
+                                            def _reject_s_callback():
+                                                # st.session_state[f"s_method{ukey}"] = "GMM (Auto-Ellipse)"
+                                                st.session_state.doublet_manual_mode = True
+
+                                            col_mr.button("❌ Reject / Manual Gate", key=f"reject_mlp_{ukey}", on_click=_reject_s_callback)
+
+                                            if col_ma.button(f"✅ Accept Singlets for {c_type.upper()}", key=f"accept_mlp_{ukey}"):
+                                                st.session_state.singlet_gate_params = {"type": "mlp", "diff_channels": [d_x, d_y], "cell_type": c_type}
+                                                mask_full = (preds == 1)
+                                                kept, total = sum(mask_full), len(preds)
+                                                st.session_state.singlet_gate_stats = f"{kept} / {total} ({(kept/total)*100:.1f}%)"
+
+                                                # Label only, do not remove rows
+                                                exp.data["IsSinglet"] = False
+                                                exp.data.loc[df_gated.index[mask_full], "IsSinglet"] = True
+
+                                                st.session_state.gated_experiment = exp
+                                                st.session_state.doublets_removed = True
+                                                # st.session_state.show_doublet_gating = False
+                                                st.success(f"MLP Gate Applied. Labeled {kept} singlets (IsSinglet=True).")
+                                                st.rerun()
+                                        else:
+                                            st.error("Failed to load MLP model.")
+                                    except Exception as e:
+                                        st.error(f"MLP Error: {e}")
+                                else:
+                                    try:
+                                        # Always calculate on Linear for Singlets (Physical relationship is linear)
+                                        X_lin_full = df_gated[[d_x, d_y]].values
+
+                                        # Fit GMM (Fit on FULL gated subset for this cell line, or just representative? Let's do full subset for better stats)
+                                        gmm_lin = GaussianMixture(n_components=1, random_state=42)
+                                        gmm_lin.fit(X_lin_full)
+
+                                        d_mean = gmm_lin.means_[0]
+                                        d_cov = gmm_lin.covariances_[0]
+
+                                        # Generate Ellipse (2.5 Sigma)
+                                        lambda_d, v_d = np.linalg.eig(d_cov)
+                                        lambda_d = np.sqrt(lambda_d)
+                                        theta_d = np.linspace(0, 2*np.pi, 100)
+                                        ell_x = d_mean[0] + 2.5 * lambda_d[0] * v_d[0, 0] * np.cos(theta_d) + 2.5 * lambda_d[1] * v_d[0, 1] * np.sin(theta_d)
+                                        ell_y = d_mean[1] + 2.5 * lambda_d[0] * v_d[1, 0] * np.cos(theta_d) + 2.5 * lambda_d[1] * v_d[1, 1] * np.sin(theta_d)
+
+                                        # --- Visualization ---
+                                        fig_d = go.Figure()
+
+                                        # Define viz_df (Downsampled from viz_df_full)
                                         subset_n = 5000
                                         viz_df = viz_df_full.sample(subset_n, random_state=42) if len(viz_df_full) > subset_n else viz_df_full
-                                        v_lin = viz_df[[d_x, d_y]].values
-                                        v_pred_in = np.log10(v_lin + 1) if np.max(v_lin) > 10 else v_lin
-                                        v_ids = np.zeros(len(v_lin), dtype=int)
-                                        v_types = np.array([c_type] * len(v_lin))
-                                        viz_df["Singlet"] = learner.model.predict(v_pred_in, dataset_ids=v_ids, cell_types=v_types)
-                                        # Use categorical column for Plotly to ensure discrete colors
-                                        viz_df["Singlet_Cat"] = viz_df["Singlet"].apply(lambda x: "Singlet" if x==1 else "Doublet")
 
-                                        # Plasma Colors: Doublet (0) -> Purple (#0d0887), Singlet (1) -> Yellow (#f0f921)
-                                        color_map_singlet = {"Doublet": "#0d0887", "Singlet": "#f0f921"}
+                                        # For Density, we need 1D arrays
+                                        if d_is_log:
+                                            # Safe log
+                                            x_to_plot = np.log10(viz_df[d_x] + 1)
+                                            y_to_plot = np.log10(viz_df[d_y] + 1)
+                                            ell_x_plot = np.log10(ell_x + 1) if not np.any(ell_x <= -1) else ell_x # approximation
+                                            ell_y_plot = np.log10(ell_y + 1) if not np.any(ell_y <= -1) else ell_y
+                                        else:
+                                            x_to_plot = viz_df[d_x]
+                                            y_to_plot = viz_df[d_y]
+                                            ell_x_plot = ell_x
+                                            ell_y_plot = ell_y
 
-                                        fig_mlp = px.scatter(viz_df, x=d_x, y=d_y, color="Singlet_Cat", title="Singlet Detection",
-                                                           color_discrete_map=color_map_singlet, opacity=0.6,
-                                                           log_x=d_is_log, log_y=d_is_log, render_mode="svg")
-                                        fig_mlp.update_layout(plot_bgcolor="white", dragmode="pan", clickmode="event+select", legend_title_text="Prediction")
-                                        fig_mlp.update_layout(plot_bgcolor="white", dragmode="pan", clickmode="event+select")
-                                        unc_trace = get_uncertainty_trace(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y)
-                                        if unc_trace: fig_mlp.add_trace(unc_trace)
-                                        selection = st.plotly_chart(fig_mlp, width="stretch", on_select="rerun", selection_mode="box", key="mlp_singlet_plot")
+                                        # USER REQ: "density should be each cell but colored with density it has"
+                                        # We use Gaussian KDE to estimate density for each point -> color by density
 
-                                        canvas_title_s = "Singlet Detection"
-                                        if active_line_singlets:
-                                            canvas_title_s += f" ({active_line_singlets})"
+                                        # Stack X and Y for KDE
+                                        # We use the PLOT coordinates (Linear or Log transformed) for visual density
+                                        # Fast density via histogram (Count)
+                                        xy = np.vstack([x_to_plot, y_to_plot])
 
-                                        if st.button(f"Add '{canvas_title_s}' to Canvas", key=f"add_singlet_mlp_gate_{sukey}"):
-                                            mpl_fig = create_canvas_figure(viz_df, d_x, d_y, canvas_title_s, is_log=d_is_log, color_col="Singlet_Cat", color_map=color_map_singlet)
-                                            add_plot_to_canvas(mpl_fig, canvas_title_s)
-                                            st.success("Plot added to canvas!")
-                                            plt.close(mpl_fig)
-                                        render_uncertainty_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, model_type="singlet")
-                                        render_labeling_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, selection, plot_df=viz_df, model_type="singlet")
-                                        render_reset_controls("singlet")
-                                        st.divider()
-                                        if st.button(f"✅ Accept Singlets for {c_type.upper()}", key=f"accept_mlp_{ukey}"):
-                                            st.session_state.singlet_gate_params = {"type": "mlp", "diff_channels": [d_x, d_y], "cell_type": c_type}
-                                            mask_full = (preds == 1)
-                                            kept, total = sum(mask_full), len(preds)
-                                            st.session_state.singlet_gate_stats = f"{kept} / {total} ({(kept/total)*100:.1f}%)"
+                                        try:
+                                            z_density = gaussian_kde(xy)(xy)
+                                            # Sort to plot high density on top
+                                            idx_sort = z_density.argsort()
+                                            x_to_plot = x_to_plot.iloc[idx_sort] if hasattr(x_to_plot, 'iloc') else x_to_plot[idx_sort]
+                                            y_to_plot = y_to_plot.iloc[idx_sort] if hasattr(y_to_plot, 'iloc') else y_to_plot[idx_sort]
+                                            z_density = z_density[idx_sort]
+                                        except Exception:
+                                            # Fallback if KDE fails (singular matrix)
+                                            z_density = 'blue'
 
-                                            # Label only, do not remove rows
-                                            exp.data["IsSinglet"] = False
-                                            exp.data.loc[df_gated.index[mask_full], "IsSinglet"] = True
+                                        # Use Scatter (SVG) instead of Scattergl for reliable individual point selection
+                                        # Scattergl can have issues with hit-testing on some systems/browsers and resets context
+                                        fig_d.add_trace(go.Scatter(
+                                            x=x_to_plot, y=y_to_plot,
+                                            mode='markers',
+                                            marker=dict(
+                                                size=4, # Slightly larger for easier clicking
+                                                color=z_density,
+                                                colorscale='Viridis',
+                                                showscale=True,
+                                                colorbar=dict(
+                                                    title=dict(text='Density', font=dict(color='black')),
+                                                    tickfont=dict(color='black')
+                                                )
+                                            ),
+                                            name='Events',
+                                            # Ensure this trace handles selection
+                                            selected=dict(marker=dict(color='orange', size=6)), # Visual feedback on selection
+                                            unselected=dict(marker=dict(opacity=0.5))
+                                        ))
 
-                                            st.session_state.gated_experiment = exp
-                                            st.session_state.doublets_removed = True
-                                            # st.session_state.show_doublet_gating = False
-                                            st.success(f"MLP Gate Applied. Labeled {kept} singlets (IsSinglet=True).")
-                                            st.rerun()
-                                    else:
-                                        st.error("Failed to load MLP model.")
-                                except Exception as e:
-                                    st.error(f"MLP Error: {e}")
-                            else:
-                                try:
-                                    # Always calculate on Linear for Singlets (Physical relationship is linear)
-                                    X_lin_full = df_gated[[d_x, d_y]].values
+                                        # Auto-Gate Ellipse -> Converted to 5-Point Polygon (Pentagon)
+                                        # User Req: "auto selection for singlets should be 5 points connected by lines"
+                                        theta_poly = np.linspace(0, 2*np.pi, 6) # 6 points to close the loop (5 sides)
+                                        ell_x_poly = d_mean[0] + 2.5 * lambda_d[0] * v_d[0, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[0, 1] * np.sin(theta_poly)
+                                        ell_y_poly = d_mean[1] + 2.5 * lambda_d[0] * v_d[1, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[1, 1] * np.sin(theta_poly)
 
-                                    # Fit GMM (Fit on FULL gated subset for this cell line, or just representative? Let's do full subset for better stats)
-                                    gmm_lin = GaussianMixture(n_components=1, random_state=42)
-                                    gmm_lin.fit(X_lin_full)
+                                        ell_x_plot = np.log10(ell_x_poly + 1) if d_is_log else ell_x_poly
+                                        ell_y_plot = np.log10(ell_y_poly + 1) if d_is_log else ell_y_poly
 
-                                    d_mean = gmm_lin.means_[0]
-                                    d_cov = gmm_lin.covariances_[0]
+                                        # Draw the Auto-Gate
+                                        fig_d.add_trace(go.Scatter(x=ell_x_plot, y=ell_y_plot, mode='lines+markers',
+                                                                line=dict(color='black', width=3), # User Request: Black full line
+                                                                marker=dict(size=6, color='black'),
+                                                                name="Auto Singlets"))
 
-                                    # Generate Ellipse (2.5 Sigma)
-                                    lambda_d, v_d = np.linalg.eig(d_cov)
-                                    lambda_d = np.sqrt(lambda_d)
-                                    theta_d = np.linspace(0, 2*np.pi, 100)
-                                    ell_x = d_mean[0] + 2.5 * lambda_d[0] * v_d[0, 0] * np.cos(theta_d) + 2.5 * lambda_d[1] * v_d[0, 1] * np.sin(theta_d)
-                                    ell_y = d_mean[1] + 2.5 * lambda_d[0] * v_d[1, 0] * np.cos(theta_d) + 2.5 * lambda_d[1] * v_d[1, 1] * np.sin(theta_d)
-
-                                    # --- Visualization ---
-                                    fig_d = go.Figure()
-
-                                    # Define viz_df (Downsampled from viz_df_full)
-                                    subset_n = 5000
-                                    viz_df = viz_df_full.sample(subset_n, random_state=42) if len(viz_df_full) > subset_n else viz_df_full
-
-                                    # For Density, we need 1D arrays
-                                    if d_is_log:
-                                        # Safe log
-                                        x_to_plot = np.log10(viz_df[d_x] + 1)
-                                        y_to_plot = np.log10(viz_df[d_y] + 1)
-                                        ell_x_plot = np.log10(ell_x + 1) if not np.any(ell_x <= -1) else ell_x # approximation
-                                        ell_y_plot = np.log10(ell_y + 1) if not np.any(ell_y <= -1) else ell_y
-                                    else:
-                                        x_to_plot = viz_df[d_x]
-                                        y_to_plot = viz_df[d_y]
-                                        ell_x_plot = ell_x
-                                        ell_y_plot = ell_y
-
-                                    # USER REQ: "density should be each cell but colored with density it has"
-                                    # We use Gaussian KDE to estimate density for each point -> color by density
-
-                                    # Stack X and Y for KDE
-                                    # We use the PLOT coordinates (Linear or Log transformed) for visual density
-                                    xy = np.vstack([x_to_plot, y_to_plot])
-
-                                    try:
-                                        z_density = gaussian_kde(xy)(xy)
-                                        # Sort to plot high density on top
-                                        idx_sort = z_density.argsort()
-                                        x_to_plot = x_to_plot.iloc[idx_sort] if hasattr(x_to_plot, 'iloc') else x_to_plot[idx_sort]
-                                        y_to_plot = y_to_plot.iloc[idx_sort] if hasattr(y_to_plot, 'iloc') else y_to_plot[idx_sort]
-                                        z_density = z_density[idx_sort]
-                                    except Exception:
-                                        # Fallback if KDE fails (singular matrix)
-                                        z_density = 'blue'
-
-                                    # Use Scatter (SVG) instead of Scattergl for reliable individual point selection
-                                    # Scattergl can have issues with hit-testing on some systems/browsers and resets context
-                                    fig_d.add_trace(go.Scatter(
-                                        x=x_to_plot, y=y_to_plot,
-                                        mode='markers',
-                                        marker=dict(
-                                            size=4, # Slightly larger for easier clicking
-                                            color=z_density,
-                                            colorscale='Viridis',
-                                            showscale=True,
-                                            colorbar=dict(title='Density')
-                                        ),
-                                        name='Events',
-                                        # Ensure this trace handles selection
-                                        selected=dict(marker=dict(color='orange', size=6)), # Visual feedback on selection
-                                        unselected=dict(marker=dict(opacity=0.5))
-                                    ))
-
-                                    # Auto-Gate Ellipse -> Converted to 5-Point Polygon (Pentagon)
-                                    # User Req: "auto selection for singlets should be 5 points connected by lines"
-                                    theta_poly = np.linspace(0, 2*np.pi, 6) # 6 points to close the loop (5 sides)
-                                    ell_x_poly = d_mean[0] + 2.5 * lambda_d[0] * v_d[0, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[0, 1] * np.sin(theta_poly)
-                                    ell_y_poly = d_mean[1] + 2.5 * lambda_d[0] * v_d[1, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[1, 1] * np.sin(theta_poly)
-
-                                    ell_x_plot = np.log10(ell_x_poly + 1) if d_is_log else ell_x_poly
-                                    ell_y_plot = np.log10(ell_y_poly + 1) if d_is_log else ell_y_poly
-
-                                    # Draw the Auto-Gate
-                                    fig_d.add_trace(go.Scatter(x=ell_x_plot, y=ell_y_plot, mode='lines+markers',
-                                                            line=dict(color='black', width=3), # User Request: Black full line
-                                                            marker=dict(size=6, color='black'),
-                                                            name="Auto Singlets"))
-
-                                    # Manual Gate Pending
-                                    if st.session_state.get('pending_doublet_verts'):
-                                            pv = st.session_state.pending_doublet_verts
-                                            # Transform for display if needed
+                                        # Applied Manual Gate (Persistence)
+                                        if "singlet_gate_params" in st.session_state and st.session_state.singlet_gate_params.get("type") == "polygon":
+                                            apv = st.session_state.singlet_gate_params["vertices"]
+                                            apx_ = [v[0] for v in apv] + [apv[0][0]]
+                                            apy_ = [v[1] for v in apv] + [apv[0][1]]
                                             if d_is_log:
-                                                # Not implementing complex log drag yet, assume manual on linear for now or transform points
-                                                # For simplicity in this iteration, let's keep manual selection logic on the raw data coordinates
-                                                # but display might misalign if we transformed x_to_plot.
-                                                # Let's stick to LINEAR coordinates for the axes if user selected Linear,
-                                                # if Log, we should probably plot log-log.
-                                                pass
+                                                apx_ = np.log10(np.array(apx_) + 1)
+                                                apy_ = np.log10(np.array(apy_) + 1)
+                                            fig_d.add_trace(go.Scatter(x=apx_, y=apy_, mode="lines+markers",
+                                                                    line=dict(color="lime", width=3, dash="dash"), name="Applied Manual Gate"))
 
-                                            px_ = [v[0] for v in pv] + [pv[0][0]]
-                                            py_ = [v[1] for v in pv] + [pv[0][1]]
-
-                                            if d_is_log:
-                                                px_ = np.log10(np.array(px_) + 1)
-                                                py_ = np.log10(np.array(py_) + 1)
-
-                                            fig_d.add_trace(go.Scatter(x=px_, y=py_, mode='lines+markers',
-                                                                    line=dict(color='cyan', width=3), name="Manual Selection"))
-
-                                    # Interaction Mode State
-                                    is_manual_active = st.session_state.get('doublet_manual_mode', False)
-
-                                    # --- Calculate Auto-Zoom Range ---
-                                    # Focus on the GMM cluster to avoid manual zooming (User Req for start zoom)
-                                    zoom_margin = 4 # sigmas
-                                    x_min_lin = d_mean[0] - zoom_margin * np.sqrt(d_cov[0,0])
-                                    x_max_lin = d_mean[0] + zoom_margin * np.sqrt(d_cov[0,0])
-                                    y_min_lin = d_mean[1] - zoom_margin * np.sqrt(d_cov[1,1])
-                                    y_max_lin = d_mean[1] + zoom_margin * np.sqrt(d_cov[1,1])
-
-                                    start_range_x = None
-                                    start_range_y = None
-
-                                    if d_is_log:
-                                        # Avoid log of negative/zero
-                                        x_min_lin = max(0, x_min_lin)
-                                        y_min_lin = max(0, y_min_lin)
-                                        start_range_x = [np.log10(x_min_lin + 1), np.log10(x_max_lin + 1)]
-                                        start_range_y = [np.log10(y_min_lin + 1), np.log10(y_max_lin + 1)]
-                                    else:
-                                        start_range_x = [x_min_lin, x_max_lin]
-                                        start_range_y = [y_min_lin, y_max_lin]
-
-                                    # Axes
-                                    # User Req: "when i zoom in i want to keep the visual the same"
-                                    # USER REQ: "background to be transparent"
-
-                                    fig_d.update_layout(
-                                        title="Singlet Identification " + ("(Manual Mode)" if is_manual_active else "(Auto Mode)"),
-                                        xaxis_title=d_x + (" (Log)" if d_is_log else ""),
-                                        yaxis_title=d_y + (" (Log)" if d_is_log else ""),
-                                        dragmode='pan', # Set to 'pan' to allow easier clicking without zoom box interference
-                                        clickmode='event+select',
-                                        plot_bgcolor='rgba(0,0,0,0)',
-                                        paper_bgcolor='rgba(0,0,0,0)',
-                                        font=dict(color='black'), # Ensure text is visible
-                                        margin=dict(l=20, r=20, t=40, b=20),
-                                        height=500,
-                                        xaxis=dict(range=start_range_x, color='black', tickfont=dict(color='black')),
-                                        yaxis=dict(range=start_range_y, color='black', tickfont=dict(color='black')),
-                                        legend=dict(font=dict(color="black")),
-                                        uirevision='constant' # Keeps user zoom state on re-runs
-                                    )
-                                    fig_d.update_xaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
-                                    fig_d.update_yaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
-
-                                    # Selection Interaction
-                                    # User req for Shift selection is handled by Plotly standard behavior with clickmode
-                                    sel_d = st.plotly_chart(fig_d, width="stretch", on_select="rerun", selection_mode="points", key="doublet_chart")
-
-                                    canvas_title_gmm = "Singlet Gating (GMM)"
-                                    if active_line_singlets:
-                                        canvas_title_gmm += f" ({active_line_singlets})"
-
-                                    if st.button(f"Add '{canvas_title_gmm}' to Canvas", key=f"add_singlet_gmm_gate_{sukey}"):
-                                        viz_df_canvas = viz_df.copy()
-                                        c_col = None # Force consistent Blue color (User Request)
-
-                                        # Removed density calc here to ensure canvas matches the blue theme seen in UI
-                                        theta_poly = np.linspace(0, 2*np.pi, 100)
-                                        ex = d_mean[0] + 2.5 * lambda_d[0] * v_d[0, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[0, 1] * np.sin(theta_poly)
-                                        ey = d_mean[1] + 2.5 * lambda_d[0] * v_d[1, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[1, 1] * np.sin(theta_poly)
-
-                                        bounds_list = [{'vertices': list(zip(ex, ey)), 'color': 'black', 'width': 2}]
+                                        # Manual Gate Pending
                                         if st.session_state.get('pending_doublet_verts'):
-                                             bounds_list.append({'vertices': st.session_state.pending_doublet_verts, 'color': 'cyan', 'width': 2})
+                                                pv = st.session_state.pending_doublet_verts
+                                                # Transform for display if needed
+                                                if d_is_log:
+                                                    # Not implementing complex log drag yet, assume manual on linear for now or transform points
+                                                    # For simplicity in this iteration, let's keep manual selection logic on the raw data coordinates
+                                                    # but display might misalign if we transformed x_to_plot.
+                                                    # Let's stick to LINEAR coordinates for the axes if user selected Linear,
+                                                    # if Log, we should probably plot log-log.
+                                                    pass
 
-                                        mpl_fig = create_canvas_figure(viz_df_canvas, d_x, d_y, canvas_title_gmm, is_log=d_is_log, color_col=c_col, boundaries=bounds_list)
-                                        add_plot_to_canvas(mpl_fig, canvas_title_gmm)
-                                        st.success("Plot added to canvas!")
-                                        plt.close(mpl_fig)
-
-                                    # Counter for selection
-                                    if is_manual_active:
-                                        cnt = len(st.session_state.get('pending_doublet_verts', []))
-                                        st.markdown(f"**Selected Points:** {cnt} / 4")
-
-                                    # Handle Manual Selection (Strict: Only when manual mode is ON)
-                                    # Implements ACCUMULATIVE selection (Server-Side) to allow creating polygon click-by-click
-                                    if is_manual_active and sel_d and sel_d.get("selection"):
-                                            pts = sel_d["selection"]["points"]
-                                            if len(pts) > 0:
-                                                # Coords form Plotly are in Plot Space.
-                                                sx = np.array([p["x"] for p in pts])
-                                                sy = np.array([p["y"] for p in pts])
+                                                px_ = [v[0] for v in pv] + [pv[0][0]]
+                                                py_ = [v[1] for v in pv] + [pv[0][1]]
 
                                                 if d_is_log:
-                                                    # Inverse log transform if plot was log
-                                                    sx = 10**sx - 1
-                                                    sy = 10**sy - 1
+                                                    px_ = np.log10(np.array(px_) + 1)
+                                                    py_ = np.log10(np.array(py_) + 1)
 
-                                                # Candidate points
-                                                candidates = list(zip(sx, sy))
+                                                fig_d.add_trace(go.Scatter(x=px_, y=py_, mode='lines+markers',
+                                                                        line=dict(color='#f0f921', width=3), name="Manual Selection"))
 
-                                                # Retrieve current persistent points
-                                                current_verts = st.session_state.get('pending_doublet_verts', [])
-                                                updated_verts = list(current_verts) # Copy
+                                        # Interaction Mode State
+                                        is_manual_active = st.session_state.get('doublet_manual_mode', False)
 
-                                                # Add ONLY new points (Deduplication)
-                                                changed = False
-                                                for c in candidates:
-                                                    is_close = False
-                                                    for ex in current_verts:
-                                                        # Check proximity (tolerant to float diffs)
-                                                        if np.isclose(c[0], ex[0], atol=1e-5) and np.isclose(c[1], ex[1], atol=1e-5):
-                                                            is_close = True
-                                                            break
-                                                    if not is_close:
-                                                        updated_verts.append(c)
-                                                        changed = True
+                                        # --- Calculate Auto-Zoom Range ---
+                                        # Focus on the GMM cluster to avoid manual zooming (User Req for start zoom)
+                                        zoom_margin = 4 # sigmas
+                                        x_min_lin = d_mean[0] - zoom_margin * np.sqrt(d_cov[0,0])
+                                        x_max_lin = d_mean[0] + zoom_margin * np.sqrt(d_cov[0,0])
+                                        y_min_lin = d_mean[1] - zoom_margin * np.sqrt(d_cov[1,1])
+                                        y_max_lin = d_mean[1] + zoom_margin * np.sqrt(d_cov[1,1])
 
-                                                # Sort radially to ensure valid polygon (avoid bowtie) if >=3
-                                                final_verts = updated_verts # Default
-                                                if len(updated_verts) >= 3:
-                                                    arr_u = np.array(updated_verts)
-                                                    cx, cy = np.mean(arr_u[:,0]), np.mean(arr_u[:,1])
-                                                    angs = np.arctan2(arr_u[:,1]-cy, arr_u[:,0]-cx)
-                                                    idxs = np.argsort(angs)
-                                                    final_verts = [updated_verts[i] for i in idxs]
+                                        start_range_x = None
+                                        start_range_y = None
 
-                                                # Update state if changed
-                                                if changed:
-                                                    st.session_state.pending_doublet_verts = final_verts
-                                                    # SYNC TEXT AREA: Update the key storing the text area value
-                                                    st.session_state.doublet_verts_input = "\n".join([f"{v[0]}, {v[1]}" for v in final_verts])
-                                                    st.rerun()
+                                        if d_is_log:
+                                            # Avoid log of negative/zero
+                                            x_min_lin = max(0, x_min_lin)
+                                            y_min_lin = max(0, y_min_lin)
+                                            start_range_x = [np.log10(x_min_lin + 1), np.log10(x_max_lin + 1)]
+                                            start_range_y = [np.log10(y_min_lin + 1), np.log10(y_max_lin + 1)]
+                                        else:
+                                            start_range_x = [x_min_lin, x_max_lin]
+                                            start_range_y = [y_min_lin, y_max_lin]
 
-                                    # Actions
-                                    st.divider() # Separate controls
-                                    col_da, col_dr = st.columns(2)
+                                        # Axes
+                                        # User Req: "when i zoom in i want to keep the visual the same"
+                                        # USER REQ: "background to be transparent"
 
-                                    # Accept Auto
-                                    btn_label_s = "✅ Accept Auto-Singlets"
-                                    if active_line_singlets:
-                                        btn_label_s = f"✅ Accept Singlets for {active_line_singlets}"
+                                        fig_d.update_layout(
+                                            title="Singlet Identification " + ("(Manual Mode)" if is_manual_active else "(Auto Mode)"),
+                                            xaxis_title=d_x + (" (Log)" if d_is_log else ""),
+                                            yaxis_title=d_y + (" (Log)" if d_is_log else ""),
+                                            dragmode="pan",
+                                            clickmode="event+select",
+                                            plot_bgcolor="white",
+                                            paper_bgcolor="white",
+                                            font=dict(color="black"),
+                                            xaxis=dict(color="black", tickfont=dict(color="black"), title_font=dict(color="black"), showgrid=True, gridcolor="lightgray"),
+                                            yaxis=dict(color="black", tickfont=dict(color="black"), title_font=dict(color="black"), showgrid=True, gridcolor="lightgray"),
+                                            legend=dict(
+                                                font=dict(color="black"),
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                            ),
+                                            # height=500, # Commented out to match MLP
+                                            # xaxis=dict(range=...), # Commented out to match MLP auto-range
+                                            uirevision="constant"
+                                        )
+                                        # fig_d.update_xaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
+                                        # fig_d.update_yaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
 
-                                    if col_da.button(btn_label_s, key=f"accept_singlets{sukey}"):
-                                        # --- Per Cell Line Singlet Logic ---
+                                        # Selection Interaction
+                                        # User req for Shift selection is handled by Plotly standard behavior with clickmode
+
+                                        sel_d = st.plotly_chart(fig_d, width="stretch", on_select="rerun", selection_mode="points", key="doublet_chart")
+
+                                        canvas_title_gmm = "Singlet Gating (GMM)"
                                         if active_line_singlets:
-                                            if 'cell_line_singlet_gates' not in st.session_state:
-                                                st.session_state.cell_line_singlet_gates = {}
+                                            canvas_title_gmm += f" ({active_line_singlets})"
 
-                                            # Save GMM Params for this cell line
-                                            st.session_state.cell_line_singlet_gates[active_line_singlets] = {
+                                        if st.button(f"Add '{canvas_title_gmm}' to Canvas", key=f"add_singlet_gmm_gate_{sukey}"):
+                                            viz_df_canvas = viz_df.copy()
+                                            c_col = None # Force consistent Blue color (User Request)
+
+                                            # Removed density calc here to ensure canvas matches the blue theme seen in UI
+                                            theta_poly = np.linspace(0, 2*np.pi, 100)
+                                            ex = d_mean[0] + 2.5 * lambda_d[0] * v_d[0, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[0, 1] * np.sin(theta_poly)
+                                            ey = d_mean[1] + 2.5 * lambda_d[0] * v_d[1, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[1, 1] * np.sin(theta_poly)
+
+                                            bounds_list = [{'vertices': list(zip(ex, ey)), 'color': 'black', 'width': 2}]
+                                            if st.session_state.get('pending_doublet_verts'):
+                                                 bounds_list.append({'vertices': st.session_state.pending_doublet_verts, 'color': 'cyan', 'width': 2})
+
+                                            mpl_fig = create_canvas_figure(viz_df_canvas, d_x, d_y, canvas_title_gmm, is_log=d_is_log, color_col=c_col, boundaries=bounds_list)
+                                            add_plot_to_canvas(mpl_fig, canvas_title_gmm)
+                                            st.success("Plot added to canvas!")
+                                            plt.close(mpl_fig)
+
+                                        # Actions
+                                        st.divider() # Separate controls
+                                        col_da, col_dr = st.columns(2)
+
+                                        # Accept Auto
+                                        btn_label_s = "✅ Accept Auto-Singlets"
+                                        if active_line_singlets:
+                                            btn_label_s = f"✅ Accept Singlets for {active_line_singlets}"
+
+                                        if col_da.button(btn_label_s, key=f"accept_singlets{sukey}"):
+                                            # --- Per Cell Line Singlet Logic ---
+                                            if active_line_singlets:
+                                                if 'cell_line_singlet_gates' not in st.session_state:
+                                                    st.session_state.cell_line_singlet_gates = {}
+
+                                                # Save GMM Params for this cell line
+                                                st.session_state.cell_line_singlet_gates[active_line_singlets] = {
+                                                    'type': 'gmm_mahalanobis',
+                                                    'mean': d_mean,
+                                                    'cov': d_cov,
+                                                    'channels': [d_x, d_y],
+                                                    'threshold': 2.5
+                                                }
+
+                                                # Progress check
+                                                all_lines = set(unique_cell_lines)
+                                                done_lines = set(st.session_state.cell_line_singlet_gates.keys())
+                                                missing = all_lines - done_lines
+
+                                                if not missing:
+                                                    st.success("All cell line singlets gated!")
+                                                    st.session_state.singlet_gate_params = {
+                                                        'type': 'per_cell_line',
+                                                        'gates': st.session_state.cell_line_singlet_gates,
+                                                        'col': cell_line_col
+                                                    }
+                                                    st.session_state.doublets_removed = True
+                                                    st.rerun()
+                                                else:
+                                                    next_line = list(missing)[0]
+                                                    st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"✅ Singlet gate saved for {active_line_singlets}."
+                                                    st.rerun()
+                                                return
+
+                                            # --- Global Singlet Logic ---
+                                            if logger:
+                                                # Determine Cell Line for logging
+                                                current_cell_line = "Unknown"
+                                                if st.session_state.get('loaded_files'):
+                                                    lines = set()
+                                                    for f in st.session_state.loaded_files:
+                                                        cl = f.get('Cell_Line') or f.get('Cell Line') or 'Unknown'
+                                                        lines.add(cl)
+                                                    if len(lines) == 1:
+                                                        current_cell_line = list(lines)[0]
+                                                    else:
+                                                        current_cell_line = ",".join(list(lines))
+
+                                                logger.log_gate_feedback(
+                                                    sample_name="Batch_Experiment",
+                                                    cell_line=current_cell_line,
+                                                    x_channel=d_x,
+                                                    y_channel=d_y,
+                                                    gate_type="GMM_Singlet",
+                                                    gate_params="Auto",
+                                                    user_decision="accepted"
+                                                )
+
+                                            # Mahalanobis distance filter using the Auto-GMM
+                                            inv_cov = np.linalg.inv(d_cov)
+                                            diff = X_lin - d_mean
+                                            dist = np.sqrt(np.sum(diff @ inv_cov * diff, axis=1))
+                                            mask = dist <= 2.5 # Sigma threshold
+
+                                            # Store params for Export
+                                            st.session_state.singlet_gate_params = {
                                                 'type': 'gmm_mahalanobis',
                                                 'mean': d_mean,
                                                 'cov': d_cov,
@@ -1633,241 +1955,45 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 'threshold': 2.5
                                             }
 
-                                            # Progress check
-                                            all_lines = set(unique_cell_lines)
-                                            done_lines = set(st.session_state.cell_line_singlet_gates.keys())
-                                            missing = all_lines - done_lines
+                                            # Calculate Stats
+                                            total_input = len(exp.data)
+                                            kept_singlets = sum(mask)
+                                            pct = (kept_singlets / total_input) * 100 if total_input > 0 else 0
+                                            st.session_state.singlet_gate_stats = f"{kept_singlets} / {total_input} ({pct:.1f}%)"
 
-                                            if not missing:
-                                                st.success("All cell line singlets gated!")
-                                                st.session_state.singlet_gate_params = {
-                                                    'type': 'per_cell_line',
-                                                    'gates': st.session_state.cell_line_singlet_gates,
-                                                    'col': cell_line_col
-                                                }
-                                                st.session_state.doublets_removed = True
-                                                st.rerun()
-                                            else:
-                                                next_line = list(missing)[0]
-                                                st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"✅ Singlet gate saved for {active_line_singlets}."
-                                                st.rerun()
-                                            return
-
-                                        # --- Global Singlet Logic ---
-                                        if logger:
-                                            # Determine Cell Line for logging
-                                            current_cell_line = "Unknown"
-                                            if st.session_state.get('loaded_files'):
-                                                lines = set()
-                                                for f in st.session_state.loaded_files:
-                                                    cl = f.get('Cell_Line') or f.get('Cell Line') or 'Unknown'
-                                                    lines.add(cl)
-                                                if len(lines) == 1:
-                                                    current_cell_line = list(lines)[0]
-                                                else:
-                                                    current_cell_line = ",".join(list(lines))
-
-                                            logger.log_gate_feedback(
-                                                sample_name="Batch_Experiment",
-                                                cell_line=current_cell_line,
-                                                x_channel=d_x,
-                                                y_channel=d_y,
-                                                gate_type="GMM_Singlet",
-                                                gate_params="Auto",
-                                                user_decision="accepted"
-                                            )
-
-                                        # Mahalanobis distance filter using the Auto-GMM
-                                        inv_cov = np.linalg.inv(d_cov)
-                                        diff = X_lin - d_mean
-                                        dist = np.sqrt(np.sum(diff @ inv_cov * diff, axis=1))
-                                        mask = dist <= 2.5 # Sigma threshold
-
-                                        # Store params for Export
-                                        st.session_state.singlet_gate_params = {
-                                            'type': 'gmm_mahalanobis',
-                                            'mean': d_mean,
-                                            'cov': d_cov,
-                                            'channels': [d_x, d_y],
-                                            'threshold': 2.5
-                                        }
-
-                                        # Calculate Stats
-                                        total_input = len(exp.data)
-                                        kept_singlets = sum(mask)
-                                        pct = (kept_singlets / total_input) * 100 if total_input > 0 else 0
-                                        st.session_state.singlet_gate_stats = f"{kept_singlets} / {total_input} ({pct:.1f}%)"
-
-                                        exp.data = exp.data[mask]
-                                        st.session_state.gated_experiment = exp
-                                        st.session_state.doublets_removed = True
-                                        # st.session_state.show_doublet_gating = False
-                                        st.success(f"Kept {sum(mask)} singlet events.")
-                                        st.rerun()
-
-                                    # Reject -> Enable Manual
-                                    if col_dr.button("❌ Reject / Manual Gate", key=f"reject_singlets{sukey}"):
-                                        st.session_state.doublet_manual_mode = True
-                                        st.rerun()
-
-                                    # Progress Feedback for multi-singlets
-                                    if active_line_singlets:
-                                        skey_s = f"success_msg_singlet_{active_line_singlets}"
-                                        if skey_s in st.session_state:
-                                            st.success(st.session_state[skey_s])
-
-                                        if 'cell_line_singlet_gates' in st.session_state:
-                                            done_s = list(st.session_state.cell_line_singlet_gates.keys())
-                                            if done_s:
-                                                st.write(f"**Gated Singlets:** {', '.join(done_s)}")
-                                                if active_line_singlets in st.session_state.cell_line_singlet_gates:
-                                                    if st.button(f"🔄 Reset Singlet Gate for {active_line_singlets}", key=f"reset_s{active_line_singlets}"):
-                                                        del st.session_state.cell_line_singlet_gates[active_line_singlets]
-                                                        st.rerun()
-
-                                                if st.button("🗑️ Reset ALL Singlet Gates", type="secondary", key="reset_all_s"):
-                                                    st.session_state.cell_line_singlet_gates = {}
-                                                    st.rerun()
-
-                                    # Manual Gating Interface (Shown BELOW buttons if active)
-                                    if is_manual_active:
-                                        st.info("Manual Mode: Click **4 points** to define the gate. (Points are accumulated)")
-
-                                        # Convert current vertices to string for the text area (Similar to Live/Dead gate)
-                                        current_poly_str_d = ""
-                                        if st.session_state.get('pending_doublet_verts'):
-                                            current_poly_str_d = "\n".join([f"{v[0]}, {v[1]}" for v in st.session_state.pending_doublet_verts])
-
-                                        vertices_text_d = st.text_area("Polygon Vertices (x, y per line)", current_poly_str_d, height=150, key="doublet_verts_input")
-
-                                        col_m1, col_m2, col_m3 = st.columns(3)
-
-                                        # Manual Apply Button
-                                        # Enable confirm if text area has content (allows manual editing)
-                                        # USER REQ: "only see the manual gate [button] after selection"
-                                        has_valid_gate = len(st.session_state.get('pending_doublet_verts', [])) >= 3 or (vertices_text_d.strip() != "")
-
-                                        if has_valid_gate:
-                                            if col_m1.button("✅ Confirm Manual Gate", key=f"confirm_manual_singlets{sukey}"):
-
-                                                parsed_verts = []
-                                                try:
-                                                    # Parse the text area content
-                                                    lines = vertices_text_d.strip().split('\n')
-                                                    for line in lines:
-                                                        parts = line.split(',')
-                                                        if len(parts) >= 2:
-                                                            parsed_verts.append((float(parts[0].strip()), float(parts[1].strip())))
-
-                                                    if len(parsed_verts) < 3:
-                                                        st.error("Gate must have at least 3 points.")
-                                                    else:
-                                                        # --- Per Cell Line Manual Singlet Logic ---
-                                                        if active_line_singlets:
-                                                            if 'cell_line_singlet_gates' not in st.session_state:
-                                                                st.session_state.cell_line_singlet_gates = {}
-
-                                                            st.session_state.cell_line_singlet_gates[active_line_singlets] = {
-                                                                'type': 'polygon',
-                                                                'vertices': parsed_verts,
-                                                                'channels': [d_x, d_y]
-                                                            }
-
-                                                            # Progress check
-                                                            all_lines = set(unique_cell_lines)
-                                                            done_lines = set(st.session_state.cell_line_singlet_gates.keys())
-                                                            missing = all_lines - done_lines
-
-                                                            if not missing:
-                                                                st.success("All cell line singlets gated!")
-                                                                st.session_state.singlet_gate_params = {
-                                                                    'type': 'per_cell_line',
-                                                                    'gates': st.session_state.cell_line_singlet_gates,
-                                                                    'col': cell_line_col
-                                                                }
-                                                                st.session_state.doublets_removed = True
-                                                                st.rerun()
-                                                            else:
-                                                                st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"✅ Manual singlet gate saved for {active_line_singlets}."
-                                                                st.rerun()
-                                                            return
-
-                                                        # --- Global Manual Singlet Logic ---
-                                                        if logger:
-                                                            # Determine Cell Line for logging
-                                                            current_cell_line = "Unknown"
-                                                            if st.session_state.get('loaded_files'):
-                                                                lines = set()
-                                                                for f in st.session_state.loaded_files:
-                                                                    cl = f.get('Cell_Line') or f.get('Cell Line') or 'Unknown'
-                                                                    lines.add(cl)
-                                                                if len(lines) == 1:
-                                                                    current_cell_line = list(lines)[0]
-                                                                else:
-                                                                    current_cell_line = ",".join(list(lines))
-
-                                                            logger.log_gate_feedback(
-                                                                sample_name="Batch_Experiment",
-                                                                cell_line=current_cell_line,
-                                                                x_channel=d_x,
-                                                                y_channel=d_y,
-                                                                gate_type="Polygon_Singlet",
-                                                                gate_params=parsed_verts,
-                                                                user_decision="manual_override"
-                                                            )
-
-                                                        # Use GatingManager for standard application + Filter
-                                                        gater = GatingManager()
-                                                        try:
-                                                            gate_name = "ManualSingletGate"
-                                                            total_input = len(exp.data)
-
-                                                            exp = gater.apply_manual_gate(exp, gate_name, d_x, d_y, parsed_verts)
-
-                                                            # Store params for Export
-                                                            st.session_state.singlet_gate_params = {
-                                                                'type': 'polygon',
-                                                                'vertices': parsed_verts,
-                                                                'channels': [d_x, d_y]
-                                                            }
-
-                                                            # Cytoflow apply() adds the condition, we must explicitly filter for the UI validation
-                                                            if gate_name in exp.data.columns:
-                                                                exp.data = exp.data[exp.data[gate_name]].copy()
-
-                                                            kept_singlets = len(exp.data)
-                                                            pct = (kept_singlets / total_input) * 100 if total_input > 0 else 0
-                                                            st.session_state.singlet_gate_stats = f"{kept_singlets} / {total_input} ({pct:.1f}%)"
-
-                                                            st.session_state.gated_experiment = exp
-                                                            st.session_state.doublets_removed = True
-                                                            # st.session_state.show_doublet_gating = False
-                                                            st.session_state.doublet_manual_mode = False # Reset
-                                                            if 'pending_doublet_verts' in st.session_state:
-                                                                del st.session_state.pending_doublet_verts
-                                                            st.success(f"Manual singlet gate applied. Kept {len(exp.data)} events.")
-                                                            st.rerun()
-                                                        except Exception as e:
-                                                            st.error(f"Failed to apply gate: {e}")
-
-                                                except Exception as e:
-                                                    st.error(f"Error parsing vertices: {e}")
-
-                                        # Buttons for Clear / Cancel / Undo (User Req)
-                                        if col_m2.button("🚫 Clear Points", key="clear_manual_singlets"):
-                                            if 'pending_doublet_verts' in st.session_state:
-                                                    del st.session_state.pending_doublet_verts
+                                            exp.data = exp.data[mask]
+                                            st.session_state.gated_experiment = exp
+                                            st.session_state.doublets_removed = True
+                                            # st.session_state.show_doublet_gating = False
+                                            st.success(f"Kept {sum(mask)} singlet events.")
                                             st.rerun()
 
-                                        if col_m3.button("🔙 Back to Auto / Cancel", key="cancel_manual_singlets"):
-                                                st.session_state.doublet_manual_mode = False
-                                                if 'pending_doublet_verts' in st.session_state:
-                                                    del st.session_state.pending_doublet_verts
-                                                st.rerun()
+                                        # Reject -> Enable Manual
+                                        if col_dr.button("❌ Reject / Manual Gate", key=f"reject_singlets{sukey}"):
+                                            st.session_state.doublet_manual_mode = True
+                                            st.rerun()
 
-                                except Exception as e:
-                                    st.error(f"Error in Singlet Gating: {e}")
+                                        # Progress Feedback for multi-singlets
+                                        if active_line_singlets:
+                                            skey_s = f"success_msg_singlet_{active_line_singlets}"
+                                            if skey_s in st.session_state:
+                                                st.success(st.session_state[skey_s])
 
+                                            if 'cell_line_singlet_gates' in st.session_state:
+                                                done_s = list(st.session_state.cell_line_singlet_gates.keys())
+                                                if done_s:
+                                                    st.write(f"**Gated Singlets:** {', '.join(done_s)}")
+                                                    if active_line_singlets in st.session_state.cell_line_singlet_gates:
+                                                        if st.button(f"🔄 Reset Singlet Gate for {active_line_singlets}", key=f"reset_s{active_line_singlets}"):
+                                                            del st.session_state.cell_line_singlet_gates[active_line_singlets]
+                                                            st.rerun()
+
+                                                    if st.button("🗑️ Reset ALL Singlet Gates", type="secondary", key="reset_all_s"):
+                                                        st.session_state.cell_line_singlet_gates = {}
+                                                        st.rerun()
+
+                                    except Exception as e:
+                                        st.error(f"Error in Singlet Gating: {e}")
                         if st.session_state.get('doublets_removed'):
                             # Stats for Singlets
                             if st.session_state.get('singlet_gate_stats'):
@@ -1876,7 +2002,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.success("Doublets have been removed from the dataset.")
 
                             st.divider()
-                            st.header("4. Export Data")
+                            st.subheader("5. Export Data")
 
                             export_mode = st.radio("Export Mode", ["Gated Population (Live + Singlets)", "Full Population (Annotated)"], horizontal=True)
 

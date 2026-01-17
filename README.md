@@ -25,29 +25,47 @@ streamlit run ui/app.py
 ### 2. Workflow
 1.  **File Loading**:
     *   Select "Enter Directory Path" to scan a folder of `.fcs` files.
-    *   **Or select "Upload Files / Drag & Drop Folder" to upload files from your local machine.**
+    *   **Or select "Upload Files / Drag & Drop Folder"** to upload from your local machine.
     *   Click "Generate Preview" to edit metadata (Sample Name, Replicate, **Cell Line**, etc.).
     *   Confirm to load files.
+    *   The loader can also automatically detect cell line info from file names.
 
 2.  **Live/Dead Gating**:
-    *   The app attempts to Auto-Gate using a Gaussian Mixture Model (GMM).
-    *   **Accept Auto**: If the suggestion is good, click "✅ Accept Auto-Gate". This logs the "Auto" parameters as correct for this Cell Line.
+    *   The app attempts to Auto-Gate using one of the options: **a pre-trained MLP model**, Density-based selection, Gaussian Mixture Model (GMM), or DBSCAN-based clustering.
+    *   **Accept Auto**: If the suggestion is good, click "✅ Accept Gate". This logs the live and dead cells.
     *   **Manual Gate**: Click "❌ Reject / Manual Gate".
         *   Click roughly **5 points** on the plot around your population.
-        *   Confirm the selection. This logs the custom polygon for training.
+        *   Confirm the selection. This logs the custom polygon for selection.
 
 3.  **Singlet Gating**:
-    *   After Live gating, the app shows the Singlet discrimination step.
-    *   Similar to above, accept the Auto-Gate or define a manual **4-point** polygon.
+    *   After Live gating, the app discriminates Singlets vs Doublets.
+    *   **Default Strategy**: Uses either **a pre-trained MLP model** or Gaussian Mixture Model (GMM) on user-selected channels (e.g., FSC-A vs FSC-H).
+    *   **Accept Auto**: If the suggestion is good, click "✅ Accept Singlets". This logs the singlet and doublet cells.
+    *   **Manual Detection**: Revert to manual polygon selection if the auto detection fails.
+
+4.  **Final Data Settings (Export)**:
+    *   Once Singlets are accepted, the export options appear.
+    *   **Channel Selection**: You can modify this to include/exclude specific channels.
+    *   **Export**: Save the "Gated Population" (Live + Singlets) or generate a full annotated dataset.
 
 ### 3. Active Learning
-The system records your "Accept" or "Manual Override" decisions. 
-*   **Live Cells**: Learned as a 5-point polygon.
-*   **Singlets**: Learned as a 4-point polygon.
-*   Future analysis of the same **Cell Line** will prioritize these learned gates over generic auto-gating.
+The system uses a hybrid logging and interactive learning approach.
+
+*   **Model Architecture**: A **Multi-Layer Perceptron (MLP)** classifier.
+    *   **Features**: Log-Scale Scatter Channels + One-Hot Encoded **Cell Line**.
+    *   **Preprocessing**: Density Centering (mode alignment) + Standard Scaling.
+
+*   **Feedback Mechanisms**:
+    1.  **Gate Acceptance (Passive)**:
+        *   When you click "✅ Accept Auto/Manual Gate", the system **logs** the parameters to disk.
+        *   *Note: This does NOT update the running model immediately. These logs are used for offline retraining / batch updates.*
+    2.  **Point Labeling (Active/Immediate)**:
+        *   **Find Confusion**: Click "🔍 Find Confusion" to see points where the model is uncertain.
+        *   **Interactive Training**: Select points on the plot (via Box Select or Confusion Highlight) and click **"✅ In Gate"** or **"🚫 Not In Gate"**.
+        *   **Effect**: This triggers an immediate **`partial_fit`** on the neural network, updating the decision boundary instantly for the current session.
 
 ## Known Issues / Limitations
-*   **Real-time Learning Update**: The Active Learning model currently updates its weights based on logs but may not immediately apply learned gates to the *current* running session if the metadata was just entered. You may need to restart the pipeline or ensure the model training trigger runs to see the effect on new files.
+
 *   **Concurrent Learning**: If multiple users or sessions are providing feedback simultaneously, the "latest" feedback might overwrite previous weights for a specific cell line during the training step.
 
 ## Repository Architecture
@@ -57,18 +75,21 @@ The project is organized into modular components to separate core logic, user in
 ```text
 Glow/
 ├── glow/                       # Core Python Package
-│   ├── active_learning/        # Learning system (Feedback logging, Model weights)
-│   ├── data_loading/           # File loading & metadata parsing
-│   ├── gating/                 # Gating strategies & boundary computation
-│   ├── pipeline/               # Pipeline runner
-│   └── utils/                  # Utility functions
+│   ├── active_learning/        # Learning System (Feedback logging, Model Weights)
+│   ├── analysis/               # Statistical Analysis Logic
+│   ├── canvas/                 # Canvas Plotting Utilities
+│   ├── data_loading/           # File Loading & Metadata Parsing
+│   ├── gating/                 # Gating Strategies & Boundary Computation
+│   ├── pipeline/               # Pipeline Runner
+│   └── plotting/               # Plotting Logic (Matplotlib/Plotly)
 ├── ui/                         # Streamlit Frontend
 │   ├── app.py                  # Main Application Entry Point
-│   ├── analysis/               # Analysis tabs & views
-│   ├── gating/                 # Gating UI components
-│   └── plot/                   # Plotting UI components
-├── tests/                      # Unit and integration tests
-├── data/                       # Data storage (Active Learning logs, processed files)
-└── debug/                      # Prototyping notebooks
+│   ├── analysis/               # Analysis Tab Views
+│   ├── canvas/                 # Canvas UI Components
+│   ├── gating/                 # Gating UI Components
+│   └── plot/                   # Plotting UI Components
+├── tests/                      # Unit and Integration Tests
+├── data/                       # Data Storage
+└── debug/                      # Prototyping Notebooks & Debugging Scripts
 ```
 *   **Cell Line Naming**: Ensure consistent naming of Cell Lines (case-sensitive handling is normalized, but typos will create new entries).

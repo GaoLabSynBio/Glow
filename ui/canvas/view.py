@@ -1,18 +1,8 @@
 import streamlit as st
-from bokeh.plotting import figure
-import numpy as np
-from PIL import Image
 import io
-
-# Import from shiny new streamlit-bokeh
-try:
-    from streamlit_bokeh import streamlit_bokeh
-except ImportError:
-    st.error("Please install streamlit-bokeh via pip install streamlit-bokeh")
-    def streamlit_bokeh(*args, **kwargs):
-        pass
-
-from glow.canvas.functions import get_canvas_plots, remove_plot_from_canvas
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from glow.canvas.functions import get_canvas_plots, remove_plot_from_canvas, move_plot_in_canvas
 
 def render_canvas_tab():
     st.header("Plot Canvas")
@@ -22,62 +12,114 @@ def render_canvas_tab():
         st.info("No plots added to canvas yet. Use 'Add to Canvas' buttons from other tabs.")
         return
 
-    # Iterate over copy of items to allow modification (deletion) during loop
-    for title, plot_data in list(plots.items()):
-        st.subheader(title)
+    # Global Canvas Layout Settings
+    with st.expander("Canvas Layout Settings", expanded=False):
+        n_cols = st.slider("Number of Columns", 1, 4, 2, key="canvas_n_cols")
 
-        try:
-            if isinstance(plot_data, dict) and plot_data.get("type") == "png":
-                # Display PNG via Bokeh
-                image_data = plot_data["data"]
-                image = Image.open(io.BytesIO(image_data)).convert("RGBA")
+    # Creates columns for grid layout
+    cols = st.columns(n_cols)
 
-                # Convert to 2D uint32 array for Bokeh (fixes BidiComponent 3D array error)
-                img_rgba = np.array(image) # (H, W, 4) uint8
-                img_view = img_rgba.view(dtype=np.uint32).reshape(img_rgba.shape[:2]) # (H, W) uint32
-                img_array = np.flipud(img_view)
-                h, w = img_array.shape
+    # Iterate over plots
+    for i, (title, plot_data) in enumerate(plots.items()):
+        col = cols[i % n_cols]
 
-                # Create Bokeh Figure
-                # We use scale_width to attempt responsiveness
-                p = figure(x_range=(0, w), y_range=(0, h),
-                           title=None,
-                           tools="pan,wheel_zoom,reset,save",
-                           sizing_mode="scale_width")
+        with col:
+            st.markdown(f"### {title}")
 
-                # Maintain aspect ratio
-                p.aspect_ratio = w / h if h > 0 else 1.0
+            if "settings" not in plot_data:
+                plot_data["settings"] = {"font_scale": 1.0, "dot_scale": 1.0}
+            settings = plot_data["settings"]
 
-                p.image_rgba(image=[img_array], x=0, y=0, dw=w, dh=h)
-                p.axis.visible = False
-                p.grid.visible = False
-                p.min_border = 0
-                p.outline_line_color = None
+            # Control Toolbar
+            c1, c2, c3, c4 = st.columns([1, 1, 2, 1])
+            with c1:
+                if st.button("⬆", key=f"up_{title}", help="Move Backward"):
+                    move_plot_in_canvas(title, "up")
+                    st.rerun()
+            with c2:
+                if st.button("⬇", key=f"down_{title}", help="Move Forward"):
+                    move_plot_in_canvas(title, "down")
+                    st.rerun()
 
-                # Using the installed streamlit-bokeh
-                streamlit_bokeh(p)
+            with st.expander("Customize"):
+                font_scale = st.slider("Font/Zoom Scale", 0.5, 3.0, settings.get("font_scale", 1.0), 0.1, key=f"fs_{title}")
+                # Dot scale only valid for Plotly currently
+                dot_scale = st.slider("Dot Scale", 0.1, 5.0, settings.get("dot_scale", 1.0), 0.1, key=f"ds_{title}")
 
-                # SVG Download Button
-                if "svg_data" in plot_data:
-                    st.download_button(
-                        label="Download SVG",
-                        data=plot_data["svg_data"],
-                        file_name=f"{title}.svg",
-                        mime="image/svg+xml",
-                        key=f"dl_svg_{title}"
-                    )
+                plot_data["settings"]["font_scale"] = font_scale
+                plot_data["settings"]["dot_scale"] = dot_scale
 
-            elif isinstance(plot_data, dict) and plot_data.get("type") == "plotly":
-                st.plotly_chart(plot_data["data"], use_container_width=True)
+            with c4:
+                if st.button("🗑", key=f"rm_{title}", help="Remove Plot"):
+                    remove_plot_from_canvas(title)
+                    st.rerun()
 
-            else:
-                st.warning(f"Plot '{title}' is in an unsupported format. Please remove and re-add.")
+            # Render logic
+            ptype = plot_data.get("type")
+            try:
+                if ptype == "matplotlib":
+                    fig = plot_data["fig"]
 
-        except Exception as e:
-            st.error(f"Error rendering plot '{title}': {e}")
+                    # Logic to simulate "Font Scaling" by resizing the figure in inches
+                    # while maintaining pixel density.
+                    if not hasattr(fig, "_glow_orig_size"):
+                        fig._glow_orig_size = fig.get_size_inches()
 
-        if st.button(f"Remove: {title}", key=f"remove_canvas_{title}"):
-            remove_plot_from_canvas(title)
-            st.rerun()
+                    w, h = fig._glow_orig_size
+                    # Adjust size inversely to scale (Smaller inches = Relatively larger text elements)
+                    fig.set_size_inches(w / font_scale, h / font_scale)
 
-        st.divider()
+                    # Apply Dot Scaling for Matplotlib
+                    # Iterate through axes and collections to scale markers
+                    for ax in fig.axes:
+                        for collection in ax.collections:
+                            # Only apply to PathCollections (Scatter) which have sizes
+                            if hasattr(collection, "get_sizes") and hasattr(collection, "set_sizes"):
+                                # Check if we stored original sizes
+                                if not hasattr(collection, "_glow_orig_sizes"):
+                                    sizes = collection.get_sizes()
+                                    if len(sizes) > 0:
+                                        collection._glow_orig_sizes = sizes.copy()
+                                    else:
+                                        # Fallback if sizes not set explicitly
+                                        collection._glow_orig_sizes = [10] # Default s=10
+
+                                # Apply scale
+                                if hasattr(collection, "_glow_orig_sizes"):
+                                    new_sizes = [s * dot_scale for s in collection._glow_orig_sizes]
+                                    collection.set_sizes(new_sizes)
+
+                    # Render to PNG buffer
+                    buf = io.BytesIO()
+                    # Increase DPI with scale to maintain sharpness/resolution
+                    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100 * font_scale)
+
+                    st.image(buf, width="stretch")
+
+                    # Reset buffer for downloading SVG (optional, or reuse fig)
+                    buf_svg = io.BytesIO()
+                    try:
+                        fig.savefig(buf_svg, format="svg", bbox_inches="tight")
+                        st.download_button("Download SVG", buf_svg.getvalue(), f"{title}.svg", "image/svg+xml", key=f"dl_svg_{title}")
+                    except:
+                        pass
+
+                elif ptype == "plotly":
+                    fig = plot_data["data"]
+
+                    # Update Font
+                    fig.update_layout(font=dict(size=12 * font_scale))
+
+                    # Update Markers
+                    if dot_scale != 1.0:
+                        fig.update_traces(marker=dict(size=8 * dot_scale), selector=dict(type='scatter'))
+
+                    st.plotly_chart(fig, width="stretch")
+
+                else:
+                    st.warning(f"Unsupported plot type: {ptype}")
+
+            except Exception as e:
+                st.error(f"Error rendering plot: {e}")
+
+            st.divider()
