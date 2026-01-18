@@ -17,21 +17,75 @@ def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_
     st.divider()
     col1, col2 = st.columns([3, 1])
 
-    # Initialize persistent selected channels if not present
-    if 'persistent_selected_channels' not in st.session_state and 'base_experiment' in st.session_state and st.session_state.base_experiment:
-        all_ch = list(st.session_state.base_experiment.channels)
-        # Default to fluorophores (exclude scatter/time)
-        defaults = [c for c in all_ch if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])]
-        if not defaults: defaults = all_ch
-        st.session_state.persistent_selected_channels = defaults
-        # Initialize checkbox keys for UI sync
-        for ch in all_ch:
-            st.session_state[f"checkbox_ch_{ch}"] = (ch in defaults)
+    # Helper for channel sorting and defaults
+    COMMON_FLUORS = [
+        "GFP", "EGFP", "mCherry", "Cherry", "APC", "FITC", "PE", "DAPI", "PerCP", 
+        "BV", "Brilliant", "Cy", "Cy3", "Cy5", "Cy7", "BFP", "EBFP", "TagBFP", "SB", 
+        "RFP", "dsRed", "tdTomato", "YFP", "EYFP", "mNeon", "AmCyan", "Pacific Blue", 
+        "Pacific Orange", "Alexa", "eFluor", "Hoechst", "PI", "7-AAD", "Zombie", "Live/Dead", "DraQ"
+    ]
+
+    def is_common_fluor(ch_name):
+        return any(f.upper() in ch_name.upper() for f in COMMON_FLUORS)
+
+    def sort_channels(channels):
+        # Sort: Common Fluors first, then others. Within groups, alphabetical.
+        return sorted(list(channels), key=lambda x: (0 if is_common_fluor(x) else 1, x))
+
+    # Robust Initialization: Reset if experiment changes OR if strictly needed
+    should_reset_defaults = False
+    
+    if 'base_experiment' in st.session_state and st.session_state.base_experiment:
+        # Check if we have a new set of channels (experiment changed)
+        current_channels = tuple(sorted(st.session_state.base_experiment.channels))
+        if 'last_channels_hash' not in st.session_state:
+             should_reset_defaults = True
+        elif st.session_state.last_channels_hash != current_channels:
+             should_reset_defaults = True
+             
+        # Also reset if state is missing
+        if 'persistent_selected_channels' not in st.session_state:
+             should_reset_defaults = True
+
+        if should_reset_defaults:
+            st.session_state.last_channels_hash = current_channels
+            all_ch = sort_channels(st.session_state.base_experiment.channels)
+            
+            defaults = []
+            # Priority 1: Common Fluorophores with Area (-A)
+            # We want to prioritize known fluorophores to avoid selecting junk/unknown channels by default
+            common_area = [c for c in all_ch if is_common_fluor(c) and ("-A" in c or "Area" in c)]
+            
+            if common_area:
+                defaults = common_area
+            else:
+                # Priority 2: Any Fluorophore (non-scatter) with Area (-A)
+                # If no common fluorophores are found, attempt to find any Area parameter that isn't scatter
+                any_fluor_area = [c for c in all_ch if ("-A" in c or "Area" in c) and not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])]
+                if any_fluor_area:
+                    defaults = any_fluor_area
+                else:
+                    # Priority 3: Any Fluorophore (regardless of Area/Height)
+                    defaults = [c for c in all_ch if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])]
+            
+            if not defaults: defaults = all_ch
+
+            st.session_state.persistent_selected_channels = defaults
+            
+            # Explicitly FORCE update all checkbox keys to match the new defaults.
+            # We clear any old keys first to ensure a clean state.
+            keys_to_remove = [k for k in st.session_state.keys() if k.startswith("checkbox_ch_")]
+            for k in keys_to_remove:
+                del st.session_state[k]
+
+            # Set new keys
+            for ch in all_ch:
+                st.session_state[f"checkbox_ch_{ch}"] = (ch in defaults)
 
     with col1:
         if st.session_state.get('doublets_removed'):
             if 'base_experiment' in st.session_state and st.session_state.base_experiment is not None:
-                all_channels = st.session_state.base_experiment.channels
+                all_channels = sort_channels(st.session_state.base_experiment.channels)
                 st.subheader("Final Data Settings")
                 st.info("Select fluorescence channels to include in your analysis. Unselected channels will be hidden.")
 
