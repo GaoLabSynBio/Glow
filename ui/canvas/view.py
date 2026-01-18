@@ -178,7 +178,7 @@ def render_canvas_tab():
                     # Increase DPI with scale to maintain sharpness/resolution
                     fig.savefig(buf, format="png", bbox_inches="tight", dpi=100 * font_scale)
 
-                    st.image(buf, width="stretch")
+                    st.image(buf, use_container_width=True)
 
                     # Reset buffer for downloading SVG (optional, or reuse fig)
                     # Stack buttons vertically
@@ -228,25 +228,21 @@ def render_canvas_tab():
                         fig.update_traces(marker=dict(size=8 * dot_scale), selector=dict(type='scatter'))
 
                     # Usage of Aspect Ratio
-                    # If specific scaling is requested, we use graph_objects specific layout width/height
-                    # Use container width typically fills column.
-                    # To "Stretch", we might need to fix the height while width fills?
-                    # Or set both if we want precise control.
-                    
+                    # We always use container width to ensure fitting
                     use_container_width = True
                     layout_updates = {}
                     
-                    if width_scale != 1.0 or height_scale != 1.0:
-                        use_container_width = False # Take manual control
-                        # Base size approximation
-                        base_w = 600
-                        base_h = 400
-                        layout_updates["width"] = base_w * width_scale
-                        layout_updates["height"] = base_h * height_scale
-                    else:
-                        # Reset if default
-                        layout_updates["width"] = None
-                        layout_updates["height"] = None
+                    # To adjust aspect ratio while fitting width:
+                    # Width is fixed (Container Width).
+                    # If WidthScale increases (Wants wider), we must DECREASE HEIGHT.
+                    # If HeightScale increases (Wants taller), we INCREASE HEIGHT.
+                    
+                    base_h = 450 # Default Plotly height standard
+                    
+                    # New Height = Base * HeightScale / WidthScale
+                    new_height = base_h * (height_scale / width_scale)
+                    layout_updates["height"] = int(new_height)
+                    layout_updates["width"] = None # Let container handle it
                         
                     fig.update_layout(**layout_updates)
 
