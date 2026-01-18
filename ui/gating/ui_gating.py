@@ -113,7 +113,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         cmap_selected = st.selectbox("Colormap", ["Viridis", "Plasma"], index=0, key="csv_cmap")
 
                     # --- Helper for Density Plot ---
-                    def make_density_plot(data_df, x_curr, y_curr, use_log, cmap_name, plot_title):
+                    def make_density_plot(data_df, x_curr, y_curr, use_log, cmap_name, plot_title, x_range=None, y_range=None):
                         if len(data_df) == 0:
                             st.warning(f"No events in {plot_title}")
                             return None, None
@@ -154,13 +154,18 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             f.update_traces(marker=dict(size=5))
                             f.update_layout(coloraxis_colorbar=dict(title=dict(text='Count', font=dict(color='black')), len=0.6, yanchor='bottom', y=0.0, tickfont=dict(color='black')))
 
-                        f.update_layout(
-                            plot_bgcolor='white', paper_bgcolor='white', height=500,
-                            margin=dict(l=40, r=40, t=60, b=40),
-                            xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
-                            yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
-                            font=dict(color="black"), legend=dict(font=dict(color="black"))
+                        # Apply fixed ranges if provided (ensures comparison scale)
+                        layout_args = dict(
+                             plot_bgcolor='white', paper_bgcolor='white', height=500,
+                             margin=dict(l=40, r=40, t=60, b=40),
+                             xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
+                             yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
+                             font=dict(color="black"), legend=dict(font=dict(color="black"))
                         )
+                        if x_range: layout_args['xaxis']['range'] = x_range
+                        if y_range: layout_args['yaxis']['range'] = y_range
+
+                        f.update_layout(**layout_args)
                         return f, df_p
 
                     # --- Display Logic ---
@@ -176,17 +181,45 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             is_full_data = True
 
                     if is_full_data:
+                        # Calculate consistent axis ranges
+                        x_series = exp.data[x_axis]
+                        y_series = exp.data[y_axis]
+                        range_x, range_y = None, None
+
+                        try:
+                            if is_log:
+                                xp = x_series[x_series > 0]
+                                yp = y_series[y_series > 0]
+                                if not xp.empty:
+                                    lx_min, lx_max = np.log10(xp.min()), np.log10(xp.max())
+                                    pad_x = (lx_max - lx_min) * 0.05 if lx_max != lx_min else 0.1
+                                    range_x = [lx_min - pad_x, lx_max + pad_x]
+                                if not yp.empty:
+                                    ly_min, ly_max = np.log10(yp.min()), np.log10(yp.max())
+                                    pad_y = (ly_max - ly_min) * 0.05 if ly_max != ly_min else 0.1
+                                    range_y = [ly_min - pad_y, ly_max + pad_y]
+                            else:
+                                x_min, x_max = x_series.min(), x_series.max()
+                                y_min, y_max = y_series.min(), y_series.max()
+                                pad_x = (x_max - x_min) * 0.05 if x_max != x_min else 1.0
+                                pad_y = (y_max - y_min) * 0.05 if y_max != y_min else 1.0
+                                range_x = [x_min - pad_x, x_max + pad_x]
+                                range_y = [y_min - pad_y, y_max + pad_y]
+                        except Exception as e:
+                            # Fallback to autoscaling if range calc fails
+                            pass
+
                         col1, col2 = st.columns(2)
                         
                         with col1:
                             st.write("#### Full Population")
-                            fig1, df1 = make_density_plot(exp.data, x_axis, y_axis, is_log, cmap_selected, "Full Population")
+                            fig1, df1 = make_density_plot(exp.data, x_axis, y_axis, is_log, cmap_selected, "Full Population", range_x, range_y)
                             if fig1: st.plotly_chart(fig1, use_container_width=True)
                         
                         with col2:
                             st.write("#### Gated Population")
                             df_gated = exp.data[exp.data['cells'] & exp.data['singlets']]
-                            fig2, df2 = make_density_plot(df_gated, x_axis, y_axis, is_log, cmap_selected, "Gated Population (Live+Singlets)")
+                            fig2, df2 = make_density_plot(df_gated, x_axis, y_axis, is_log, cmap_selected, "Gated Population (Live+Singlets)", range_x, range_y)
                             if fig2: st.plotly_chart(fig2, use_container_width=True)
 
                         if st.button("Save Plots to Canvas", key="btn_save_csv_density_dual"):
