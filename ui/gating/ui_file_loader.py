@@ -56,16 +56,42 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
     loaded_files = []
 
     if upload_option == "Upload Processed CSV":
-        st.info("Upload a previously processed CSV file (Full or Gated population) to skip gating. Supports .csv and .csv.gz")
-        uploaded_csv = st.file_uploader("Upload CSV", type=["csv", "gz"])
+        st.info("Upload a previously processed CSV file (Full or Gated population) to skip gating. Supports .csv, .csv.gz, and .zip")
+        uploaded_csv = st.file_uploader("Upload CSV", type=["csv", "gz", "zip"])
 
         if uploaded_csv is not None:
              if st.button("Load CSV"):
                 try:
                     with st.spinner("Loading CSV..."):
-                        # Auto-detect compression based on extension
-                        comp_arg = 'gzip' if uploaded_csv.name.endswith('.gz') else 'infer'
-                        df = pd.read_csv(uploaded_csv, compression=comp_arg)
+                        df = None
+                        # Handle ZIP
+                        if uploaded_csv.name.endswith('.zip'):
+                            import zipfile
+                            with zipfile.ZipFile(uploaded_csv) as z:
+                                csv_files = [n for n in z.namelist() if n.endswith('.csv')]
+                                if not csv_files:
+                                    st.error("No CSV file found inside ZIP archive.")
+                                    return
+                                # Assume first CSV is the data
+                                with z.open(csv_files[0]) as f:
+                                    df = pd.read_csv(f)
+                        else:
+                            # Auto-detect compression based on extension
+                            comp_arg = 'gzip' if uploaded_csv.name.endswith('.gz') else 'infer'
+                            df = pd.read_csv(uploaded_csv, compression=comp_arg)
+
+                        # Data Integrity Check: Ensure vital columns exist (if we expect FCS-like data)
+                        # We at least need some numeric columns to be useful.
+                        # If the user expects re-importable data, checks for 'cells' and 'singlets' are good but optional (as per logic below).
+                        if df is not None:
+                             if df.shape[1] < 2:
+                                 st.error("Uploaded CSV appears to have insufficient columns/data.")
+                                 return
+                             
+                             # Check for empty dataframe
+                             if df.empty:
+                                 st.error("Uploaded CSV is empty.")
+                                 return
 
                         # Clear any existing experiment state before loading new CSV
                         clear_experiment_state()

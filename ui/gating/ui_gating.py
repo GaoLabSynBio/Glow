@@ -112,82 +112,107 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     with c_opt3:
                         cmap_selected = st.selectbox("Colormap", ["Viridis", "Plasma"], index=0, key="csv_cmap")
 
-                    # High performance plotting - Downsample for interaction speed if necessary, but density calc on full relevant set
-                    df_viz = exp.data.copy()
+                    # --- Helper for Density Plot ---
+                    def make_density_plot(data_df, x_curr, y_curr, use_log, cmap_name, plot_title):
+                        if len(data_df) == 0:
+                            st.warning(f"No events in {plot_title}")
+                            return None, None
+                            
+                        df_viz = data_df.copy()
+                        color_c = None
+                        try:
+                            x_d = np.log10(df_viz[x_curr]) if use_log else df_viz[x_curr]
+                            y_d = np.log10(df_viz[y_curr]) if use_log else df_viz[y_curr]
+                            mask = np.isfinite(x_d) & np.isfinite(y_d)
+                            x_c, y_c = x_d[mask], y_d[mask]
+                            
+                            if len(x_c) > 0:
+                                H, xedges, yedges = np.histogram2d(x_c, y_c, bins=100)
+                                x_bins = np.digitize(x_c, xedges) - 1
+                                y_bins = np.digitize(y_c, yedges) - 1
+                                x_bins = np.clip(x_bins, 0, H.shape[0]-1)
+                                y_bins = np.clip(y_bins, 0, H.shape[1]-1)
+                                df_viz['Density'] = 0.0
+                                df_viz.loc[mask, 'Density'] = H[x_bins, y_bins]
+                                color_c = 'Density'
+                        except Exception:
+                            color_c = None
 
-                    # --- Density Calculation (Fast 2D Histogram Method) ---
-                    try:
-                        color_col = None
-
-                        # Use log data for density calculation if log scale is selected
-                        x_data = np.log10(df_viz[x_axis]) if is_log else df_viz[x_axis]
-                        y_data = np.log10(df_viz[y_axis]) if is_log else df_viz[y_axis]
-
-                        # Remove infs/nans for calculation
-                        mask = np.isfinite(x_data) & np.isfinite(y_data)
-                        x_clean, y_clean = x_data[mask], y_data[mask]
-
-                        if len(x_clean) > 0:
-                            # Fast density via histogram
-                            # 100x100 bins
-                            H, xedges, yedges = np.histogram2d(x_clean, y_clean, bins=100)
-
-                            # Map density back to points
-                            x_bins = np.digitize(x_clean, xedges) - 1
-                            y_bins = np.digitize(y_clean, yedges) - 1
-
-                            x_bins = np.clip(x_bins, 0, H.shape[0]-1)
-                            y_bins = np.clip(y_bins, 0, H.shape[1]-1)
-
-                            # Assign density values
-                            df_viz['Density'] = 0.0
-                            df_viz.loc[mask, 'Density'] = H[x_bins, y_bins]
-                            color_col = 'Density'
+                        if len(df_viz) > 5000:
+                            df_p = df_viz.sample(n=5000, random_state=42)
                         else:
-                            color_col = None # Fallback
+                            df_p = df_viz
 
-                    except Exception as e:
-                        color_col = None
+                        f = px.scatter(df_p, x=x_curr, y=y_curr, color=color_c,
+                                        title=plot_title,
+                                        color_continuous_scale=cmap_name,
+                                        opacity=0.8,
+                                        log_x=use_log, log_y=use_log,
+                                        render_mode='svg')
+                        
+                        if color_c:
+                            f.update_traces(marker=dict(size=5))
+                            f.update_layout(coloraxis_colorbar=dict(title=dict(text='Count', font=dict(color='black')), len=0.6, yanchor='bottom', y=0.0, tickfont=dict(color='black')))
 
-                    # Construct Plot
-                    # Downsample for SVG rendering performance
-                    if len(df_viz) > 5000:
-                        df_plot = df_viz.sample(n=5000, random_state=42)
-                        st.caption(f"Plotting 5,000 representative events (out of {len(df_viz)}) for smoother interaction.")
+                        f.update_layout(
+                            plot_bgcolor='white', paper_bgcolor='white', height=500,
+                            margin=dict(l=40, r=40, t=60, b=40),
+                            xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
+                            yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
+                            font=dict(color="black"), legend=dict(font=dict(color="black"))
+                        )
+                        return f, df_p
+
+                    # --- Display Logic ---
+                    has_gating_cols = ('cells' in exp.data.columns and 'singlets' in exp.data.columns)
+                    is_full_data = False
+                    if has_gating_cols:
+                        total_n = len(exp.data)
+                        # Ensure boolean
+                        exp.data['cells'] = exp.data['cells'].fillna(False).astype(bool)
+                        exp.data['singlets'] = exp.data['singlets'].fillna(False).astype(bool)
+                        gated_n = (exp.data['cells'] & exp.data['singlets']).sum()
+                        if gated_n < total_n:
+                            is_full_data = True
+
+                    if is_full_data:
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("#### Full Population")
+                            fig1, df1 = make_density_plot(exp.data, x_axis, y_axis, is_log, cmap_selected, "Full Population")
+                            if fig1: st.plotly_chart(fig1, use_container_width=True)
+                        
+                        with col2:
+                            st.write("#### Gated Population")
+                            df_gated = exp.data[exp.data['cells'] & exp.data['singlets']]
+                            fig2, df2 = make_density_plot(df_gated, x_axis, y_axis, is_log, cmap_selected, "Gated Population (Live+Singlets)")
+                            if fig2: st.plotly_chart(fig2, use_container_width=True)
+
+                        if st.button("Save Plots to Canvas", key="btn_save_csv_density_dual"):
+                            if df1 is not None:
+                                mf1 = create_canvas_figure(df1, x_axis, y_axis, "Full Population", is_log=is_log, color_col='Density' if 'Density' in df1 else None)
+                                add_plot_to_canvas(mf1, "Full Population")
+                            if df2 is not None:
+                                mf2 = create_canvas_figure(df2, x_axis, y_axis, "Gated Population", is_log=is_log, color_col='Density' if 'Density' in df2 else None)
+                                add_plot_to_canvas(mf2, "Gated Population")
+                            st.success("Plots added to canvas!")
                     else:
-                        df_plot = df_viz
+                        st.write("#### Population Density (Singlets)")
+                        fig, df_p = make_density_plot(exp.data, x_axis, y_axis, is_log, cmap_selected, "Population Density")
+                        if fig: st.plotly_chart(fig, use_container_width=True)
+                        
+                        if st.button("Save Pop Density to Canvas", key="btn_save_csv_density"):
+                            mpl_fig = create_canvas_figure(df_p, x_axis, y_axis, "Processed Population Density",
+                                                           is_log=is_log, color_col='Density' if 'Density' in df_p else None)
+                            add_plot_to_canvas(mpl_fig, "Processed Population Density")
+                            st.success("Plot added to canvas!")
+                            plt.close(mpl_fig)
 
-                    fig = px.scatter(df_plot, x=x_axis, y=y_axis, color=color_col,
-                                    title="Population Density (Singlets)",
-                                    color_continuous_scale=cmap_selected,
-                                    opacity=0.8,
-                                    log_x=is_log, log_y=is_log,
-                                    render_mode='svg')
-
-                    if color_col:
-                        fig.update_traces(marker=dict(size=5))
-                        fig.update_layout(coloraxis_colorbar=dict(title=dict(text='Count', font=dict(color='black')), len=0.6, yanchor='bottom', y=0.0, tickfont=dict(color='black')))
-
-                    # Improved Plot Layout (White Background, Black Axes)
-                    fig.update_layout(
-                        plot_bgcolor='white',
-                        paper_bgcolor='white',
-                        height=600,
-                        margin=dict(l=40, r=40, t=60, b=40),
-                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
-                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
-                        font=dict(color="black"),
-                        legend=dict(font=dict(color="black"))
-                    )
-
-                    st.plotly_chart(fig, width="stretch")
-
-                    if st.button("Save Pop Density to Canvas", key="btn_save_csv_density"):
-                        mpl_fig = create_canvas_figure(df_plot, x_axis, y_axis, "Processed Population Density",
-                                                       is_log=is_log, color_col=color_col)
-                        add_plot_to_canvas(mpl_fig, "Processed Population Density")
-                        st.success("Plot added to canvas!")
-                        plt.close(mpl_fig)
+            st.divider()
+            if st.button("Proceed to Analysis", key="btn_proceed_analysis_csv", type="primary"):
+                 st.session_state.current_tab = "Analysis"
+                 st.rerun()
 
             return
 
@@ -2099,28 +2124,36 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 # --- UI Controls ---
                                 st.markdown("Select fluorescence channels to include in your analysis. Unselected channels will be hidden.")
                                 
+                                # Identify Mandatory Channels (FSC/SSC)
+                                mandatory_channels = [c for c in all_channels if any(x in c.upper() for x in ["FSC", "SSC"])]
+                                selectable_channels = [c for c in all_channels if c not in mandatory_channels]
+                                
                                 b1, b2, _ = st.columns([1, 1, 2])
                                 if b1.button("Select All", key="gating_sel_all"):
                                     st.session_state.persistent_selected_channels = list(all_channels)
-                                    for ch in all_channels: st.session_state[f"checkbox_ch_{ch}"] = True
+                                    for ch in selectable_channels: st.session_state[f"checkbox_ch_{ch}"] = True
                                     st.rerun()
                                 if b2.button("Clear All", key="gating_clear_all"):
-                                    st.session_state.persistent_selected_channels = []
-                                    for ch in all_channels: st.session_state[f"checkbox_ch_{ch}"] = False
+                                    st.session_state.persistent_selected_channels = list(mandatory_channels)
+                                    for ch in selectable_channels: st.session_state[f"checkbox_ch_{ch}"] = False
                                     st.rerun()
 
                                 # --- Checkbox Grid ---
                                 # Sync first: if persistent exists, ensure checkbox keys match (in case of rerun)
                                 current_selected = set(st.session_state.get('persistent_selected_channels', []))
-                                for ch in all_channels:
+                                for ch in selectable_channels:
                                     k = f"checkbox_ch_{ch}"
                                     if k not in st.session_state: st.session_state[k] = (ch in current_selected)
 
-                                new_selection = []
-                                with st.expander("Available Channels List", expanded=True):
+                                new_selection = list(mandatory_channels)
+                                
+                                if mandatory_channels:
+                                    st.info(f"**Structural channels included automatically:** {', '.join(mandatory_channels)}")
+
+                                with st.expander("Select Fluorescence Channels", expanded=True):
                                     n_cols = 3
                                     grid_cols = st.columns(n_cols)
-                                    for i, ch in enumerate(all_channels):
+                                    for i, ch in enumerate(selectable_channels):
                                         with grid_cols[i % n_cols]:
                                             if st.checkbox(ch, key=f"checkbox_ch_{ch}"):
                                                 new_selection.append(ch)
@@ -2207,7 +2240,45 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 diff = X - d_mean
                                                 dist = np.sqrt(np.sum((diff @ inv_cov) * diff, axis=1))
                                                 full_exp.data['singlets'] = (dist <= threshold)
-                                            # Add other types if needed (MLP, etc - simplified for now)
+                                            elif s_params.get("type") == "mlp":
+                                                try:
+                                                    from glow.active_learning.models import SingletClassifier
+                                                    clf = SingletClassifier.load("data/singlet_model_full.pkl")
+                                                    X = full_exp.data[s_params["diff_channels"]].values
+                                                    if np.max(X) > 10: X = np.log10(X + 1)
+                                                    c_type = s_params.get("cell_type", "colo")
+                                                    ids = np.zeros(len(X), dtype=int)
+                                                    cts = np.array([c_type] * len(X))
+                                                    preds = clf.predict(X, dataset_ids=ids, cell_types=cts)
+                                                    full_exp.data["singlets"] = (preds == 1)
+                                                except Exception as e:
+                                                    st.warning(f"MLP Singlet calc failed: {e}")
+                                                    full_exp.data["singlets"] = False
+                                            elif s_params.get('type') == 'per_cell_line':
+                                                 # Handle Per-Cell-Line Singlet
+                                                 gates = s_params['gates']
+                                                 col_name = s_params['col']
+                                                 for line_val, gate in gates.items():
+                                                     row_mask = (full_exp.data[col_name].astype(str) == str(line_val))
+                                                     if not row_mask.any(): continue
+                                                     subset_idxs = full_exp.data.index[row_mask]
+                                                     if gate['type'] == 'gmm_mahalanobis':
+                                                         ch = gate['channels']
+                                                         X_s = full_exp.data.loc[subset_idxs, ch].values
+                                                         d_m = gate['mean']
+                                                         i_c = np.linalg.inv(gate['cov'])
+                                                         thr = gate.get('threshold', 2.5)
+                                                         df_s = X_s - d_m
+                                                         d_sq = np.sum((df_s @ i_c) * df_s, axis=1)
+                                                         full_exp.data.loc[subset_idxs, 'singlets'] = (np.sqrt(d_sq) <= thr)
+                                                     elif gate['type'] == 'polygon':
+                                                         from matplotlib.path import Path
+                                                         v = gate['vertices']
+                                                         ch = gate['channels']
+                                                         path = Path(v)
+                                                         points = full_exp.data.loc[subset_idxs, ch].values
+                                                         is_in = path.contains_points(points)
+                                                         full_exp.data.loc[subset_idxs, 'singlets'] = is_in
 
                                         # Dependency: singlets must be cells
                                         full_exp.data.loc[~full_exp.data['cells'], 'singlets'] = False
@@ -2432,6 +2503,126 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     st.rerun()
 
                             if st.button("Proceed to Analysis", key="btn_proceed_analysis_2"):
+                                with st.spinner("Preparing analysis..."):
+                                    # Copy of reconstruction logic to ensure Analysis Experiment is up to date
+                                    try:
+                                        base_an = st.session_state.base_experiment
+                                        full_exp_an = base_an.clone()
+                                        full_exp_an.data['cells'] = False
+                                        full_exp_an.metadata['cells'] = {'type': 'condition'}
+                                        full_exp_an.data['singlets'] = False
+                                        full_exp_an.metadata['singlets'] = {'type': 'condition'}
+                                        
+                                        bgater_an = GatingManager()
+                                        
+                                        # 1. LIVE Gate
+                                        l_params = st.session_state.get('live_gate_params')
+                                        if l_params:
+                                            if l_params['type'] == 'polygon':
+                                                full_exp_an = bgater_an.apply_manual_gate(full_exp_an, "_temp_live_mask_rec", l_params['channels'][0], l_params['channels'][1], l_params['vertices'])
+                                                full_exp_an.data['cells'] = full_exp_an.data["_temp_live_mask_rec"].astype(bool)
+                                            elif l_params['type'] == 'label':
+                                                gp = st.session_state.get('last_gating_params', {})
+                                                if gp:
+                                                    method_name = gp.get('method', 'density').lower() if isinstance(gp.get('method'), str) else 'density'
+                                                    res_exp = bgater_an.auto_gate_live_cells(full_exp_an, gp.get('x'), gp.get('y'), method=method_name, num_components=gp.get('comp', 2), keep=gp.get('keep', 0.9), sigma=gp.get('sigma', 2.0), eps=gp.get('eps', 0.05), min_samples=gp.get('min_samples', 50), use_outlier_removal=gp.get('use_outliers', False))
+                                                    lbl = l_params['label']
+                                                    if '_temp_live_labels' in res_exp.data.columns:
+                                                        full_exp_an.data['cells'] = (res_exp.data['_temp_live_labels'].astype(str) == str(lbl))
+                                            elif l_params['type'] == 'per_cell_line':
+                                                full_exp_an.data['cells'] = False
+                                                gates = l_params['gates']
+                                                col_name = l_params['col']
+                                                for line_val, gate_info in gates.items():
+                                                    row_mask = (full_exp_an.data[col_name].astype(str) == str(line_val))
+                                                    if not row_mask.any(): continue
+                                                    subset_idxs = full_exp_an.data.index[row_mask]
+                                                    if gate_info['type'] == 'polygon':
+                                                        from matplotlib.path import Path
+                                                        v = gate_info['vertices']
+                                                        ch = gate_info['channels']
+                                                        path = Path(v)
+                                                        points = full_exp_an.data.loc[subset_idxs, ch].values
+                                                        is_in = path.contains_points(points)
+                                                        full_exp_an.data.loc[subset_idxs, 'cells'] = is_in
+                                        else:
+                                            full_exp_an.data['cells'] = True
+
+                                        # 2. SINGLET Gate
+                                        s_params = st.session_state.get('singlet_gate_params')
+                                        if s_params:
+                                            if s_params['type'] == 'polygon':
+                                                full_exp_an = bgater_an.apply_manual_gate(full_exp_an, "_temp_singlet_mask_rec", s_params['channels'][0], s_params['channels'][1], s_params['vertices'])
+                                                full_exp_an.data['singlets'] = full_exp_an.data["_temp_singlet_mask_rec"].astype(bool)
+                                            elif s_params.get('type') == 'gmm_mahalanobis':
+                                                X = full_exp_an.data[s_params['channels']].values
+                                                d_mean = s_params['mean']
+                                                inv_cov = np.linalg.inv(s_params['cov'])
+                                                threshold = s_params.get('threshold', 2.5)
+                                                diff = X - d_mean
+                                                dist = np.sqrt(np.sum((diff @ inv_cov) * diff, axis=1))
+                                                full_exp_an.data['singlets'] = (dist <= threshold)
+                                            elif s_params.get("type") == "mlp":
+                                                try:
+                                                    from glow.active_learning.models import SingletClassifier
+                                                    clf = SingletClassifier.load("data/singlet_model_full.pkl")
+                                                    X = full_exp_an.data[s_params["diff_channels"]].values
+                                                    if np.max(X) > 10: X = np.log10(X + 1)
+                                                    c_type = s_params.get("cell_type", "colo")
+                                                    ids = np.zeros(len(X), dtype=int)
+                                                    cts = np.array([c_type] * len(X))
+                                                    preds = clf.predict(X, dataset_ids=ids, cell_types=cts)
+                                                    full_exp_an.data["singlets"] = (preds == 1)
+                                                except Exception as e:
+                                                    full_exp_an.data["singlets"] = False
+                                            elif s_params.get('type') == 'per_cell_line':
+                                                 gates = s_params['gates']
+                                                 col_name = s_params['col']
+                                                 for line_val, gate in gates.items():
+                                                     row_mask = (full_exp_an.data[col_name].astype(str) == str(line_val))
+                                                     if not row_mask.any(): continue
+                                                     subset_idxs = full_exp_an.data.index[row_mask]
+                                                     if gate['type'] == 'gmm_mahalanobis':
+                                                         ch = gate['channels']
+                                                         X_s = full_exp_an.data.loc[subset_idxs, ch].values
+                                                         d_m = gate['mean']
+                                                         i_c = np.linalg.inv(gate['cov'])
+                                                         thr = gate.get('threshold', 2.5)
+                                                         df_s = X_s - d_m
+                                                         d_sq = np.sum((df_s @ i_c) * df_s, axis=1)
+                                                         full_exp_an.data.loc[subset_idxs, 'singlets'] = (np.sqrt(d_sq) <= thr)
+                                                     elif gate['type'] == 'polygon':
+                                                         from matplotlib.path import Path
+                                                         v = gate['vertices']
+                                                         ch = gate['channels']
+                                                         path = Path(v)
+                                                         points = full_exp_an.data.loc[subset_idxs, ch].values
+                                                         is_in = path.contains_points(points)
+                                                         full_exp_an.data.loc[subset_idxs, 'singlets'] = is_in
+
+                                        # Dependency
+                                        full_exp_an.data.loc[~full_exp_an.data['cells'], 'singlets'] = False
+
+                                        # Cleanup
+                                        temp_c = [c for c in full_exp_an.data.columns if str(c).startswith('_temp_')]
+                                        if temp_c: full_exp_an.data.drop(columns=temp_c, inplace=True)
+
+                                        # Filter channels
+                                        if export_only_selected_channels and st.session_state.get('selected_channels'):
+                                            keep_ch = set(st.session_state.selected_channels)
+                                            if hasattr(base_an, 'channels'):
+                                                all_ch = list(base_an.channels)
+                                                to_drop = [c for c in all_ch if c not in keep_ch]
+                                                cols_to_drop = [c for c in to_drop if c in full_exp_an.data.columns]
+                                                if cols_to_drop: full_exp_an.data.drop(columns=cols_to_drop, inplace=True)
+                                                for c in to_drop:
+                                                    if c in full_exp_an.metadata: del full_exp_an.metadata[c]
+
+                                        st.session_state.analysis_experiment = full_exp_an
+
+                                    except Exception as e:
+                                        print(f"Error rebuilding analysis: {e}")
+
                                 st.session_state.gating_complete = True
                                 st.session_state.current_tab = "Analysis"
                                 st.rerun()
