@@ -156,7 +156,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                             show_grid=show_grid,
                             title=base_title
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width="stretch")
                         if st.button("Add Plot to Canvas", key="add_plotly_scatter"):
                              add_plot_to_canvas(fig, base_title)
                              st.success("Added to Canvas!")

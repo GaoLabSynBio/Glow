@@ -235,7 +235,7 @@ def render_canvas_tab():
 
                     # Usage of Aspect Ratio
                     # We always use container width to ensure fitting
-                    use_container_width = True
+
                     layout_updates = {}
                     
                     # To adjust aspect ratio while fitting width:
@@ -252,7 +252,7 @@ def render_canvas_tab():
                         
                     fig.update_layout(**layout_updates)
 
-                    st.plotly_chart(fig, use_container_width=use_container_width)
+                    st.plotly_chart(fig, width="stretch")
 
                     # Download Buttons for Plotly
                     # Stack vertically
