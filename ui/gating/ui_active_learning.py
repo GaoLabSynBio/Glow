@@ -34,10 +34,6 @@ def render_reset_controls(model_type='gating'):
     """
     Renders a button to reset the model to its initial state.
     """
-    # Only show in Developer Mode
-    if not st.session_state.get("dev_mode", False):
-        return
-
     st.divider()
     label = "Start Over (Reset Model)"
     if model_type == 'singlet':
@@ -52,8 +48,6 @@ def render_reset_controls(model_type='gating'):
             if success:
                 st.success("Model reset successfully!")
                 # Clear UI state - slightly drastic but safe
-                st.session_state.uncertain_indices = []
-                st.rerun()
                 # We should only clear relevant state
                 if model_type == 'gating':
                     if 'uncertain_indices' in st.session_state: del st.session_state.uncertain_indices
@@ -71,10 +65,6 @@ def render_uncertainty_controls(experiment, x_col, y_col, model_type='gating'):
     """
     Renders the button to Release the Hounds (find uncertainties).
     """
-    # Only show in Developer Mode
-    if not st.session_state.get("dev_mode", False):
-        return
-
     # if model_type != 'gating': return # Not implementing singlet uncertainty viz yet
 
     st.markdown("### 🧠 Active Learning")
@@ -162,10 +152,6 @@ def render_labeling_controls(experiment, x_col, y_col, selection, plot_df=None, 
     """
     Renders buttons to label the selected points.
     """
-    # Only show in Developer Mode
-    if not st.session_state.get("dev_mode", False):
-        return
-
     if not selection or not selection.get('selection') or not selection['selection'].get('points'):
         return
 

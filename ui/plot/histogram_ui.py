@@ -2,9 +2,9 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import importlib
 import warnings
-import io
 from glow.plotting import plots
 from glow.canvas.functions import add_plot_to_canvas
+import io
 
 def download_btn(fig, key):
     buf = io.BytesIO()
