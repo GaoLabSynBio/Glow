@@ -4,6 +4,8 @@ import warnings
 import pickle
 import copy
 
+import uuid
+
 def add_plot_to_canvas(fig, title: str):
     """Store a plot in Streamlit session state for display in the Canvas tab.
 
@@ -31,8 +33,11 @@ def add_plot_to_canvas(fig, title: str):
                 fig_copy._glow_is_direct_ref = True
 
             # Store Matplotlib Figure
-            st.session_state.canvas_plots[title] = {
+            # Use UUID as key to allow multiple plots with same title/content
+            plot_id = str(uuid.uuid4())
+            st.session_state.canvas_plots[plot_id] = {
                 "type": "matplotlib",
+                "title": title,
                 "fig": fig_copy, 
                 "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
             }
@@ -42,8 +47,10 @@ def add_plot_to_canvas(fig, title: str):
         # Check for Plotly Figure
         if isinstance(fig, go.Figure):
             # Store Plotly figure
-            st.session_state.canvas_plots[title] = {
+            plot_id = str(uuid.uuid4())
+            st.session_state.canvas_plots[plot_id] = {
                 "type": "plotly",
+                "title": title,
                 "data": fig,
                 "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
             }
@@ -66,19 +73,22 @@ def add_asperatio_to_canvas(data, title: str):
     """Store asperatio data in Streamlit session state for display in the Canvas tab."""
     if "canvas_plots" not in st.session_state:
         st.session_state.canvas_plots = {}
-    st.session_state.canvas_plots[title] = {
+    
+    plot_id = str(uuid.uuid4())
+    st.session_state.canvas_plots[plot_id] = {
         "type": "asperatio",
+        "title": title,
         "data": data,
         "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
     }
 
 
-def remove_plot_from_canvas(title: str):
-    if "canvas_plots" in st.session_state and title in st.session_state.canvas_plots:
-        del st.session_state.canvas_plots[title]
+def remove_plot_from_canvas(plot_id: str):
+    if "canvas_plots" in st.session_state and plot_id in st.session_state.canvas_plots:
+        del st.session_state.canvas_plots[plot_id]
 
 
-def move_plot_in_canvas(title: str, direction: str):
+def move_plot_in_canvas(plot_id: str, direction: str):
     """Move a plot up or down in the canvas order."""
     if "canvas_plots" not in st.session_state:
         return
@@ -86,10 +96,10 @@ def move_plot_in_canvas(title: str, direction: str):
     plots = st.session_state.canvas_plots
     keys = list(plots.keys())
 
-    if title not in keys:
+    if plot_id not in keys:
         return
 
-    idx = keys.index(title)
+    idx = keys.index(plot_id)
     new_idx = idx - 1 if direction == "up" else idx + 1
 
     if 0 <= new_idx < len(keys):
