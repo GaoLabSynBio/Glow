@@ -21,8 +21,12 @@ def render_canvas_tab():
     cols = st.columns(n_cols)
 
     # Iterate over plots
-    for i, (title, plot_data) in enumerate(plots.items()):
+    # keys are now UUIDs, values are dicts containing 'title'
+    for i, (plot_id, plot_data) in enumerate(plots.items()):
         col = cols[i % n_cols]
+
+        # Extract Display Title
+        title = plot_data.get("title", plot_id)
 
         with col:
             st.markdown(f"### {title}")
@@ -32,27 +36,29 @@ def render_canvas_tab():
             settings = plot_data["settings"]
 
             # Control Toolbar
+            # Use unique plot_id for keys to avoid collisions if titles were (hypothetically) same
+            # although usually unique per run, now definitely unique.
             c1, c2, c3, c4 = st.columns([1, 1, 2, 1])
             with c1:
-                if st.button("⬆", key=f"up_{title}", help="Move Backward"):
-                    move_plot_in_canvas(title, "up")
+                if st.button("⬆", key=f"up_{plot_id}", help="Move Backward"):
+                    move_plot_in_canvas(plot_id, "up")
                     st.rerun()
             with c2:
-                if st.button("⬇", key=f"down_{title}", help="Move Forward"):
-                    move_plot_in_canvas(title, "down")
+                if st.button("⬇", key=f"down_{plot_id}", help="Move Forward"):
+                    move_plot_in_canvas(plot_id, "down")
                     st.rerun()
 
             with st.expander("Customize"):
                 # Aspect Ratio Controls
                 c_ar1, c_ar2 = st.columns(2)
                 with c_ar1:
-                    width_scale = st.slider("Width Scale", 0.5, 3.0, settings.get("width_scale", 1.0), 0.1, key=f"ws_{title}")
+                    width_scale = st.slider("Width Scale", 0.5, 3.0, settings.get("width_scale", 1.0), 0.1, key=f"ws_{plot_id}")
                 with c_ar2:
-                    height_scale = st.slider("Height Scale", 0.5, 3.0, settings.get("height_scale", 1.0), 0.1, key=f"hs_{title}")
+                    height_scale = st.slider("Height Scale", 0.5, 3.0, settings.get("height_scale", 1.0), 0.1, key=f"hs_{plot_id}")
 
                 # Font & Markers
-                font_scale = st.slider("Font/Zoom Scale", 0.5, 3.0, settings.get("font_scale", 1.0), 0.1, key=f"fs_{title}")
-                dot_scale = st.slider("Dot Scale", 0.1, 5.0, settings.get("dot_scale", 1.0), 0.1, key=f"ds_{title}")
+                font_scale = st.slider("Font/Zoom Scale", 0.5, 3.0, settings.get("font_scale", 1.0), 0.1, key=f"fs_{plot_id}")
+                dot_scale = st.slider("Dot Scale", 0.1, 5.0, settings.get("dot_scale", 1.0), 0.1, key=f"ds_{plot_id}")
 
                 # Introspection to determine controls
                 has_mappable = False
@@ -84,7 +90,7 @@ def render_canvas_tab():
 
                 # Font Family
                 font_families = ["default", "sans-serif", "serif", "monospace"]
-                font_family = st.selectbox("Font Family", font_families, index=font_families.index(settings.get("font_family", "default")), key=f"ff_{title}")
+                font_family = st.selectbox("Font Family", font_families, index=font_families.index(settings.get("font_family", "default")), key=f"ff_{plot_id}")
 
                 # Colormap Override (If Mappable)
                 # Ensure override is always active if detected
@@ -97,7 +103,7 @@ def render_canvas_tab():
                     current_cmap = settings.get("main_cmap", "viridis")
                     if current_cmap not in cmaps: current_cmap = "viridis"
                     
-                    main_cmap = st.selectbox("Select Colormap", cmaps, index=cmaps.index(current_cmap), key=f"mc_{title}")
+                    main_cmap = st.selectbox("Select Colormap", cmaps, index=cmaps.index(current_cmap), key=f"mc_{plot_id}")
                 
                 # Save settings
                 plot_data["settings"]["width_scale"] = width_scale
@@ -111,8 +117,8 @@ def render_canvas_tab():
                 if "override_line_color_en" in plot_data["settings"]: del plot_data["settings"]["override_line_color_en"]
 
             with c4:
-                if st.button("🗑", key=f"rm_{title}", help="Remove Plot"):
-                    remove_plot_from_canvas(title)
+                if st.button("🗑", key=f"rm_{plot_id}", help="Remove Plot"):
+                    remove_plot_from_canvas(plot_id)
                     st.rerun()
 
             # Render logic
@@ -185,21 +191,21 @@ def render_canvas_tab():
                     buf_svg = io.BytesIO()
                     try:
                         fig.savefig(buf_svg, format="svg", bbox_inches="tight")
-                        st.download_button("Download SVG", buf_svg.getvalue(), f"{title}.svg", "image/svg+xml", key=f"dl_svg_{title}")
+                        st.download_button("Download SVG", buf_svg.getvalue(), f"{title}.svg", "image/svg+xml", key=f"dl_svg_{plot_id}")
                     except:
                         pass
                 
                     buf_png = io.BytesIO()
                     try:
                         fig.savefig(buf_png, format="png", bbox_inches="tight", dpi=300)
-                        st.download_button("Download PNG", buf_png.getvalue(), f"{title}.png", "image/png", key=f"dl_png_{title}")
+                        st.download_button("Download PNG", buf_png.getvalue(), f"{title}.png", "image/png", key=f"dl_png_{plot_id}")
                     except:
                         pass
 
                     buf_pdf = io.BytesIO()
                     try:
                         fig.savefig(buf_pdf, format="pdf", bbox_inches="tight")
-                        st.download_button("Download PDF", buf_pdf.getvalue(), f"{title}.pdf", "application/pdf", key=f"dl_pdf_{title}")
+                        st.download_button("Download PDF", buf_pdf.getvalue(), f"{title}.pdf", "application/pdf", key=f"dl_pdf_{plot_id}")
                     except:
                         pass
 
@@ -253,14 +259,14 @@ def render_canvas_tab():
                     try:
                         # Requires kaleido
                         img_bytes = fig.to_image(format="png", scale=2)
-                        st.download_button("Download PNG", img_bytes, f"{title}.png", "image/png", key=f"dl_p_png_{title}")
+                        st.download_button("Download PNG", img_bytes, f"{title}.png", "image/png", key=f"dl_p_png_{plot_id}")
                     except Exception as e:
                         pass
                         # st.caption("PNG export needs 'kaleido'")
 
                     try:
                         img_bytes = fig.to_image(format="pdf")
-                        st.download_button("Download PDF", img_bytes, f"{title}.pdf", "application/pdf", key=f"dl_p_pdf_{title}")
+                        st.download_button("Download PDF", img_bytes, f"{title}.pdf", "application/pdf", key=f"dl_p_pdf_{plot_id}")
                     except Exception as e:
                         pass
                         # st.caption("PDF export needs 'kaleido'")
