@@ -418,7 +418,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 'eps': eps,
                 'min_samples': min_samples,
                 'use_outliers': use_outliers,
-                'working_exp_id': id(working_exp), # Ensure we re-run if the subset/file changes
+                'working_exp_id': id(base_exp), # Ensure we re-run if the subset/file changes
                 'model_cell_type': mlp_cell_type
             }
 
