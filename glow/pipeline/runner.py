@@ -54,7 +54,7 @@ def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rena
         if singlet_vertices:
             print("Applying learned Singlet gate...")
             # Note: channel names here are hardcoded for now, but should ideally come from learned metadata too or user config
-            experiment = gater.apply_manual_gate(experiment, "LearnedSinglet", "FSC-A", "FSC-H", singlet_vertices)
+            experiment = gater.apply_manual_gate(experiment, "_temp_singlet_mask_learned", "FSC-A", "FSC-H", singlet_vertices)
         else:
              # Fallback to auto
              # print("Attempting to filter duplicates (Singlet finding)...")
@@ -65,7 +65,7 @@ def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rena
         live_vertices = learner.predict(cell_line, "Live")
         if live_vertices:
             print("Applying learned Live gate...")
-            experiment = gater.apply_manual_gate(experiment, "LearnedLive", "FSC-A", "SSC-A", live_vertices)
+            experiment = gater.apply_manual_gate(experiment, "_temp_live_mask_learned", "FSC-A", "SSC-A", live_vertices)
             print("Learned Live gate applied.")
             # Skip Auto Gating if learned gate is applied?
             # Or maybe we return both and let user decide in UI.
@@ -77,7 +77,7 @@ def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rena
     # Assuming FSC-A and SSC-A are present. This might fail if channels differ.
     try:
         experiment = gater.auto_gate_live_cells(experiment, x_channel="FSC-A", y_channel="SSC-A")
-        print("Auto gating applied. Check 'AutoLiveGate' condition.")
+        print("Auto gating applied. Check '_temp_live_labels' condition.")
     except Exception as e:
         print(f"Warning: Auto gating failed (check channel names?): {e}")
 

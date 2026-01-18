@@ -67,11 +67,11 @@ class GatingManager:
         Removes doublets/duplicates.
         """
         if method == "gmm":
-            strategy = GMMGating(name="Singlets",
+            strategy = GMMGating(name="_temp_singlet_mask_auto",
                                  channels=[fsc_a_channel, fsc_h_channel],
                                  num_components=1)
         elif method == "mlp":
-            strategy = MLPSingletGating(name="Singlets",
+            strategy = MLPSingletGating(name="_temp_singlet_mask_auto",
                                         channels=[fsc_a_channel, fsc_h_channel],
                                         cell_type=cell_type)
         else:
@@ -97,25 +97,25 @@ class GatingManager:
                                                outlier_high=outlier_high)
 
         if method == 'dbscan':
-            strategy = DBSCANGating(name="AutoLiveGate",
+            strategy = DBSCANGating(name="_temp_live_labels",
                                     channels=[x_channel, y_channel],
                                     eps=eps,
                                     min_samples=min_samples,
                                     outlier_detector=outlier_detector)
         elif method == 'gmm':
-            strategy = GMMGating(name="AutoLiveGate",
+            strategy = GMMGating(name="_temp_live_labels",
                                  channels=[x_channel, y_channel],
                                  num_components=num_components,
                                  return_model=return_model,
                                  outlier_detector=outlier_detector)
         elif method == 'density':
-            strategy = DensityGating(name="AutoLiveGate",
+            strategy = DensityGating(name="_temp_live_labels",
                                      channels=[x_channel, y_channel],
                                      keep=keep,
                                      sigma=sigma,
                                      outlier_detector=outlier_detector)
         elif method == 'mlp':
-            strategy = MLPGating(name="AutoLiveGate",
+            strategy = MLPGating(name="_temp_live_labels",
                                  channels=[x_channel, y_channel],
                                  outlier_detector=outlier_detector,
                                  cell_type=cell_type)
