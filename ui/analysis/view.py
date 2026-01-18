@@ -138,6 +138,15 @@ def render_analysis_tab():
         # Use persistent state to ensure it survives tab switching
         user_selected = st.session_state.get('persistent_selected_channels')
         
+        # --- Compensation Switch ---
+        # Check if compensated channels exist
+        comp_cols = [c for c in all_numeric if c.startswith("comp_")]
+        has_comp = len(comp_cols) > 0
+        use_comp = False
+        
+        if has_comp:
+            use_comp = st.checkbox("Use Compensated Data", value=True, key="use_comp_analysis")
+            
         # --- Helper for Fluorophore Filtering ---
         COMMON_FLUORS = [
             "GFP", "EGFP", "mCherry", "Cherry", "APC", "FITC", "PE", "DAPI", "PerCP", 
@@ -156,27 +165,55 @@ def render_analysis_tab():
         if user_selected is not None:
             # Filter 1: In User Selection
             step1 = [c for c in all_numeric if c not in ignore_cols and c in user_selected]
-            # Filter 2: Is Fluorophore (Analysis Specific Requirement)
-            valid_channels = sorted([c for c in step1 if is_fluorophore(c)])
             
-            # Fallback: If strict fluorophore filter removes everything (e.g. user selected custom channels), 
-            # fall back to non-scatter channels from user selection.
+            # --- Apply Compensation Logic ---
+            # If use_comp, we replace original channels with "comp_" versions IF available
+            final_selection = []
+            
+            if use_comp:
+                for c in step1:
+                    comp_name = f"comp_{c}"
+                    if comp_name in all_numeric:
+                        final_selection.append(comp_name)
+                    else:
+                        # User request: if a channel does not have comp_xxx-A channel, just show that channel
+                        final_selection.append(c)
+            else:
+                final_selection = step1
+
+            # Filter 2: Is Fluorophore (Analysis Specific Requirement)
+            # Apply to the potentially comp-swapped list
+            valid_channels = sorted([c for c in final_selection if is_fluorophore(c)])
+            
+            # Fallback
             if not valid_channels:
-                 valid_channels = sorted([c for c in step1 if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])])
+                 valid_channels = sorted([c for c in final_selection if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])])
         else:
             # Fallback if gating wasn't visited - strict fluor filter on all numeric
+            # Also apply comp check here just in case
+            source_cols = all_numeric
+            if use_comp:
+                 comp_set = set(x for x in all_numeric if x.startswith("comp_"))
+                 shadowed = set(x.replace("comp_", "") for x in comp_set)
+                 source_cols = []
+                 for c in all_numeric:
+                     if c.startswith("comp_"):
+                         source_cols.append(c)
+                     elif c in shadowed:
+                         continue
+                     else:
+                         source_cols.append(c)
+            
             valid_channels = sorted([
-                c for c in all_numeric
+                c for c in source_cols
                 if c not in ignore_cols and is_fluorophore(c)
             ])
 
         # Final safety check: if everything was filtered out, show at least non-scatter
         if not valid_channels:
-             valid_channels = sorted([c for c in all_numeric if c not in ignore_cols and not any(x in c.upper() for x in ["FSC", "SSC"])])
-        
-        # Absolute fallback
-        if not valid_channels:
-            valid_channels = sorted([c for c in all_numeric if c not in ignore_cols])
+             # Just show whatever is numeric and not ignored
+             valid_channels = sorted([c for c in experiment.data.columns if pd.api.types.is_numeric_dtype(experiment.data[c]) and c not in ignore_cols])
+
 
         # Use columns for layout
         c1, c2 = st.columns([1, 2])
