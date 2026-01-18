@@ -35,6 +35,14 @@ from gating.ui_file_loader import clear_experiment_state
 st.title("Glow Flow Analysis Pipeline")
 
 # Initialize Session State for Workflow
+if 'dev_mode' not in st.session_state:
+    st.session_state.dev_mode = False
+
+# Developer Mode Toggle at top
+col1, col2 = st.columns([8, 2])
+with col2:
+    st.toggle("Developer Mode", key="dev_mode", help="Show advanced features like Active Learning confusion finding.")
+
 if 'gating_complete' not in st.session_state:
     st.session_state.gating_complete = False
 if 'analysis_complete' not in st.session_state:
