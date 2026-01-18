@@ -793,26 +793,27 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             val_data.sort(key=lambda t: 1 if "Boundary" in (t.name or "") else 0)
                             fig_val.data = tuple(val_data)
 
-                        st.plotly_chart(fig_val, width="stretch")
+                        if st.session_state.get('developer_mode', False):
+                            st.plotly_chart(fig_val, width="stretch")
 
-                        # Add to Canvas button for Classification Plot
-                        canvas_title_val = f"{gating_method} Classification Validation"
-                        if st.button(f"Add \"{canvas_title_val}\" to Canvas", key=f"add_val_gate_to_canvas{ukey}"):
-                            boundaries_to_plot_val = []
-                            if boundary_x is not None:
-                                boundaries_to_plot_val.append({'vertices': list(zip(boundary_x, boundary_y)), 'color': 'black', 'width': 2})
+                            # Add to Canvas button for Classification Plot
+                            canvas_title_val = f"{gating_method} Classification Validation"
+                            if st.button(f"Add \"{canvas_title_val}\" to Canvas", key=f"add_val_gate_to_canvas{ukey}"):
+                                boundaries_to_plot_val = []
+                                if boundary_x is not None:
+                                    boundaries_to_plot_val.append({'vertices': list(zip(boundary_x, boundary_y)), 'color': 'black', 'width': 2})
 
-                            mpl_fig_val = create_canvas_figure(
-                                val_df, x_channel, y_channel,
-                                canvas_title_val,
-                                is_log=is_log,
-                                color_col='Cond_Label',
-                                color_map=color_map_val,
-                                boundaries=boundaries_to_plot_val
-                            )
-                            add_plot_to_canvas(mpl_fig_val, canvas_title_val)
-                            st.success("Plot added to canvas!")
-                            plt.close(mpl_fig_val)
+                                mpl_fig_val = create_canvas_figure(
+                                    val_df, x_channel, y_channel,
+                                    canvas_title_val,
+                                    is_log=is_log,
+                                    color_col='Cond_Label',
+                                    color_map=color_map_val,
+                                    boundaries=boundaries_to_plot_val
+                                )
+                                add_plot_to_canvas(mpl_fig_val, canvas_title_val)
+                                st.success("Plot added to canvas!")
+                                plt.close(mpl_fig_val)
 
 
                     # --- Manual Gate Visualization ---
@@ -857,26 +858,27 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     
                     selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode="points" if drag_mode=="pan" else "box", key=f"live_gating_plot_{param_hash}")
 
-                    canvas_title = "Live/Dead Gating"
-                    if active_cell_line:
-                        canvas_title += f" ({active_cell_line})"
-                    if st.button(f"Add \"{canvas_title}\" to Canvas", key=f"add_live_gate_to_canvas{ukey}"):
-                        boundaries_to_plot = []
-                        if active_cell_line and 'cell_line_gates' in st.session_state and active_cell_line in st.session_state.cell_line_gates:
-                             saved_gate = st.session_state.cell_line_gates[active_cell_line]
-                             if saved_gate.get('type') == 'polygon':
-                                 boundaries_to_plot.append({'vertices': saved_gate['vertices'], 'color': 'black', 'width': 2})
-                        if boundary_x is not None:
-                             boundaries_to_plot.append({'vertices': list(zip(boundary_x, boundary_y)), 'color': 'black', 'width': 2})
-                        if st.session_state.get('manual_vertices'):
-                            boundaries_to_plot.append({'vertices': st.session_state.manual_vertices, 'color': 'yellow', 'width': 2})
+                    if st.session_state.get('developer_mode', False):
+                        canvas_title = "Live/Dead Gating"
+                        if active_cell_line:
+                            canvas_title += f" ({active_cell_line})"
+                        if st.button(f"Add \"{canvas_title}\" to Canvas", key=f"add_live_gate_to_canvas{ukey}"):
+                            boundaries_to_plot = []
+                            if active_cell_line and 'cell_line_gates' in st.session_state and active_cell_line in st.session_state.cell_line_gates:
+                                saved_gate = st.session_state.cell_line_gates[active_cell_line]
+                                if saved_gate.get('type') == 'polygon':
+                                    boundaries_to_plot.append({'vertices': saved_gate['vertices'], 'color': 'black', 'width': 2})
+                            if boundary_x is not None:
+                                boundaries_to_plot.append({'vertices': list(zip(boundary_x, boundary_y)), 'color': 'black', 'width': 2})
+                            if st.session_state.get('manual_vertices'):
+                                boundaries_to_plot.append({'vertices': st.session_state.manual_vertices, 'color': 'yellow', 'width': 2})
 
-                        mpl_fig = create_canvas_figure(plot_df, x_channel, y_channel, canvas_title,
-                                                       is_log=is_log, color_col=color_col if continuous_color else None,
-                                                       boundaries=boundaries_to_plot, cmap=cmap_selected.lower())
-                        add_plot_to_canvas(mpl_fig, canvas_title)
-                        st.success("Plot added to canvas!")
-                        plt.close(mpl_fig)
+                            mpl_fig = create_canvas_figure(plot_df, x_channel, y_channel, canvas_title,
+                                                        is_log=is_log, color_col=color_col if continuous_color else None,
+                                                        boundaries=boundaries_to_plot, cmap=cmap_selected.lower())
+                            add_plot_to_canvas(mpl_fig, canvas_title)
+                            st.success("Plot added to canvas!")
+                            plt.close(mpl_fig)
 
                     # Active Learning Controls (Developer Mode Only)
                     if st.session_state.get('developer_mode', False):
