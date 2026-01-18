@@ -339,21 +339,6 @@ def render_analysis_tab():
                          curr_threshold = curr_val
 
                     # D. Interactive KDE Plot
-                    fig = go.Figure()
-
-                    # Add an invisible "Click Catcher" trace for binary mode to make the whole plot area clickable
-                    # (Plotly point selection only triggers on actual traces)
-                    if not is_range:
-                        fig.add_trace(go.Scatter(
-                            x=x_domain,
-                            y=[0] * len(x_domain),
-                            mode='markers',
-                            marker=dict(size=10, opacity=0),
-                            showlegend=False,
-                            hoverinfo='none',
-                            name="click_catcher"
-                        ))
-
                     # Colors
                     colors = px.colors.qualitative.Plotly
 
@@ -376,6 +361,21 @@ def render_analysis_tab():
                         # Ensure we don't go below 0 if requested
                         start = max(0, plot_min - pad)
                         x_domain = np.linspace(start, plot_max + pad, 200)
+
+                    fig = go.Figure()
+
+                    # Add an invisible "Click Catcher" trace for binary mode to make the whole plot area clickable
+                    # (Plotly point selection only triggers on actual traces)
+                    if not is_range:
+                        fig.add_trace(go.Scatter(
+                            x=x_domain,
+                            y=[0] * len(x_domain),
+                            mode='markers',
+                            marker=dict(size=10, opacity=0),
+                            showlegend=False,
+                            hoverinfo='none',
+                            name="click_catcher"
+                        ))
 
                     # Iterate samples and plot KDE
                     for i, s in enumerate(selected_samples):
@@ -562,7 +562,8 @@ def render_analysis_tab():
                         plt.close(mpl_fig)
 
                     # Finalize Gate
-                    if st.button("Save & Apply Gate"):
+                    ac1, ac2 = st.columns(2)
+                    if ac1.button("Save & Apply Gate"):
                         # Logic to save the gate
                         suffix = "+"
                         if is_range: suffix = "_rng"
