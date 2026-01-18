@@ -143,10 +143,25 @@ def render_canvas_tab():
                     st.image(buf, width="stretch")
 
                     # Reset buffer for downloading SVG (optional, or reuse fig)
+                    # Stack buttons vertically
                     buf_svg = io.BytesIO()
                     try:
                         fig.savefig(buf_svg, format="svg", bbox_inches="tight")
                         st.download_button("Download SVG", buf_svg.getvalue(), f"{title}.svg", "image/svg+xml", key=f"dl_svg_{title}")
+                    except:
+                        pass
+                
+                    buf_png = io.BytesIO()
+                    try:
+                        fig.savefig(buf_png, format="png", bbox_inches="tight", dpi=300)
+                        st.download_button("Download PNG", buf_png.getvalue(), f"{title}.png", "image/png", key=f"dl_png_{title}")
+                    except:
+                        pass
+
+                    buf_pdf = io.BytesIO()
+                    try:
+                        fig.savefig(buf_pdf, format="pdf", bbox_inches="tight")
+                        st.download_button("Download PDF", buf_pdf.getvalue(), f"{title}.pdf", "application/pdf", key=f"dl_pdf_{title}")
                     except:
                         pass
 
@@ -196,6 +211,23 @@ def render_canvas_tab():
                     fig.update_layout(**layout_updates)
 
                     st.plotly_chart(fig, use_container_width=use_container_width)
+
+                    # Download Buttons for Plotly
+                    # Stack vertically
+                    try:
+                        # Requires kaleido
+                        img_bytes = fig.to_image(format="png", scale=2)
+                        st.download_button("Download PNG", img_bytes, f"{title}.png", "image/png", key=f"dl_p_png_{title}")
+                    except Exception as e:
+                        pass
+                        # st.caption("PNG export needs 'kaleido'")
+
+                    try:
+                        img_bytes = fig.to_image(format="pdf")
+                        st.download_button("Download PDF", img_bytes, f"{title}.pdf", "application/pdf", key=f"dl_p_pdf_{title}")
+                    except Exception as e:
+                        pass
+                        # st.caption("PDF export needs 'kaleido'")
 
                 elif ptype == "asperatio":
                     # Custom rendering for asperatio data
