@@ -673,8 +673,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                     # --- Validation Plot (Live vs Non-Live) ---
                     # User Request: "separate scatter plot below... where live cells and non-live cells are colored"
-                    if 'AutoLiveGate' in df.columns:
-                        st.write("### Gating Classification")
+                    if 'AutoLiveGate' in df.columns and st.session_state.get('developer_mode', False):
+                        st.write("### Gating Classification (Developer Mode)")
 
                         # Create validation dataframe (downsampled if needed)
                         # We use the same plot_df for consistency
@@ -808,9 +808,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         st.success("Plot added to canvas!")
                         plt.close(mpl_fig)
 
-                    render_uncertainty_controls(exp, x_channel, y_channel)
-                    render_labeling_controls(exp, x_channel, y_channel, selection, plot_df=plot_df)
-                    render_reset_controls()
+                    # Active Learning Controls (Developer Mode Only)
+                    if st.session_state.get('developer_mode', False):
+                        render_uncertainty_controls(exp, x_channel, y_channel)
+                        render_labeling_controls(exp, x_channel, y_channel, selection, plot_df=plot_df)
+                        render_reset_controls()
 
                     # Check for NEW selection
                     # Only treat as Manual Gating if explicitly in manual mode
@@ -1633,9 +1635,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 add_plot_to_canvas(mpl_fig, canvas_title_s)
                                                 st.success("Plot added to canvas!")
                                                 plt.close(mpl_fig)
-                                            render_uncertainty_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, model_type="singlet")
-                                            render_labeling_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, selection, plot_df=viz_df, model_type="singlet")
-                                            render_reset_controls("singlet")
+                                            if st.session_state.get('developer_mode', False):
+                                                render_uncertainty_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, model_type="singlet")
+                                                render_labeling_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, selection, plot_df=viz_df, model_type="singlet")
+                                                render_reset_controls("singlet")
                                             st.divider()
                                             col_ma, col_mr = st.columns(2)
 
