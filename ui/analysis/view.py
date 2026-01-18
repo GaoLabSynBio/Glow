@@ -371,7 +371,7 @@ def render_analysis_tab():
                             x=x_domain,
                             y=[0] * len(x_domain),
                             mode='markers',
-                            marker=dict(size=10, opacity=0),
+                            marker=dict(size=20, opacity=0),
                             showlegend=False,
                             hoverinfo='none',
                             name="click_catcher"
@@ -416,7 +416,7 @@ def render_analysis_tab():
                                 x=x_domain,
                                 y=y_vals,
                                 mode='lines+markers', # Markers needed for click targeting
-                                marker=dict(size=0.1, color=color, opacity=0), # Invisible markers but hit-testable
+                                marker=dict(size=20, color=color, opacity=0), # Invisible markers but hit-testable
                                 line=dict(color=color, width=2),
                                 name=s,
                                 fill='tozeroy',
@@ -483,7 +483,7 @@ def render_analysis_tab():
                         clickmode='event+select', # Allow clicking to select points
                         # Dragmode 'select' enables box selection
                         # Fixed range prevents accidental zoom toggling
-                        dragmode='select',
+                        dragmode='select' if is_range else 'zoom',
                         xaxis=dict(fixedrange=True),
                         yaxis=dict(fixedrange=True),
                     )
@@ -492,7 +492,7 @@ def render_analysis_tab():
                     # on_select="rerun" ensures app updates when a point is selected (clicked)
                     # Enable box selection
                     # Add unique KEY to prevent state leakage
-                    selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"], key=f"plot_{selected_channel}_{parent_gate}")
+                    selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
 
                     if st.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
                         # Create Matplotlib Figure for Canvas

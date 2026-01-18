@@ -48,8 +48,6 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
     """
     st.subheader("1. File Loading")
 
-    # Renaming Preference
-    rename_strategy = st.sidebar.radio("Renaming Strategy", ('folder_name', 'keep'))
 
     upload_option = st.radio("Choose Input Method", ("Enter Directory Path", "Upload Files / Drag & Drop Folder", "Upload Processed CSV"))
 
@@ -142,7 +140,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     st.session_state.preview_meta = []
 
                 if st.button("Generate Preview from Directory"):
-                    meta = loader.generate_preview_metadata(st.session_state.scanned_paths, rename_strategy=rename_strategy)
+                    meta = loader.generate_preview_metadata(st.session_state.scanned_paths, rename_strategy='folder_name')
                     for m in meta:
                         m['Cell_Line'] = detect_cell_line_from_path(m.get('original_path'))
                     st.session_state.preview_meta = meta
@@ -263,7 +261,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                      st.session_state.preview_meta = []
 
                 if st.button("Generate Preview from Uploads"):
-                     meta = loader.generate_preview_metadata(st.session_state.uploaded_paths, rename_strategy=rename_strategy)
+                     meta = loader.generate_preview_metadata(st.session_state.uploaded_paths, rename_strategy='folder_name')
                      for m in meta:
                         m['Cell_Line'] = detect_cell_line_from_path(m.get('original_path'))
                      st.session_state.preview_meta = meta

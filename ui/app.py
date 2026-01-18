@@ -46,12 +46,8 @@ if 'current_tab' not in st.session_state:
 st.sidebar.title("Navigation")
 
 # Determine available tabs based on state
-tabs = ["Gating"]
-if st.session_state.gating_complete:
-    tabs.append("Analysis")
-# if st.session_state.analysis_complete: # Bypassed for debugging
-tabs.append("Plot")
-tabs.append("Canvas")
+# User request: Always show Analysis, Plot, and Canvas
+tabs = ["Gating", "Analysis", "Plot", "Canvas"]
 
 # Ensure current tab is valid
 if st.session_state.current_tab not in tabs:
