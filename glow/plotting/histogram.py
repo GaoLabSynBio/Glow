@@ -166,14 +166,17 @@ def plot_1d_histogram(
     # Layout
     plt.rcParams.update({'font.size': 10})
 
+    # If y-axis is shown, reduce overlap to prevent tick collisions
+    h_space = -0.1 if not show_yaxis else 0.05
+
     # Responsive height
     if show_table:
         fig = plt.figure(figsize=(10, max(4, n_groups * 0.8)))
         # GridSpec: 4 parts plot, 1 part table (or wider if more cols)
-        gs = gridspec.GridSpec(n_groups, 2, width_ratios=[3, 1 + 0.2*len(legend_cols)], wspace=0.1, hspace=-0.2)
+        gs = gridspec.GridSpec(n_groups, 2, width_ratios=[3, 1 + 0.2*len(legend_cols)], wspace=0.1, hspace=h_space)
     else:
         fig = plt.figure(figsize=(8, max(4, n_groups * 0.8)))
-        gs = gridspec.GridSpec(n_groups, 1, hspace=-0.2)
+        gs = gridspec.GridSpec(n_groups, 1, hspace=h_space)
 
     palette = sns.color_palette("bright", n_groups)
 
@@ -239,12 +242,13 @@ def plot_1d_histogram(
         ax.set_ylabel("")
         if show_yaxis:
             # Show actual y-axis values
-            ax.set_yticks([]) # Remove default ticks for clarity
             ax.spines['left'].set_visible(True)
-            ax.yaxis.set_major_formatter(plt.ScalarFormatter())
-            ax.yaxis.set_minor_formatter(plt.NullFormatter())
+            from matplotlib.ticker import MaxNLocator
+            # Prune upper label to prevent overlap with plot above
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=3, prune='upper'))
+            ax.yaxis.set_major_formatter(plt.ScalarFormatter(useOffset=False))
             ax.yaxis.get_offset_text().set_visible(False)
-            ax.set_ylabel("") # Remove generic label
+            ax.tick_params(axis='y', which='both', left=True, labelleft=True, labelsize=8)
         else:
             ax.set_yticks([])
             ax.yaxis.set_major_formatter(plt.NullFormatter())
