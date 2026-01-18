@@ -8,7 +8,7 @@ def add_plot_to_canvas(fig, title: str):
     """Store a plot in Streamlit session state for display in the Canvas tab.
 
     Stores the figure object directly to allow for dynamic resizing and updates.
-    Uses pickle to create an independent copy of Matplotlib figures to avoid issues with closed figures.
+    Returns True if added successfully.
     """
 
     if "canvas_plots" not in st.session_state:
@@ -21,11 +21,14 @@ def add_plot_to_canvas(fig, title: str):
         if isinstance(fig, plt.Figure):
             # Create a deep copy to ensure the figure persists even if the original is closed
             try:
+                # Force draw to ensure artists are initialized
+                fig.canvas.draw()
                 fig_copy = pickle.loads(pickle.dumps(fig))
             except Exception as e:
                 # Fallback if pickling fails (e.g. complex backends), though less safe vs plt.close()
                 fig_copy = fig
-                print(f"Warning: Could not pickle figure {title}: {e}")
+                # Tag as direct reference to prevent closing
+                fig_copy._glow_is_direct_ref = True
 
             # Store Matplotlib Figure
             st.session_state.canvas_plots[title] = {
@@ -33,7 +36,7 @@ def add_plot_to_canvas(fig, title: str):
                 "fig": fig_copy, 
                 "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
             }
-            return
+            return True
 
         import plotly.graph_objects as go
         # Check for Plotly Figure
@@ -44,14 +47,15 @@ def add_plot_to_canvas(fig, title: str):
                 "data": fig,
                 "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
             }
-            return
+            return True
     except ImportError:
         pass
     except Exception as e:
         st.error(f"Failed to process plot: {e}")
-        return
+        return False
 
     st.warning(f"Plot type {type(fig)} not supported for Canvas storage.")
+    return False
 
 
 def get_canvas_plots():
