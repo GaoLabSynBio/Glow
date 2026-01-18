@@ -116,6 +116,12 @@ def render_canvas_tab():
 
                     st.plotly_chart(fig, width="stretch")
 
+                elif ptype == "asperatio":
+                    # Custom rendering for asperatio data
+                    asp_data = plot_data["data"]
+                    st.write("**Asperatio Plot**")
+                    st.dataframe(asp_data)
+
                 else:
                     st.warning(f"Unsupported plot type: {ptype}")
 

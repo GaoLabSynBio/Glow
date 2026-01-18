@@ -2,8 +2,24 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
 import importlib
+import io
+import warnings
 from glow.plotting import plots, utils, categorical
 from glow.canvas.functions import add_plot_to_canvas
+
+def download_btn(fig, key):
+    buf = io.BytesIO()
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
+        fig.savefig(buf, format="svg", bbox_inches="tight")
+    buf.seek(0)
+    st.download_button(
+         label="Download SVG",
+         data=buf.getvalue(),
+         file_name=f"{key}.svg",
+         mime="image/svg+xml",
+         key=f"dl_{key}"
+    )
 
 def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     """
@@ -348,6 +364,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     gates=all_applied_gates
                 )
                 st.pyplot(fig)
+                download_btn(fig, "bar_plot")
 
                 canvas_title = f"Bar Plot: {selected_channel} by {hue_var}" if hue_var else f"Bar Plot: {selected_channel}"
                 if st.button("Add Bar Plot to Canvas", key="add_bar_to_canvas"):

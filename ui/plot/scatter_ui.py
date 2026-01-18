@@ -2,19 +2,22 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import importlib
 import io
+import warnings
 from glow.plotting import plots
 from glow.canvas.functions import add_plot_to_canvas
 
 def download_btn(fig, key):
     buf = io.BytesIO()
-    fig.savefig(buf, format="svg")
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
+        fig.savefig(buf, format="svg", bbox_inches="tight")
     buf.seek(0)
     st.download_button(
-        label="Download SVG",
-        data=buf,
-        file_name=f"plot_{key}.svg",
-        mime="image/svg+xml",
-        key=key
+         label="Download SVG",
+         data=buf.getvalue(),
+         file_name=f"{key}.svg",
+         mime="image/svg+xml",
+         key=f"dl_{key}"
     )
 
 def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditions, scale):
@@ -104,7 +107,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                         fig_facets, fig_summary = res
                         st.subheader("Merged Comparison")
                         st.pyplot(fig_summary)
-                        download_btn(fig_summary, "scatter_summary_svg")
+                        download_btn(fig_summary, "scatter_summary")
                         if st.button("Add Summary Plot to Canvas", key="add_scatter_summary_to_canvas"):
                             add_plot_to_canvas(fig_summary, base_title + " (summary)")
                             st.success("Plot added to canvas!")
@@ -112,14 +115,14 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
 
                         st.subheader("Separate Panels (Detailed)")
                         st.pyplot(fig_facets)
-                        download_btn(fig_facets, "scatter_facets_svg")
+                        download_btn(fig_facets, "scatter_facets")
                         if st.button("Add Facet Plot to Canvas", key="add_scatter_facets_to_canvas"):
                             add_plot_to_canvas(fig_facets, base_title + " (facets)")
                             st.success("Plot added to canvas!")
                         plt.close(fig_facets)
                     else:
                         st.pyplot(res)
-                        download_btn(res, "scatter_svg")
+                        download_btn(res, "scatter_plot")
                         if st.button("Add Plot to Canvas", key="add_scatter_to_canvas"):
                             add_plot_to_canvas(res, base_title)
                             st.success("Plot added to canvas!")

@@ -2,9 +2,9 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import importlib
 import warnings
+import io
 from glow.plotting import plots
 from glow.canvas.functions import add_plot_to_canvas
-import io
 
 def download_btn(fig, key):
     buf = io.BytesIO()
@@ -78,9 +78,10 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
             help="Original: preserve event count differences. Modal: scale each group so peaks match. Total: scale each group so total area sums to 1."
         )[1]
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1: show_merged = st.checkbox("Show Merged/Main Plot", value=True)
     with c2: show_individual = st.checkbox("Show Individual Groups (below)", value=False)
+    with c3: show_yaxis = st.checkbox("Show Y-Axis", value=False, help="Display frequency/count axis for subplots.")
 
     if hue_var:
          # Legend Column Customization
@@ -115,7 +116,8 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                         legend_cols=legend_columns,
                         legend_font_size=legend_font_size,
                         smooth_sigma=smooth_sigma,
-                        normalization=normalization_mode
+                        normalization=normalization_mode,
+                        show_yaxis=show_yaxis
                     )
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
@@ -150,7 +152,8 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                 color=palette[i],
                                 title=f"Experiment: {group}",
                                 smooth_sigma=smooth_sigma,
-                                normalization="total"
+                                normalization="total",
+                                show_yaxis=show_yaxis
                             )
                             with warnings.catch_warnings():
                                 warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")

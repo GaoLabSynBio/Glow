@@ -70,3 +70,15 @@ def move_plot_in_canvas(title: str, direction: str):
         # Create a new dictionary with swapped retrieval order
         keys[idx], keys[new_idx] = keys[new_idx], keys[idx]
         st.session_state.canvas_plots = {k: plots[k] for k in keys}
+
+
+def add_asperatio_to_canvas(data, title: str):
+    """Store asperatio data in Streamlit session state for display in the Canvas tab."""
+    if "canvas_plots" not in st.session_state:
+        st.session_state.canvas_plots = {}
+    st.session_state.canvas_plots[title] = {
+        "type": "asperatio",
+        "data": data,
+        "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
+    }
+    return
