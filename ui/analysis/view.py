@@ -137,21 +137,44 @@ def render_analysis_tab():
         # Get selected channels from Gating tab
         # Use persistent state to ensure it survives tab switching
         user_selected = st.session_state.get('persistent_selected_channels')
+        
+        # --- Helper for Fluorophore Filtering ---
+        COMMON_FLUORS = [
+            "GFP", "EGFP", "mCherry", "Cherry", "APC", "FITC", "PE", "DAPI", "PerCP", 
+            "BV", "Brilliant", "Cy", "Cy3", "Cy5", "Cy7", "BFP", "EBFP", "TagBFP", "SB", 
+            "RFP", "dsRed", "tdTomato", "YFP", "EYFP", "mNeon", "AmCyan", "Pacific Blue", 
+            "Pacific Orange", "Alexa", "eFluor", "Hoechst", "PI", "7-AAD", "Zombie", "Live/Dead", "DraQ"
+        ]
+        def is_fluorophore(ch_name):
+            # Must NOT be Scatter or Time
+            if any(x in ch_name.upper() for x in ["FSC", "SSC", "TIME"]): return False
+            # Must match common list OR contain "-A"/"Area" but passed scatter check
+            # Actually, user requested "common fluorophores" filter specifically.
+            return any(f.upper() in ch_name.upper() for f in COMMON_FLUORS)
 
         # Define valid channels: must be in user's selection and not ignored
         if user_selected is not None:
-            valid_channels = sorted([
-                c for c in all_numeric
-                if c not in ignore_cols and c in user_selected
-            ])
+            # Filter 1: In User Selection
+            step1 = [c for c in all_numeric if c not in ignore_cols and c in user_selected]
+            # Filter 2: Is Fluorophore (Analysis Specific Requirement)
+            valid_channels = sorted([c for c in step1 if is_fluorophore(c)])
+            
+            # Fallback: If strict fluorophore filter removes everything (e.g. user selected custom channels), 
+            # fall back to non-scatter channels from user selection.
+            if not valid_channels:
+                 valid_channels = sorted([c for c in step1 if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])])
         else:
-            # Fallback if gating wasn't visited - hide scatter by default
+            # Fallback if gating wasn't visited - strict fluor filter on all numeric
             valid_channels = sorted([
                 c for c in all_numeric
-                if c not in ignore_cols and not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])
+                if c not in ignore_cols and is_fluorophore(c)
             ])
 
-        # Final safety check: if everything was filtered out (e.g. only FSC/SSC exist), show them.
+        # Final safety check: if everything was filtered out, show at least non-scatter
+        if not valid_channels:
+             valid_channels = sorted([c for c in all_numeric if c not in ignore_cols and not any(x in c.upper() for x in ["FSC", "SSC"])])
+        
+        # Absolute fallback
         if not valid_channels:
             valid_channels = sorted([c for c in all_numeric if c not in ignore_cols])
 
