@@ -56,6 +56,7 @@ def plot_1d_histogram(
     title=None,
     smooth_sigma: float = 2.0,
     normalization: str = "total",
+    show_yaxis: bool = False,
 ):
     """
     Generates a 1D Ridge Plot (stacked histograms) if hue is provided.
@@ -93,6 +94,10 @@ def plot_1d_histogram(
             y_s = _smooth_1d(y, smooth_sigma)
             ax.fill_between(x, y_s, step="mid", alpha=0.5, color=c)
             ax.plot(x, y_s, color=c, linewidth=2)
+
+        if not show_yaxis:
+            ax.set_yticks([])
+            ax.set_ylabel("")
 
         if log_scale:
             ax.set_xscale('log')
@@ -161,14 +166,17 @@ def plot_1d_histogram(
     # Layout
     plt.rcParams.update({'font.size': 10})
 
+    # If y-axis is shown, reduce overlap to prevent tick collisions
+    h_space = -0.1 if not show_yaxis else 0.05
+
     # Responsive height
     if show_table:
         fig = plt.figure(figsize=(10, max(4, n_groups * 0.8)))
         # GridSpec: 4 parts plot, 1 part table (or wider if more cols)
-        gs = gridspec.GridSpec(n_groups, 2, width_ratios=[3, 1 + 0.2*len(legend_cols)], wspace=0.1, hspace=0)
+        gs = gridspec.GridSpec(n_groups, 2, width_ratios=[3, 1 + 0.2*len(legend_cols)], wspace=0.1, hspace=h_space)
     else:
         fig = plt.figure(figsize=(8, max(4, n_groups * 0.8)))
-        gs = gridspec.GridSpec(n_groups, 1, hspace=0)
+        gs = gridspec.GridSpec(n_groups, 1, hspace=h_space)
 
     palette = sns.color_palette("bright", n_groups)
 
@@ -216,38 +224,63 @@ def plot_1d_histogram(
             ax = fig.add_subplot(gs[i])
 
         axes.append(ax)
+        ax.set_zorder(n_groups - i)
+
+        if log_scale:
+            ax.set_xscale('log')
 
         color = palette[i]
 
         x, y = cached_curves[i]
         if x.size > 0:
-            ax.fill_between(x, y, step="mid", alpha=0.5, color=color)
-            ax.plot(x, y, color=color, linewidth=1.5)
+            # Add a thin white outline to make the ridge stand out
+            ax.plot(x, y, color='white', linewidth=2.5, zorder=1)
+            ax.fill_between(x, y, step="mid", alpha=0.7, color=color, zorder=2)
+            ax.plot(x, y, color=color, linewidth=1.5, zorder=3)
 
         # Aesthetics
         ax.set_ylabel("")
-        ax.set_yticks([])
+        if show_yaxis:
+            # Show actual y-axis values
+            ax.spines['left'].set_visible(True)
+            from matplotlib.ticker import MaxNLocator
+            # Prune upper label to prevent overlap with plot above
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=3, prune='upper'))
+            ax.yaxis.set_major_formatter(plt.ScalarFormatter(useOffset=False))
+            ax.yaxis.get_offset_text().set_visible(False)
+            ax.tick_params(axis='y', which='both', left=True, labelleft=True, labelsize=8)
+        else:
+            ax.set_yticks([])
+            ax.yaxis.set_major_formatter(plt.NullFormatter())
+            ax.yaxis.set_minor_formatter(plt.NullFormatter())
+            ax.yaxis.get_offset_text().set_visible(False)
+            ax.spines['left'].set_visible(False)
+        
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_visible(False)
         ax.grid(False)
-        ax.set_facecolor('white')
+        ax.patch.set_alpha(0) # True transparency for ridge effect
 
         # X Axis
         ax.set_xlim(x_min, x_max)
         if y_max_global > 0:
-            ax.set_ylim(0, y_max_global * 1.05)
+            # Increase ylim slightly for better overlap breathing room
+            ax.set_ylim(0, y_max_global * 1.3)
+
         if i < n_groups - 1:
             ax.set_xlabel("")
-            ax.set_xticklabels([])
+            ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+            ax.xaxis.set_major_formatter(plt.NullFormatter())
+            ax.xaxis.set_minor_formatter(plt.NullFormatter())
+            ax.xaxis.get_offset_text().set_visible(False)
             ax.spines['bottom'].set_visible(False)
-            ax.axhline(0, color='gray', linewidth=0.5, alpha=0.5)
+            # Add a faint baseline for each plot
+            ax.axhline(0, color='black', linewidth=0.5, alpha=0.2, zorder=0)
         else:
             ax.set_xlabel(channel)
+            ax.tick_params(axis='x', which='both', bottom=True, labelbottom=True)
             ax.spines['bottom'].set_visible(True)
-
-        if log_scale:
-            ax.set_xscale('log')
+            ax.axhline(0, color='black', linewidth=0.8, alpha=1.0, zorder=0)
 
     # Table (Right Column)
     if show_table:

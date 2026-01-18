@@ -402,45 +402,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 exp = st.session_state.gated_experiment
                 df = exp.data.copy() # Safe copy
 
-                # --- Handle Selection Interaction BEFORE rendering (Avoid select-twice bug) ---
-                sel_key = f"live_gating_plot_{len(df)}_{st.session_state.get('plot_id', 0)}"
-                selection = st.session_state.get(sel_key)
-                if selection and st.session_state.get('show_manual_gating', False) and hasattr(selection, 'selection') and selection.selection:
-                    last_sel_key = f"last_processed_{sel_key}"
-                    sel_info = selection.selection
-                    if st.session_state.get(last_sel_key) != sel_info:
-                        pts = sel_info.get("points", [])
-                        if pts:
-                            new_x = [p["x"] for p in pts]
-                            new_y = [p["y"] for p in pts]
-                            new_candidates = list(zip(new_x, new_y))
-                            current_pending = st.session_state.get('pending_manual_vertices', [])
-                            updated_pending = list(current_pending)
-                            has_changes = False
-                            for cand in new_candidates:
-                                is_close = False
-                                for ex in current_pending:
-                                    if np.isclose(cand[0], ex[0], atol=1e-5) and np.isclose(cand[1], ex[1], atol=1e-5):
-                                        is_close = True
-                                        break
-                                if not is_close:
-                                    updated_pending.append(cand)
-                                    has_changes = True
-
-                            if has_changes:
-                                final_pending = updated_pending
-                                if len(updated_pending) >= 3:
-                                    try:
-                                        arr = np.array(updated_pending)
-                                        cx, cy = np.mean(arr[:, 0]), np.mean(arr[:, 1])
-                                        angles = np.arctan2(arr[:, 1] - cy, arr[:, 0] - cx)
-                                        indices = np.argsort(angles)
-                                        final_pending = [updated_pending[i] for i in indices]
-                                    except: pass
-                                st.session_state.pending_manual_vertices = final_pending
-                                st.session_state.manual_live_verts_input = "\n".join([f"{v[0]}, {v[1]}" for v in final_pending])
-                            st.session_state[last_sel_key] = sel_info.copy()
-
                 # --- Representative File Selection (Request: Gate per cell line on one file) ---
                 if active_cell_line and 'Sample' in df.columns:
                     unique_samples = sorted(df['Sample'].unique())
@@ -851,7 +812,54 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     render_labeling_controls(exp, x_channel, y_channel, selection, plot_df=plot_df)
                     render_reset_controls()
 
-                    # Selection Handled Above Pre-rendering
+                    # Check for NEW selection
+                    # Only treat as Manual Gating if explicitly in manual mode
+                    if st.session_state.get('show_manual_gating', False) and selection and selection.get("selection"):
+                        pts = selection["selection"]["points"]
+                        count = len(pts)
+
+                        if count > 0:
+                            # Extract new points
+                            new_x = [p["x"] for p in pts]
+                            new_y = [p["y"] for p in pts]
+                            new_candidates = list(zip(new_x, new_y))
+
+                            # Get current pending points
+                            current_pending = st.session_state.get('pending_manual_vertices', [])
+                            updated_pending = list(current_pending)
+
+                            has_changes = False
+                            for cand in new_candidates:
+                                # Check if close to existing
+                                is_close = False
+                                for ex in current_pending:
+                                    if np.isclose(cand[0], ex[0], atol=1e-5) and np.isclose(cand[1], ex[1], atol=1e-5):
+                                        is_close = True
+                                        break
+                                if not is_close:
+                                    updated_pending.append(cand)
+                                    has_changes = True
+
+                            # If we have 5 or more points, sort them to make a polygon
+                            final_pending = updated_pending
+
+                            # User wanted 5 points generally. Let's sort if >=3
+                            if len(updated_pending) >= 3:
+                                try:
+                                    arr = np.array(updated_pending)
+                                    cx, cy = np.mean(arr[:,0]), np.mean(arr[:,1])
+                                    angles = np.arctan2(arr[:,1] - cy, arr[:,0] - cx)
+                                    indices = np.argsort(angles)
+                                    final_pending = [updated_pending[i] for i in indices]
+                                except:
+                                    pass
+
+                            if has_changes:
+                                st.session_state.pending_manual_vertices = final_pending
+                                # Update Text Area State
+                                st.session_state.manual_live_verts_input = "\n".join([f"{v[0]}, {v[1]}" for v in final_pending])
+                                st.rerun()
+
                     # Confirmation UI
                     if st.session_state.get('pending_manual_vertices'):
                         st.divider()

@@ -78,9 +78,10 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
             help="Original: preserve event count differences. Modal: scale each group so peaks match. Total: scale each group so total area sums to 1."
         )[1]
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1: show_merged = st.checkbox("Show Merged/Main Plot", value=True)
     with c2: show_individual = st.checkbox("Show Individual Groups (below)", value=False)
+    with c3: show_yaxis = st.checkbox("Show Y-Axis", value=False, help="Display frequency/count axis for subplots.")
 
     if hue_var:
          # Legend Column Customization
@@ -115,7 +116,8 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                         legend_cols=legend_columns,
                         legend_font_size=legend_font_size,
                         smooth_sigma=smooth_sigma,
-                        normalization=normalization_mode
+                        normalization=normalization_mode,
+                        show_yaxis=show_yaxis
                     )
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
@@ -125,10 +127,11 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
 
                     canvas_title = f"Histogram: {selected_channel} by {hue_var}" if hue_var else f"Histogram: {selected_channel}"
                     if st.button("Add Merged Plot to Canvas", key="add_merged_hist_to_canvas"):
-                        add_plot_to_canvas(fig, canvas_title)
-                        st.success("Plot added to canvas!")
+                        if add_plot_to_canvas(fig, canvas_title):
+                            st.success("Plot added to canvas!")
 
-                    plt.close(fig)
+                    if not getattr(fig, '_glow_is_direct_ref', False):
+                        plt.close(fig)
 
                 # Individual Plots
                 if show_individual and hue_var:
@@ -150,7 +153,8 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                 color=palette[i],
                                 title=f"Experiment: {group}",
                                 smooth_sigma=smooth_sigma,
-                                normalization="total"
+                                normalization="total",
+                                show_yaxis=show_yaxis
                             )
                             with warnings.catch_warnings():
                                 warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
@@ -158,8 +162,10 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
 
                             download_btn(fig, f"hist_ind_{i}")
                             if st.button(f"Add \"{group}\" Histogram to Canvas", key=f"add_hist_ind_{i}_to_canvas"):
-                                add_plot_to_canvas(fig, f"Histogram: {selected_channel} ({group})")
-                                st.success("Plot added to canvas!")
-                            plt.close(fig)
+                                if add_plot_to_canvas(fig, f"Histogram: {selected_channel} ({group})"):
+                                    st.success("Plot added to canvas!")
+                            
+                            if not getattr(fig, '_glow_is_direct_ref', False):
+                                plt.close(fig)
             except Exception as e:
                 st.error(f"Error: {e}")

@@ -1,11 +1,14 @@
 import io
 import streamlit as st
 import warnings
+import pickle
+import copy
 
 def add_plot_to_canvas(fig, title: str):
     """Store a plot in Streamlit session state for display in the Canvas tab.
 
     Stores the figure object directly to allow for dynamic resizing and updates.
+    Returns True if added successfully.
     """
 
     if "canvas_plots" not in st.session_state:
@@ -16,13 +19,24 @@ def add_plot_to_canvas(fig, title: str):
 
         # Check for Matplotlib Figure
         if isinstance(fig, plt.Figure):
+            # Create a deep copy to ensure the figure persists even if the original is closed
+            try:
+                # Force draw to ensure artists are initialized
+                fig.canvas.draw()
+                fig_copy = pickle.loads(pickle.dumps(fig))
+            except Exception as e:
+                # Fallback if pickling fails (e.g. complex backends), though less safe vs plt.close()
+                fig_copy = fig
+                # Tag as direct reference to prevent closing
+                fig_copy._glow_is_direct_ref = True
+
             # Store Matplotlib Figure
             st.session_state.canvas_plots[title] = {
                 "type": "matplotlib",
-                "fig": fig, # Store the actual figure object
+                "fig": fig_copy, 
                 "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
             }
-            return
+            return True
 
         import plotly.graph_objects as go
         # Check for Plotly Figure
@@ -33,18 +47,30 @@ def add_plot_to_canvas(fig, title: str):
                 "data": fig,
                 "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
             }
-            return
+            return True
     except ImportError:
         pass
     except Exception as e:
         st.error(f"Failed to process plot: {e}")
-        return
+        return False
 
     st.warning(f"Plot type {type(fig)} not supported for Canvas storage.")
+    return False
 
 
 def get_canvas_plots():
     return st.session_state.get("canvas_plots", {})
+
+
+def add_asperatio_to_canvas(data, title: str):
+    """Store asperatio data in Streamlit session state for display in the Canvas tab."""
+    if "canvas_plots" not in st.session_state:
+        st.session_state.canvas_plots = {}
+    st.session_state.canvas_plots[title] = {
+        "type": "asperatio",
+        "data": data,
+        "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
+    }
 
 
 def remove_plot_from_canvas(title: str):

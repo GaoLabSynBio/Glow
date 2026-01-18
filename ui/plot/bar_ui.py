@@ -2,8 +2,24 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
 import importlib
+import io
+import warnings
 from glow.plotting import plots, utils, categorical
 from glow.canvas.functions import add_plot_to_canvas
+
+def download_btn(fig, key):
+    buf = io.BytesIO()
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
+        fig.savefig(buf, format="svg", bbox_inches="tight")
+    buf.seek(0)
+    st.download_button(
+         label="Download SVG",
+         data=buf.getvalue(),
+         file_name=f"{key}.svg",
+         mime="image/svg+xml",
+         key=f"dl_{key}"
+    )
 
 def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     """
@@ -279,20 +295,23 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
     # --- Style Settings ---
     st.markdown("#### 5. Style Settings")
-    show_dist = st.checkbox("Show Distributions", value=True)
-
-    use_bars = False
-    if not show_dist:
+    c_style_gen1, c_style_gen2 = st.columns(2)
+    with c_style_gen1:
+        show_dist = st.checkbox("Show Distributions", value=True)
+    with c_style_gen2:
         use_bars = st.checkbox("Plot as Bars", value=False, help="Draw bars indicating the mean instead of just lines.")
 
     log_scale = st.checkbox("Log Scale Y-Axis", value=True)
 
-    c_style1, c_style2 = st.columns(2)
+    c_style1, c_style2, c_style3 = st.columns(3)
     with c_style1:
         font_size = st.number_input("Font Size", min_value=6, max_value=30, value=12)
     with c_style2:
         # Control step size / spacing for significance brackets
         step_fraction = st.slider("Bracket Spacing", 0.05, 0.30, 0.15, 0.01, help="Vertical distance between significance brackets.")
+    with c_style3:
+        error_bar_type = st.selectbox("Error Bar", ["SEM", "SD", "None"], index=0)
+        error_bar_val = error_bar_type.lower() if error_bar_type != "None" else None
 
     # Auto-detect Replicate Column
     replicate_col = None
@@ -345,15 +364,19 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     use_bars=use_bars,
                     font_size=font_size,
                     bracket_spacing=step_fraction,
-                    gates=all_applied_gates
+                    gates=all_applied_gates,
+                    error_bar=error_bar_val
                 )
                 st.pyplot(fig)
+                download_btn(fig, "bar_plot")
 
                 canvas_title = f"Bar Plot: {selected_channel} by {hue_var}" if hue_var else f"Bar Plot: {selected_channel}"
                 if st.button("Add Bar Plot to Canvas", key="add_bar_to_canvas"):
-                    add_plot_to_canvas(fig, canvas_title)
-                    st.success("Plot added to canvas!")
+                    if add_plot_to_canvas(fig, canvas_title):
+                        st.success("Plot added to canvas!")
 
-                plt.close(fig)
+                # Close figure to free memory, unless it was stored as a direct reference in Canvas
+                if not getattr(fig, '_glow_is_direct_ref', False):
+                    plt.close(fig)
             except Exception as e:
                 st.error(f"Error: {e}")

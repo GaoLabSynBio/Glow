@@ -9,11 +9,13 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
                                hue_order=None, show_distribution=True, replicate_col=None,
                                log_scale=False, annotation_cols=[], correction_method='t-test',
                                use_bars=False, font_size=12, bracket_spacing=0.15,
-                               gates=None, gate_channel=None, gate_threshold=None):
+                               gates=None, gate_channel=None, gate_threshold=None,
+                               error_bar='sem'):
     """
     Violin/Strip plot with mean lines, replicate dots, and significance brackets.
     correction_method: 't-test', 'bonferroni', 'fdr'
     gates: List of dicts [{'channel': str, 'threshold': (low, high) or float}]
+    error_bar: 'sem', 'sd', or None
     """
     df = experiment.data
 
@@ -173,6 +175,8 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
 
         group_stats_info[grp] = {'linear_reps': linear_reps, 'linear_grand_mean': linear_grand_mean}
 
+        x_idx = group_map[grp]
+
         # 3.2 Drawing Dots (Replicates)
         # We need to render the dots at their correct Y position
         # If log_scale is True, we plot Log10(LinearMeanOfReplicate)
@@ -189,27 +193,60 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
 
              if dot_data:
                  d_df = pd.DataFrame(dot_data)
-                 sns.stripplot(
-                     data=d_df, x=group_by, y='y_val', hue=replicate_col,
-                     jitter=False, dodge=True, ax=ax, legend=False,
-                     palette=['black']*len(d_df), s=5, edgecolor='white', linewidth=0.5
-                 )
+                 y_vals = d_df['y_val'].values
+                 n_dots = len(y_vals)
+                 
+                 # Calculate symmetric x-offsets around x_idx
+                 if n_dots > 1:
+                     # spread=0.1 means dots will be within +/- 0.05 of the center
+                     spread = 0.1 
+                     x_offsets = np.linspace(-spread/2, spread/2, n_dots)
+                     x_positions = x_idx + x_offsets
+                 else:
+                     x_positions = [x_idx]
+                 
+                 ax.scatter(x_positions, y_vals, color='black', s=25, edgecolor='white', linewidth=0.5, zorder=25)
 
         # 3.3 Drawing Mean Line (or Bar)
         # We plot the specific Y value corresponding to the "Mean of Means"
         # If log_scale, plot log10(linear_grand_mean)
         plot_mean_val = np.log10(linear_grand_mean) if log_scale and linear_grand_mean > 0 else linear_grand_mean
 
-        x_idx = group_map[grp]
+        # Calculate Error for Error Bars
+        err_val = 0
+        if error_bar and len(linear_reps) > 1:
+            if error_bar.lower() == 'sd':
+                err_val = np.std(linear_reps)
+            elif error_bar.lower() == 'sem':
+                err_val = np.std(linear_reps) / np.sqrt(len(linear_reps))
+        
+        # Determine Error Bar Y-offsets (asymmetric if log scale)
+        yerr = None
+        if err_val > 0:
+            if log_scale:
+                # Calculate bounds in linear, then transform to log offsets
+                # We use max(1e-10, ...) to avoid log(<=0)
+                lower_linear = max(1e-10, linear_grand_mean - err_val)
+                upper_linear = linear_grand_mean + err_val
+                
+                lower_log = np.log10(lower_linear)
+                upper_log = np.log10(upper_linear)
+                
+                # yerr for errorbar needs (lower_offset, upper_offset)
+                yerr = [[plot_mean_val - lower_log], [upper_log - plot_mean_val]]
+            else:
+                yerr = err_val
 
-        if use_bars and not show_distribution:
+        if use_bars:
             # Draw Bar
             # Use 'muted' green or user requested style
             bar_color = '#74C476' # Muted Green
-            ax.bar(x_idx, plot_mean_val, width=0.6, color=bar_color, edgecolor='black', linewidth=1.5, zorder=0, alpha=0.9) # zorder=0 to be behind dots
+            # If show_distribution is True, maybe make bar more transparent or narrower
+            bar_alpha = 0.5 if show_distribution else 0.9
+            ax.bar(x_idx, plot_mean_val, width=0.6, color=bar_color, edgecolor='black', linewidth=1.5, zorder=0, alpha=bar_alpha) # zorder=0 to be behind dots
 
-            # Optionally keep the green mean line on top? Or remove it?
-            pass
+            if yerr is not None:
+                ax.errorbar(x_idx, plot_mean_val, yerr=yerr, fmt='none', ecolor='black', capsize=10, elinewidth=2.0, zorder=20)
         else:
             # Standard Line
             ax.hlines(y=plot_mean_val, xmin=x_idx-0.3, xmax=x_idx+0.3, colors='green', linewidth=2, zorder=15, alpha=0.8)
@@ -233,6 +270,18 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
                 val = info['linear_grand_mean']
                 y_val = np.log10(val) if log_scale and val > 0 else val
                 all_ymax.append(y_val)
+
+                # Add error bar top if applicable (only if bars are enabled)
+                if use_bars and error_bar and len(info['linear_reps']) > 1:
+                    reps = info['linear_reps']
+                    if error_bar.lower() == 'sd':
+                        e = np.std(reps)
+                    else: # sem
+                        e = np.std(reps) / np.sqrt(len(reps))
+                    
+                    top = val + e
+                    y_top = np.log10(top) if log_scale and top > 0 else top
+                    all_ymax.append(y_top)
 
                 # Add dots positions
                 for r in info['linear_reps']:
