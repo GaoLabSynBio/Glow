@@ -397,6 +397,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
             should_run_gating = (current_gating_params != last_gating_params) or ('gated_experiment' not in st.session_state)
 
             if should_run_gating:
+                # Reset acceptance state so user sees new boundaries
+                if 'gate_accepted' in st.session_state:
+                    del st.session_state['gate_accepted']
+                
                 gater = GatingManager()
                 with st.spinner(f"Applying {gating_method} Gating..."):
                     try:
@@ -696,6 +700,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 print(f"Warning: Boundary computation failed: {e}")
                                 # pass # Geometry fail
 
+                        else:
+                            st.warning("No distinct clusters found! All points were classified as noise (-1) or fell below the 1% size threshold. Try increasing 'Epsilon' or decreasing 'Min Samples'.")
+
                     # --- Validation Plot (Live vs Non-Live) ---
                     # User Request: "separate scatter plot below... where live cells and non-live cells are colored"
                     if '_temp_live_labels' in df.columns:
@@ -810,7 +817,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                     # Render Plot
                     # Use selection_mode='points' for clicking individual cells
-                    selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode="points" if drag_mode=="pan" else "box", key=f"live_gating_plot_{len(df)}_{st.session_state.get('plot_id', 0)}")
+                    # Generate a robust key based on params
+                    import hashlib
+                    param_str = str(sorted(current_gating_params.items()))
+                    param_hash = hashlib.md5(param_str.encode()).hexdigest()
+                    
+                    selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode="points" if drag_mode=="pan" else "box", key=f"live_gating_plot_{param_hash}")
 
                     canvas_title = "Live/Dead Gating"
                     if active_cell_line:

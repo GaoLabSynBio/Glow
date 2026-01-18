@@ -1,5 +1,10 @@
 import numpy as np
 import pandas as pd
+import warnings
+
+# Suppress Cytoflow PnR vs PnB warning (common in commercial FCS)
+warnings.filterwarnings("ignore", message="The data range .* doesn't match the data bits")
+
 import cytoflow
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
