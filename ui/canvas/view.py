@@ -2,6 +2,7 @@ import streamlit as st
 import io
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+import numpy as np
 from glow.canvas.functions import get_canvas_plots, remove_plot_from_canvas, move_plot_in_canvas
 
 def render_canvas_tab():
@@ -53,22 +54,61 @@ def render_canvas_tab():
                 font_scale = st.slider("Font/Zoom Scale", 0.5, 3.0, settings.get("font_scale", 1.0), 0.1, key=f"fs_{title}")
                 dot_scale = st.slider("Dot Scale", 0.1, 5.0, settings.get("dot_scale", 1.0), 0.1, key=f"ds_{title}")
 
+                # Introspection to determine controls
+                has_mappable = False
+                
+                # We need to peek at the object to know what controls to show
+                if plot_data.get("type") == "matplotlib":
+                    f = plot_data["fig"]
+                    for ax in f.axes:
+                         for c in ax.collections:
+                             # Check for ScalarMappable characteristics
+                             # It must have a colormap and an array of values mapping to it
+                             if hasattr(c, "get_cmap") and hasattr(c, "get_array"):
+                                 arr = c.get_array()
+                                 if arr is not None and len(arr) > 1: # Must have data to map
+                                     has_mappable = True
+                                     break
+                         if has_mappable: break
+
+                elif plot_data.get("type") == "plotly":
+                    f = plot_data["data"]
+                    # Check traces
+                    if hasattr(f, "data"):
+                        for t in f.data:
+                            if "marker" in t and ("color" in t.marker or "colorscale" in t.marker):
+                                # check if color is array or colorscale present
+                                if "colorscale" in t.marker or (isinstance(t.marker.color, (list, tuple, np.ndarray)) and len(t.marker.color) > 1):
+                                     has_mappable = True
+                                     break
+
                 # Font Family
                 font_families = ["default", "sans-serif", "serif", "monospace"]
                 font_family = st.selectbox("Font Family", font_families, index=font_families.index(settings.get("font_family", "default")), key=f"ff_{title}")
 
-                # Color Override
-                override_color_en = st.checkbox("Override Color", value=settings.get("override_color_en", False), key=f"oce_{title}")
-                main_color = st.color_picker("Main Color", value=settings.get("main_color", "#000000"), key=f"mc_{title}")
-
+                # Colormap Override (If Mappable)
+                # Ensure override is always active if detected
+                main_cmap = "viridis"
+                if has_mappable:
+                    # User requested default to "viridis" (which is coincidentally detecting as default anyway)
+                    # And allow changing.
+                    
+                    cmaps = ["viridis", "plasma", "inferno", "magma", "cividis", "Greys", "Purples", "Blues", "Greens", "Oranges", "Reds", "YlOrBr", "YlOrRd", "OrRd", "PuRd", "RdPu", "BuPu", "GnBu", "PuBu", "YlGnBu", "PuBuGn", "BuGn", "YlGn", "jet", "rainbow", "Spectral"]
+                    current_cmap = settings.get("main_cmap", "viridis")
+                    if current_cmap not in cmaps: current_cmap = "viridis"
+                    
+                    main_cmap = st.selectbox("Select Colormap", cmaps, index=cmaps.index(current_cmap), key=f"mc_{title}")
+                
                 # Save settings
                 plot_data["settings"]["width_scale"] = width_scale
                 plot_data["settings"]["height_scale"] = height_scale
                 plot_data["settings"]["font_scale"] = font_scale
                 plot_data["settings"]["dot_scale"] = dot_scale
                 plot_data["settings"]["font_family"] = font_family
-                plot_data["settings"]["override_color_en"] = override_color_en
-                plot_data["settings"]["main_color"] = main_color
+                plot_data["settings"]["main_cmap"] = main_cmap
+                # Force cleanup of old keys if present
+                if "override_color_en" in plot_data["settings"]: del plot_data["settings"]["override_color_en"]
+                if "override_line_color_en" in plot_data["settings"]: del plot_data["settings"]["override_line_color_en"]
 
             with c4:
                 if st.button("🗑", key=f"rm_{title}", help="Remove Plot"):
@@ -124,16 +164,14 @@ def render_canvas_tab():
                                     new_sizes = [s * dot_scale for s in collection._glow_orig_sizes]
                                     collection.set_sizes(new_sizes)
 
-                            # Color Override
-                            if override_color_en:
-                                # Save original color if needed? For now straightforward override
-                                collection.set_color(main_color)
-                                collection.set_edgecolor(main_color)
-                        
-                        # Lines (Plots)
-                        if override_color_en:
-                            for line in ax.lines:
-                                line.set_color(main_color)
+                            # Color Override (Colormap) - Always Active if detected logic applies
+                            # We re-check the mappable condition here to be safe and avoid breaking non-mappables
+                            if hasattr(collection, "set_cmap") and hasattr(collection, "get_array"):
+                                 arr = collection.get_array()
+                                 if arr is not None and len(arr) > 1:
+                                     collection.set_cmap(main_cmap)
+                        # Automatic "Enabling" without user action might be intrusive if they already liked their plot.
+                        # Showing the option is the "Enablement".
 
                     # Render to PNG buffer
                     buf = io.BytesIO()
@@ -175,10 +213,12 @@ def render_canvas_tab():
                     
                     fig.update_layout(font=update_font)
 
-                    # Color Override
-                    if override_color_en:
-                        fig.update_traces(marker=dict(color=main_color), line=dict(color=main_color))
-                        # Note: This overrides everything to one color. 
+                    # Color Override - Always active for mappables
+                    # Detection logic was: has colorscale or color array.
+                    # We blindly update trace marker colorscale if it exists or we can infer it should?
+                    # Safer: Update colorscale on ALL traces that theoretically support it. 
+                    # If they don't have scalar data, colorscale is ignored by plotly usually.
+                    fig.update_traces(marker=dict(colorscale=main_cmap))
 
                     # Update Markers logic for plotly
                     if dot_scale != 1.0:
