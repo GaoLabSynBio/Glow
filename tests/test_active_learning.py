@@ -15,7 +15,7 @@ class TestActiveLearningLogger:
     def test_log_and_load_feedback(self, tmp_path):
         storage_dir = tmp_path / "al_data_logger_io"
         logger = ActiveLearningLogger(storage_dir=str(storage_dir))
-        
+
         sample_data = {
             "sample_name": "S1",
             "cell_line": "HeLa",
@@ -25,14 +25,14 @@ class TestActiveLearningLogger:
             "gate_params": {'vertices': [[1,1], [2,2], [3,3]]},
             "user_decision": "accepted"
         }
-        
+
         logger.log_gate_feedback(**sample_data)
-        
+
         # Check file exists
         files = list(os.listdir(storage_dir))
         assert len(files) >= 1
         assert any(f.startswith("feedback_") for f in files)
-        
+
         # Check load
         loaded = logger.load_feedback()
         assert len(loaded) == 1
@@ -49,14 +49,14 @@ class TestActiveLearner:
 
     def test_training_logic(self, learner_env):
         logger = ActiveLearningLogger(storage_dir=str(learner_env))
-        
+
         # Log feedback for "Live" (5 vertices)
         logger.log_gate_feedback(
             sample_name="S1", cell_line="HeLa", x_channel="FSC", y_channel="SSC",
             gate_type="Polygon", gate_params={'vertices': [[0,0], [1,0], [1,1], [0,1], [0,0.5]]}, # 5 points
             user_decision="accepted"
         )
-        
+
         # Log feedback for "Singlet" (4 vertices)
         logger.log_gate_feedback(
             sample_name="S1", cell_line="HeLa", x_channel="FSC-A", y_channel="FSC-H",
@@ -66,7 +66,7 @@ class TestActiveLearner:
 
         learner = ActiveLearner(storage_dir=str(learner_env), model_filename="weights.json")
         learner.train()
-        
+
         assert "HeLa" in learner.knowledge_base
         assert "Live" in learner.knowledge_base["HeLa"]
         assert len(learner.knowledge_base["HeLa"]["Live"]) == 5
@@ -81,10 +81,10 @@ class TestActiveLearner:
                 "Live": [[1,1], [2,2]]
             }
         }
-        
+
         prediction = learner.predict("CHO", "Live")
         assert prediction == [[1,1], [2,2]]
-        
+
         assert learner.predict("CHO", "Singlet") is None
         assert learner.predict("Unknown", "Live") is None
 
@@ -92,9 +92,9 @@ class TestActiveLearner:
         learner = ActiveLearner(storage_dir=str(learner_env), model_filename="test_weights.json")
         learner.knowledge_base = {"Test": {"Gate": [1, 2, 3]}}
         learner.save_weights()
-        
+
         assert (learner_env / "test_weights.json").exists()
-        
+
         # New instance
         learner2 = ActiveLearner(storage_dir=str(learner_env), model_filename="test_weights.json")
         assert "Test" in learner2.knowledge_base

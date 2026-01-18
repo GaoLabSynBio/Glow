@@ -2,119 +2,23 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from .ui_file_loader import render_file_loader
+from .ui_active_learning import get_active_learner
 from .ui_gating import render_gating_section
 
 def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE):
-    st.header("Gating Workflow")
-    
+    # -------------------------------------------------------------------------
+    # 0. Header & Developer Mode
+    # -------------------------------------------------------------------------
+    col_h1, col_h2 = st.columns([4, 1])
+    with col_h1:
+        st.header("Gating Workflow")
+    with col_h2:
+        # Developer mode toggle at the top right
+        st.toggle("Developer Mode", key="developer_mode", value=False, help="Show advanced tools and validation plots.")
+
     # 1. File Loading Module
     render_file_loader(DataLoader, CYTOFLOW_AVAILABLE)
 
     # 2. Gating Module
     render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE)
-    
-    st.divider()
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        if st.button("Finish Gating & Proceed to Analysis", type="primary"):
-            # Check if critical data exists
-            if 'base_experiment' in st.session_state and st.session_state.base_experiment is not None:
-                
-                # --- Reconstruct Fully Annotated Experiment for Analysis ---
-                # We need to apply the specific gates to the ORIGINAL dataset to get boolean flags ('cells', 'singlets')
-                # instead of filtering rows. This allows correct calculation of Live % and Singlets %.
-                
-                with st.spinner("Finalizing analysis dataset..."):
-                    try:
-                        # 1. Start with Clone of Base
-                        base = st.session_state.base_experiment
-                        full_exp = base.clone() if hasattr(base, 'clone') else base 
-                        
-                        # Initialize flags to False if not present (safeguard)
-                        # We use 'cells' and 'singlets' as the standard flags
-                        # If columns don't exist, we add them as boolean False generally?
-                        # Actually, better to compute them fresh.
-                        
-                        gater = GatingManager()
-                        
-                        # 2. Re-Apply LIVE Gate
-                        l_params = st.session_state.get('live_gate_params')
-                        live_mask_col = None
-                        
-                        if l_params:
-                            if l_params['type'] == 'polygon':
-                                # Check if manual vertices exist
-                                full_exp = gater.apply_manual_gate(full_exp, "LiveGate", l_params['channels'][0], l_params['channels'][1], l_params['vertices'])
-                                live_mask_col = "LiveGate"
-                                
-                            elif l_params['type'] == 'label':
-                                # Re-run auto gating to get labels if needed
-                                # Note: If AutoLiveGate is already in base, we good.
-                                # Check if AutoLiveGate exists in full_exp
-                                if 'AutoLiveGate' not in full_exp.data.columns:
-                                    gp = st.session_state.get('last_gating_params', {})
-                                    if gp:
-                                        full_exp = gater.auto_gate_live_cells(
-                                            full_exp,
-                                            x_channel=gp.get('x'),
-                                            y_channel=gp.get('y'),
-                                            method=gp.get('method', 'density').lower() if isinstance(gp.get('method'), str) else 'density',
-                                            num_components=gp.get('comp', 2),
-                                            keep=gp.get('keep', 0.9),
-                                            sigma=gp.get('sigma', 2.0),
-                                            eps=gp.get('eps', 0.05),
-                                            min_samples=gp.get('min_samples', 50),
-                                            use_outlier_removal=gp.get('use_outliers', False)
-                                        )
-                                # Define mask from label
-                                lbl = l_params['label']
-                                full_exp.data['cells'] = (full_exp.data['AutoLiveGate'] == lbl)
-                            
-                        # If we have a named gate column, map it to 'cells'
-                        if live_mask_col and live_mask_col in full_exp.data.columns:
-                             full_exp.data['cells'] = full_exp.data[live_mask_col].astype(bool)
-                        elif 'cells' not in full_exp.data.columns:
-                             # Fallback: Assume all live if no gate? Or False?
-                             # If file loaded via CSV bypass, 'cells' might already be there.
-                             if 'cells' not in full_exp.data.columns: # Check again
-                                 full_exp.data['cells'] = False
-                        
-                        # 3. Re-Apply SINGLET Gate
-                        s_params = st.session_state.get('singlet_gate_params')
-                        
-                        if s_params:
-                            if s_params['type'] == 'polygon':
-                                full_exp = gater.apply_manual_gate(full_exp, "SingletGate", s_params['channels'][0], s_params['channels'][1], s_params['vertices'])
-                                if 'SingletGate' in full_exp.data.columns:
-                                    full_exp.data['singlets'] = full_exp.data['SingletGate'].astype(bool)
-                            
-                            elif s_params['type'] == 'gmm_mahalanobis':
-                                # Calculate manually on full data
-                                X = full_exp.data[s_params['channels']].values
-                                d_mean = s_params['mean']
-                                inv_cov = np.linalg.inv(s_params['cov'])
-                                threshold = s_params.get('threshold', 2.5)
-                                
-                                diff = X - d_mean
-                                # dist = sqrt( (x-mu)T . Sigma^-1 . (x-mu) )
-                                # Batched: sum( (diff @ inv_cov) * diff, axis=1 )
-                                left = diff @ inv_cov
-                                dist_sq = np.sum(left * diff, axis=1)
-                                dist = np.sqrt(dist_sq)
-                                
-                                full_exp.data['singlets'] = (dist <= threshold)
-                        
-                        # Ensure 'singlets' exists
-                        if 'singlets' not in full_exp.data.columns:
-                            full_exp.data['singlets'] = False
 
-                        # Save to session
-                        st.session_state.analysis_experiment = full_exp
-                        st.session_state.gating_complete = True
-                        st.session_state.current_tab = "Analysis"
-                        st.rerun()
-
-                    except Exception as e:
-                        st.error(f"Error preparing analysis data: {e}")
-            else:
-                st.error("Please load data and perform gating before proceeding.")

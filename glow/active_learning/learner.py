@@ -1,106 +1,126 @@
-import json
 import os
+import shutil
+import numpy as np
+import pandas as pd
 from .storage import ActiveLearningLogger
+from .models import GatingClassifier, SingletClassifier
 
 class ActiveLearner:
-    def __init__(self, storage_dir="data/active_learning_data", model_filename="model_weights.json"):
+    """
+    Manages the Active Learning process:
+    1. Loads the Neural Network model.
+    2. Queries for uncertain samples.
+    3. Updates the model with new user feedback.
+    """
+    def __init__(self, storage_dir="data/active_learning_data", model_path="data/gating_model_full.pkl", model_type="gating"):
         self.storage_dir = storage_dir
-        self.model_path = os.path.join(storage_dir, model_filename)
+        self.model_path = model_path
+        self.model_type = model_type
+
+        # Select Class
+        if model_type == 'singlet':
+            self.model_class = SingletClassifier
+        else:
+            self.model_class = GatingClassifier
+
+        # Ensure backup exists for reset functionality
+        self.backup_path = self.model_path + ".base"
+        if os.path.exists(self.model_path) and not os.path.exists(self.backup_path):
+            print(f"Creating base backup at {self.backup_path}")
+            shutil.copy2(self.model_path, self.backup_path)
+
         self.logger = ActiveLearningLogger(storage_dir)
-        # Knowledge base structure: { cell_line: { 'Live': vertices, 'Singlet': vertices } }
-        self.knowledge_base = {}
-        self.load_weights()
+        self.model = self._load_or_init_model()
 
-    def train(self):
-        """
-        Rebuilds knowledge base from stored feedback logs.
-        Strategy: Use the LATEST accepted or manual_override gate for each cell_line.
-        This updates the in-memory knowledge base.
-        """
-        feedback_history = self.logger.load_feedback()
-
-        # Sort by timestamp to ensure we process chronologically
-        feedback_history.sort(key=lambda x: x.get('timestamp', ''))
-
-        for entry in feedback_history:
-            cell_line = entry.get('cell_line')
-            if not cell_line:
-                continue
-
-            # Normalize cell line name (trim whitespace)
-            cell_line = cell_line.strip()
-
-            gate_params = entry.get('gate_params')
-            vertices = gate_params
-            # Handle potential nested dict structure from GMM or others if we standardize on Polygon here for learning
-            if isinstance(gate_params, dict) and 'vertices' in gate_params:
-                 vertices = gate_params['vertices']
-
-            if not isinstance(vertices, list):
-                continue
-
-            num_vertices = len(vertices)
-
-            inferred_type = None
-            # Live cells = 5 points, Singlets = 4 points.
-            if num_vertices == 5:
-                inferred_type = 'Live'
-            elif num_vertices == 4:
-                inferred_type = 'Singlet'
-
-            if inferred_type:
-                if cell_line not in self.knowledge_base:
-                    self.knowledge_base[cell_line] = {}
-                self.knowledge_base[cell_line][inferred_type] = vertices
-
-        print(f"Training complete. Knowledge base updated for {len(self.knowledge_base)} cell lines.")
-        self.save_weights()
-
-    def get_known_cell_lines(self):
-        """
-        Returns a sorted list of unique cell lines currently in the knowledge base.
-        Useful for UI dropdowns.
-        """
-        return sorted(list(self.knowledge_base.keys()))
-
-    def save_weights(self):
-        """
-        Saves the current knowledge base (weights) to a JSON file.
-        """
-        try:
-            with open(self.model_path, 'w') as f:
-                json.dump(self.knowledge_base, f, indent=2)
-            print(f"Model weights saved to {self.model_path}")
-        except Exception as e:
-            print(f"Error saving weights: {e}")
-
-    def load_weights(self):
-        """
-        Loads the knowledge base (weights) from a JSON file if it exists.
-        """
+    def _load_or_init_model(self):
+        """Loads model from disk or creates valid fallback if missing."""
         if os.path.exists(self.model_path):
             try:
-                with open(self.model_path, 'r') as f:
-                    self.knowledge_base = json.load(f)
-                print(f"Model weights loaded from {self.model_path}")
+                print(f"Loading Active Learning model ({self.model_type}) from {self.model_path}")
+                return self.model_class.load(self.model_path)
             except Exception as e:
-                print(f"Error loading weights: {e}")
-                self.knowledge_base = {}
-        else:
-            print("No existing model weights found. Starting fresh.")
-            self.knowledge_base = {}
+                print(f"Error loading model: {e}")
 
-    def predict(self, cell_line, gate_category):
-        """
-        Predicts vertices for a given cell_line and gate category ('Live' or 'Singlet').
-        Returns list of (x,y) tuples or None if unknown.
+        print(f"Initializing new/empty {self.model_class.__name__}.")
+        return self.model_class()
 
-        Args:
-            cell_line (str): The cell line identifier.
-            gate_category (str): 'Live' or 'Singlet'.
+    def reset_model(self):
         """
-        if cell_line in self.knowledge_base:
-            val = self.knowledge_base[cell_line].get(gate_category)
-            if val:
-                return val
-        return None
+        Resets the model to the base state (from .base backup).
+        Returns:
+            bool: Success status.
+        """
+        if not os.path.exists(self.backup_path):
+            print("Cannot reset: Base backup file not found.")
+            return False
+
+        print(f"Resetting model from {self.backup_path}...")
+        try:
+            # Restore file
+            shutil.copy2(self.backup_path, self.model_path)
+            # Reload object
+            self.model = self.model_class.load(self.model_path)
+            return True
+        except Exception as e:
+            print(f"Error resetting model: {e}")
+            return False
+
+    def predict(self, df):
+        """
+        Predicts labels for a dataframe.
+        """
+        X = self._extract_features(df)
+        return self.model.predict(X)
+
+    def query_uncertainty(self, df, n_instances=10):
+        """
+        Selects the top N most uncertain instances for labeling.
+        """
+        X = self._extract_features(df)
+        uncertainties = self.model.uncertainty(X)
+        query_indices = np.argsort(uncertainties)[::-1][:n_instances]
+        return df.iloc[query_indices], query_indices
+
+    def teach(self, X_new, y_new):
+        """
+        Updates the model with new labeled data.
+        """
+        if len(X_new) == 0:
+            return
+
+        print(f"Teaching model with {len(X_new)} new samples...")
+
+        # 1. Update Model (Incremental)
+        try:
+            self.model.partial_fit(X_new, y_new)
+        except Exception as e:
+            print(f"Partial fit failed ({e}).")
+            return
+
+        # 2. Save Model checkpoint
+        self.model.save(self.model_path)
+
+        # 3. Log/Save this training batch
+        self.logger.save_labeled_batch(X_new, y_new, source=f"active_learning_feedback_{self.model_type}")
+
+    def _extract_features(self, df):
+        """Helper to safely get Features based on model type"""
+        if self.model_type == 'singlet':
+            # Expecting Log_FSC_A, Log_FSC_H usually, or just 2 cols
+            # If explicit columns exist, use them
+            if "Log_FSC_A" in df.columns and "Log_FSC_H" in df.columns:
+                 return df[["Log_FSC_A", "Log_FSC_H"]].values
+
+            # Fallback: Just take the first 2 columns if not named specifically?
+            # Or try to construct from standard names if passed
+            pass
+
+        # Default / Gating behavior
+        if "Log_FSC" in df.columns:
+             return df[["Log_FSC", "Log_SSC"]].values
+
+        # Generic Fallback: Use values of dataframe directly if 2 columns
+        if df.shape[1] == 2:
+            return df.values
+
+        raise ValueError(f"Dataframe missing required feature columns for {self.model_type}.")

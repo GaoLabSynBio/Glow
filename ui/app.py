@@ -29,6 +29,8 @@ except ImportError:
 from gating.view import render_gating_tab
 from analysis.view import render_analysis_tab
 from plot.view import render_plot_tab
+from canvas.view import render_canvas_tab
+from gating.ui_file_loader import clear_experiment_state
 
 st.title("Glow Flow Analysis Pipeline")
 
@@ -44,17 +46,14 @@ if 'current_tab' not in st.session_state:
 st.sidebar.title("Navigation")
 
 # Determine available tabs based on state
-tabs = ["Gating"]
-if st.session_state.gating_complete:
-    tabs.append("Analysis")
-if st.session_state.analysis_complete:
-    tabs.append("Plot")
+# User request: Always show Analysis, Plot, and Canvas
+tabs = ["Gating", "Analysis", "Plot", "Canvas"]
 
 # Ensure current tab is valid
 if st.session_state.current_tab not in tabs:
     st.session_state.current_tab = "Gating" # Default fallback
 
-# Use a key to sync state, but handle manual changes via callback if needed. 
+# Use a key to sync state, but handle manual changes via callback if needed.
 # Simple approach: use the radio value.
 selected_tab = st.sidebar.radio("Go to", tabs, index=tabs.index(st.session_state.current_tab))
 
@@ -73,8 +72,9 @@ if selected_tab == "Gating":
         if st.button("Unlock Gating (Reset Analysis)"):
             st.session_state.gating_complete = False
             st.session_state.analysis_complete = False
+            clear_experiment_state() # Ensure fresh state when unlocking
             st.rerun()
-            
+
     # Render the gating tab content
     render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE)
 
@@ -83,3 +83,6 @@ elif selected_tab == "Analysis":
 
 elif selected_tab == "Plot":
     render_plot_tab()
+
+elif selected_tab == "Canvas":
+    render_canvas_tab()
