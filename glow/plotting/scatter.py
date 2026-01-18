@@ -3,6 +3,7 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 from .utils import get_point_density
+import plotly.express as px
 
 def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_col=None, hue_col=None, xscale='log', yscale='log', batch_size=1000, show_dots=True, show_grid=False):
     """
@@ -273,4 +274,65 @@ def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xsca
     if title:
         ax.set_title(title)
 
+    return fig
+
+
+def plot_2d_scatter_plotly(experiment, x_channel, y_channel, hue=None, facet=None, scale='linear', show_grid=False, title=None):
+    """
+    Plotly version of 2D Scatter.
+    """
+    df = experiment.data.copy()
+    
+    # Ensure numerical consistency if Scale is log
+    log_x = (scale == 'log')
+    log_y = (scale == 'log')
+    
+    # Plotly handles log scaling in update_layout
+    
+    # Construct title
+    full_title = title if title else f"{x_channel} vs {y_channel}"
+    
+    # Basic Scatter
+    # We use plotly express for easy facet/hue handling
+    
+    # Subsample if too large for interactivity? Plotly WebGL can handle ~100k reasonably well.
+    # Let's cap at 50k for safety for now or let it ride. 
+    if len(df) > 50000:
+        df = df.sample(50000, random_state=42)
+        full_title += " (Subsampled 50k)"
+
+    fig = px.scatter(
+        df, 
+        x=x_channel, 
+        y=y_channel, 
+        color=hue if hue in df.columns else None,
+        facet_col=facet if facet in df.columns else None,
+        facet_col_wrap=3 if facet else None,
+        title=full_title,
+        opacity=0.6,
+        render_mode='webgl' # Faster rendering
+    )
+
+    # Update Axes
+    fig.update_xaxes(showgrid=show_grid)
+    fig.update_yaxes(showgrid=show_grid)
+
+    if log_x:
+        fig.update_xaxes(type="log")
+    if log_y:
+        fig.update_yaxes(type="log")
+        
+    # Layout Tweaks
+    fig.update_layout(
+        template="plotly_white",
+        margin=dict(l=40, r=40, t=60, b=40),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
     return fig
