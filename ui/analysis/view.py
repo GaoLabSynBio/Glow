@@ -102,6 +102,110 @@ def render_analysis_tab():
                      st.write(f"**Threshold:** {g['threshold']:.2f} ({g.get('direction', 'positive')})")
                      st.write(f"**Filter Path:** {g.get('parent', 'Singlets')} -> {g['channel']} {op} {g['threshold']:.2f}")
 
+                # --- Visualization ---
+                # Fetch data for this gate context
+                try:
+                    # Use SAVED samples if available (to match user's creation view), otherwise default default
+                    if 'samples' in g:
+                        disp_samples = g['samples']
+                    else:
+                        # Fallback for legacy gates or missing data
+                        if 'Sample' in full_df.columns:
+                            avail_samples = full_df['Sample'].unique().tolist()
+                        else:
+                            avail_samples = experiment.data['Sample'].unique().tolist()
+                        # Default to first 1 sample to mimic "creation" view default
+                        disp_samples = avail_samples[:1] 
+
+                    # Get Data from PARENT population
+                    p_gate = g.get('parent', 'Singlets')
+                    ch = g['channel']
+                    
+                    data_map_v = get_channel_data_for_samples(experiment, ch, disp_samples, parent_gate_name=p_gate, defined_gates=st.session_state.positive_gates)
+                    
+                    # Prepare Plot
+                    fig_g = go.Figure()
+                    
+                    # Determine range for axis
+                    all_vals_v = []
+                    for s in data_map_v:
+                        all_vals_v.extend(data_map_v[s])
+                    all_vals_v = np.array([x for x in all_vals_v if not np.isnan(x)])
+                    
+                    if len(all_vals_v) > 0:
+                        # Auto-Log detection: if max > 1000 usually log is better for flow
+                        # But let's check negative values.
+                        use_log_v = (np.mean(all_vals_v) > 100) and (np.min(all_vals_v) > 0)
+                        
+                        # Calculate Domain
+                        if use_log_v:
+                            # Filter <= 0
+                            pos_v = all_vals_v[all_vals_v > 0]
+                            if len(pos_v) > 0:
+                                x_min_v, x_max_v = np.percentile(pos_v, 0.1), np.percentile(pos_v, 99.9)
+                                d_dom = np.logspace(np.log10(x_min_v), np.log10(x_max_v), 200)
+                            else:
+                                d_dom = np.linspace(0, 1, 100)
+                        else:
+                             x_min_v, x_max_v = np.percentile(all_vals_v, 0.1), np.percentile(all_vals_v, 99.9)
+                             d_dom = np.linspace(x_min_v, x_max_v, 200)
+
+                        # Plot KDEs
+                        colors_v = px.colors.qualitative.Plotly
+                        for idx, s in enumerate(disp_samples):
+                            if s in data_map_v:
+                                v = data_map_v[s]
+                                v = v[~np.isnan(v)]
+                                if len(v) < 10: continue # Skip empty
+                                
+                                try:
+                                    if use_log_v:
+                                        v_p = v[v > 0]
+                                        if len(v_p) < 10: continue
+                                        kde = gaussian_kde(np.log10(v_p))
+                                        y_dom = kde(np.log10(d_dom))
+                                    else:
+                                        kde = gaussian_kde(v)
+                                        y_dom = kde(d_dom)
+                                    
+                                    c = colors_v[idx % len(colors_v)]
+                                    fig_g.add_trace(go.Scatter(x=d_dom, y=y_dom, mode='lines', line=dict(color=c), name=s, fill='tozeroy', opacity=0.3))
+                                except:
+                                    pass
+                        
+                        # Add Threshold/Range Line
+                        if g.get('type') == 'range':
+                             t_min, t_max = g.get('min'), g.get('max')
+                             fig_g.add_vrect(x0=t_min, x1=t_max, fillcolor="green", opacity=0.1, layer="below", line_width=0)
+                             fig_g.add_vline(x=t_min, line_dash="dash", line_color="green")
+                             fig_g.add_vline(x=t_max, line_dash="dash", line_color="green")
+                        else:
+                             thr = g['threshold']
+                             is_pos = (g.get('direction', 'positive') == 'positive')
+                             color_line = "green" if is_pos else "red"
+                             fig_g.add_vline(x=thr, line_dash="dash", line_color=color_line, line_width=2)
+                             
+                             # Shading
+                             # Approximate simplifying shading
+                             if is_pos:
+                                 fig_g.add_vrect(x0=thr, x1=max(d_dom), fillcolor="green", opacity=0.1, layer="below", line_width=0)
+                             else:
+                                 fig_g.add_vrect(x0=min(d_dom), x1=thr, fillcolor="red", opacity=0.1, layer="below", line_width=0)
+
+                        fig_g.update_layout(
+                            margin=dict(l=0, r=0, t=20, b=0),
+                            height=200,
+                            xaxis_type="log" if use_log_v else "linear",
+                            showlegend=True, # Show legend to identify samples
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
+                            # plot_bgcolor='white', # Removed to support Dark Mode / Theme
+                            xaxis=dict(showgrid=True, gridcolor='lightgrey'),
+                            yaxis=dict(showgrid=False, showticklabels=False)
+                        )
+                        st.plotly_chart(fig_g, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Could not load visualization: {e}")
+
                 if st.button(f"Delete Gate {i+1}", key=f"del_gate_{i}"):
                      removed = st.session_state.positive_gates.pop(i)
                      # Sycn with threshold_gate object
@@ -639,7 +743,8 @@ def render_analysis_tab():
                             'parent': parent_gate,
                             'label': gate_label,
                             'type': 'range' if is_range else 'binary',
-                            'direction': 'negative' if is_negative else 'positive'
+                            'direction': 'negative' if is_negative else 'positive',
+                            'samples': selected_samples # Persist the samples used for visualization
                         }
 
                         if is_range:

@@ -968,13 +968,26 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     if not st.session_state.get('pending_manual_vertices'):
 
                         st.divider()
-                        col1, col2 = st.columns(2)
+                        
+                        # Check acceptance state
+                        is_accepted = False
+                        if active_cell_line:
+                            is_accepted = (active_cell_line in st.session_state.get('cell_line_gates', {}))
+                        else:
+                            is_accepted = st.session_state.get('gate_accepted', False)
+
+                        # Layout: Accept | Reject | Add to Canvas
+                        # We use 3 columns now
+                        col1, col2, col3 = st.columns([1, 1, 1])
 
                         btn_label = "✅ Accept Auto-Gate"
                         if active_cell_line:
                             btn_label = f"✅ Accept Gate for {active_cell_line}"
+                        
+                        if is_accepted:
+                            btn_label = "Gate Applied (Reset to Change)"
 
-                        if col1.button(btn_label):
+                        if col1.button(btn_label, disabled=is_accepted, key=f"accept_btn_{ukey}"):
                             # --- Per Cell Line Logic ---
                             if active_cell_line:
                                 if 'cell_line_gates' not in st.session_state:
@@ -1197,8 +1210,32 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             else:
                                 st.success("Feedback saved! (Mock mode)")
 
-                        if col2.button("❌ Reject / Manual Gate"):
+
+                        if col2.button("❌ Reject / Manual Gate", key=f"reject_btn_{ukey}", disabled=is_accepted):
                             st.session_state.show_manual_gating = True
+                        
+                        # Persistent Add to Canvas Button
+                        ctitle = "Live/Dead Gating"
+                        if active_cell_line: ctitle += f" ({active_cell_line})"
+                        
+                        if col3.button("Add Plot to Canvas", key=f"add_canvas_persist_{ukey}"):
+                            # Re-use canvas logic
+                             boundaries_to_plot = []
+                             if active_cell_line and 'cell_line_gates' in st.session_state and active_cell_line in st.session_state.cell_line_gates:
+                                saved_gate = st.session_state.cell_line_gates[active_cell_line]
+                                if saved_gate.get('type') == 'polygon':
+                                    boundaries_to_plot.append({'vertices': saved_gate['vertices'], 'color': 'black', 'width': 2})
+                             if boundary_x is not None:
+                                boundaries_to_plot.append({'vertices': list(zip(boundary_x, boundary_y)), 'color': 'black', 'width': 2})
+                             if st.session_state.get('manual_vertices'):
+                                boundaries_to_plot.append({'vertices': st.session_state.manual_vertices, 'color': 'yellow', 'width': 2})
+
+                             mpl_fig = create_canvas_figure(plot_df, x_channel, y_channel, ctitle,
+                                                        is_log=is_log, color_col=color_col if continuous_color else None,
+                                                        boundaries=boundaries_to_plot, cmap=cmap_selected.lower())
+                             add_plot_to_canvas(mpl_fig, ctitle)
+                             st.success("Plot added to canvas!")
+                             plt.close(mpl_fig)
 
                     # Check for Gate Acceptance to show clean-up options
                     if st.session_state.get('gate_accepted'):
