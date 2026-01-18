@@ -219,6 +219,16 @@ def render_analysis_tab():
                     if plot_min >= plot_max:
                         plot_max = plot_min + 1.0
 
+                    # Determine safe bounds for numeric input widgets (Absolute min/max or headroom)
+                    # This prevents StreamlitValueAboveMaxError when selection goes into "headroom"
+                    abs_data_max = float(np.max(all_values))
+                    if use_log:
+                        widget_min = float(np.min(valid_data_for_range))
+                        widget_max = float(max(abs_data_max, plot_max * 10.0))
+                    else:
+                        widget_min = float(min(0.0, np.min(all_values)))
+                        widget_max = float(max(abs_data_max, plot_max * 2.0))
+
                     # C. Threshold Selection
                     st.write("### Threshold Selection")
 
@@ -241,6 +251,34 @@ def render_analysis_tab():
                     thr_key = f"thresh_val_{selected_channel}_p{parent_gate}"
                     min_key = f"range_min_{selected_channel}_p{parent_gate}"
                     max_key = f"range_max_{selected_channel}_p{parent_gate}"
+                    plot_key = f"plot_{selected_channel}_{parent_gate}"
+
+                    # Handle selection interaction BEFORE rendering the plot to avoid "select twice" lag
+                    if plot_key in st.session_state and st.session_state[plot_key]:
+                        selection_data = st.session_state[plot_key]
+                        if hasattr(selection_data, 'selection') and selection_data.selection:
+                            sel_info = selection_data.selection
+                            
+                            # Use a persistent track of the last processed selection to avoid overwriting manual inputs
+                            last_sel_key = f"last_processed_{plot_key}"
+                            if st.session_state.get(last_sel_key) != sel_info:
+                                # 1. Point Click (Single Value) - Prioritize for Binary
+                                if sel_info.get("points"):
+                                    clicked_x = sel_info["points"][0]["x"]
+                                    if not is_range:
+                                        st.session_state[thr_key] = float(np.clip(clicked_x, widget_min, widget_max))
+                                
+                                # 2. Box Selection (Range) - Only for is_range mode
+                                if sel_info.get("box") and is_range:
+                                    box = sel_info["box"][0]
+                                    x_range = box.get("x", [])
+                                    if x_range and len(x_range) >= 2:
+                                        sel_min, sel_max = sorted(x_range[:2])
+                                        st.session_state[min_key] = float(np.clip(sel_min, widget_min, widget_max))
+                                        st.session_state[max_key] = float(np.clip(sel_max, widget_min, widget_max))
+                                
+                                # Mark as processed
+                                st.session_state[last_sel_key] = sel_info.copy() if isinstance(sel_info, dict) else sel_info
 
                     # Initialize logic
                     if thr_key not in st.session_state:
@@ -250,9 +288,11 @@ def render_analysis_tab():
                     if max_key not in st.session_state:
                          st.session_state[max_key] = plot_max - (plot_max - plot_min) * 0.2
 
-                    # Checkbounds for single threshold
-                    if st.session_state[thr_key] < plot_min: st.session_state[thr_key] = plot_min
-                    if st.session_state[thr_key] > plot_max: st.session_state[thr_key] = plot_max
+                    # Checkbounds for single threshold (clamped to widget bounds)
+                    if st.session_state[thr_key] < widget_min: st.session_state[thr_key] = widget_min
+                    if st.session_state[thr_key] > widget_max: st.session_state[thr_key] = widget_max
+                    if st.session_state[min_key] < widget_min: st.session_state[min_key] = widget_min
+                    if st.session_state[max_key] > widget_max: st.session_state[max_key] = widget_max
 
                     # Create placeholder for input widget to be rendered AFTER chart interaction logic
                     # input_placeholder = st.empty() # REMOVED: Render directly to avoid flickering
@@ -334,13 +374,24 @@ def render_analysis_tab():
                                 x=x_domain,
                                 y=y_vals,
                                 mode='lines+markers', # Markers needed for click targeting
-                                marker=dict(size=0.1, color=color, opacity=0), # Invisible markers but hit-testable
+                                marker=dict(size=12, color=color, opacity=0), # Invisible markers but hit-testable
                                 line=dict(color=color, width=2),
                                 name=s,
                                 fill='tozeroy',
                                 opacity=0.6,
                                 hovertemplate=f"<b>{s}</b><br>Intensity: %{{x}}<br>Density: %{{y}}<extra></extra>"
                             ))
+
+                    # Invisible "floor" trace to catch clicks anywhere on X-axis range (especially for binary)
+                    fig.add_trace(go.Scatter(
+                        x=x_domain,
+                        y=[0] * len(x_domain),
+                        mode='markers',
+                        marker=dict(size=20, color="rgba(0,0,0,0)"),
+                        hoverinfo='skip',
+                        showlegend=False,
+                        name="Click Catcher"
+                    ))
 
                     # Update Layout
                     # Range determined by logic above
@@ -399,18 +450,18 @@ def render_analysis_tab():
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                         hovermode="closest",
                         clickmode='event+select', # Allow clicking to select points
-                        # Dragmode 'select' enables box selection
-                        # Fixed range prevents accidental zoom toggling
-                        dragmode='select',
+                        # Dragmode 'select' enables box selection for range mode
+                        # For binary, use False/None to encourage clicking
+                        dragmode='select' if is_range else False,
                         xaxis=dict(fixedrange=True),
                         yaxis=dict(fixedrange=True),
                     )
 
                     # Capture selection events
                     # on_select="rerun" ensures app updates when a point is selected (clicked)
-                    # Enable box selection
-                    # Add unique KEY to prevent state leakage
-                    selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"], key=f"plot_{selected_channel}_{parent_gate}")
+                    # Enable box selection only for range mode
+                    sel_mode = ["points", "box"] if is_range else ["points"]
+                    selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=sel_mode, key=f"plot_{selected_channel}_{parent_gate}")
 
                     if st.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
                         # Create Matplotlib Figure for Canvas
@@ -479,58 +530,18 @@ def render_analysis_tab():
                         st.success("Plot added to canvas!")
                         plt.close(mpl_fig)
 
-                    # Check selection
-                    if selection and selection.selection:
-                        # 1. Box Selection (Range)
-                        if selection.selection.get("box"):
-                             # box returns list of dicts, but typically one selection
-                             box = selection.selection["box"][0]
-                             x_range = box.get("x", [])
-                             if x_range and len(x_range) >= 2:
-                                  sel_min, sel_max = sorted(x_range[:2])
-
-                                  if is_range:
-                                       # Update both Min and Max
-                                       # Check significant change to avoid loops
-                                       if abs(float(sel_min) - st.session_state[min_key]) > 0.0001 or \
-                                          abs(float(sel_max) - st.session_state[max_key]) > 0.0001:
-                                            st.session_state[min_key] = float(sel_min)
-                                            st.session_state[max_key] = float(sel_max)
-                                            st.rerun() # Immediate rerun update inputs
-                                  else:
-                                       # If binary, maybe take the start? Or the mean?
-                                       # Let's assume standard flow picking: simple click is better for binary.
-                                       # But if they drag a box in binary mode, let's treat the 'start' (min) as the threshold.
-                                       if abs(float(sel_min) - st.session_state[thr_key]) > 0.0001:
-                                            st.session_state[thr_key] = float(sel_min)
-                                            st.rerun()
-
-                        # 2. Point Click (Single Value)
-                        elif selection.selection.get("points"):
-                            # Get x value of first selected point
-                            clicked_x = selection.selection["points"][0]["x"]
-
-                            # Update session state
-                            if not is_range:
-                                if float(clicked_x) != st.session_state[thr_key]:
-                                    st.session_state[thr_key] = float(clicked_x)
-                                    st.rerun()
-                            # If is_range and they click a point?
-                            # Maybe we ignore, or move the closest bound? Too complex for now.
-                            # Box select is preferred for range.
-
                     # NOW Render the Input Widget with the (possibly updated) state
                     # Re-instantiated here to avoid Streamlit API Exception about modifying state after widget creation
-                    # Since update logic happens ABOVE, we must render widgets BELOW the chart.
+                    # Since update logic happens ABOVE, we can render widgets natively here.
                     if is_range:
                          col_min, col_max = st.columns(2)
                          with col_min:
-                              curr_min = st.number_input("Min Threshold", key=min_key, min_value=float(plot_min), max_value=float(plot_max))
+                              curr_min = st.number_input("Min Threshold", key=min_key, min_value=float(widget_min), max_value=float(widget_max))
                          with col_max:
-                              curr_max = st.number_input("Max Threshold", key=max_key, min_value=float(plot_min), max_value=float(plot_max))
+                              curr_max = st.number_input("Max Threshold", key=max_key, min_value=float(widget_min), max_value=float(widget_max))
                          curr_threshold = (curr_min, curr_max)
                     else:
-                         curr_val = st.number_input("Threshold Value", key=thr_key, min_value=float(plot_min), max_value=float(plot_max))
+                         curr_val = st.number_input("Threshold Value", key=thr_key, min_value=float(widget_min), max_value=float(widget_max))
                          curr_threshold = curr_val
 
 
