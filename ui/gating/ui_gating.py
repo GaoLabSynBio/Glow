@@ -2284,6 +2284,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 final_csv = None
                                 file_name = "processed_data.csv.gz"
 
+                                # User-specified filename
+                                custom_export_name = st.text_input("Custom Filename (Optional)", value="", placeholder=f"Default: {experiment_name}_gated (or _full)", help="Enter a custom name for the exported file. Extension will be added automatically.")
+
                                 if st.button("Generate Export File", key="generate_export"):
                                     with st.spinner("Reconstructing dataset for export..."):
                                         try:
@@ -2412,9 +2415,21 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             if export_mode == "Gated Population (Live + Singlets)":
                                                 # Filter ROWS
                                                 df_export = df_export[df_export['cells'] & df_export['singlets']].copy()
-                                                file_name = f"{experiment_name}_gated.csv.gz"
+                                                default_suffix = "_gated"
                                             else:
-                                                file_name = f"{experiment_name}_full.csv.gz"
+                                                default_suffix = "_full"
+                                            
+                                            # Determine Filename
+                                            if custom_export_name and custom_export_name.strip():
+                                                base_name = custom_export_name.strip()
+                                                # Strip extension if user typed it
+                                                if base_name.lower().endswith(".zip"): base_name = base_name[:-4]
+                                                if base_name.lower().endswith(".csv.gz"): base_name = base_name[:-7]
+                                                if base_name.lower().endswith(".csv"): base_name = base_name[:-4]
+                                                
+                                                file_name = f"{base_name}.csv.gz"
+                                            else:
+                                                file_name = f"{experiment_name}{default_suffix}.csv.gz"
 
                                             # Drop Unselected Channels
                                             if export_only_selected_channels and st.session_state.get('selected_channels'):
