@@ -7,41 +7,37 @@ import zipfile
 import io
 from glow.compensation.manager import CompensationManager
 
-def get_running_mean(df, x_col, y_col, bins=50):
+def get_running_mean(df, x_col, y_col, window=1000):
     try:
-        # Create bins
-        # Handle log scale visualization often used in flow
-        # But for rolling mean calculation, usually done on linear or log-transformed data directly.
-        # Assuming data in df is what we are plotting (likely log-transformed for display if that's the mode, 
-        # but pure data for compensation is usually linear area).
-        # Compensation is linear algebra on LINEAR data. 
-        # Visualization usually Logicle/Log. 
-        # We will compute running mean on the data provided (which comes from experiment.data, usually linear for 'area' channels?)
-        # Wait, usually Cytoflow/Glow keeps data linear until plotted.
+        # Check data sufficiency
+        if len(df) < window:
+            return [], []
+
+        # Sort by X for rolling calculation
+        # Ensure we are working with numeric data
+        temp = df[[x_col, y_col]].copy()
+        temp = temp.sort_values(by=x_col)
+
+        # Rolling mean calculation on LINEAR data (as requested)
+        rolled = temp.rolling(window=window, center=True, min_periods=int(window/2)).mean()
         
-        # We'll just do simple binning on min-max range
-        x_min, x_max = df[x_col].min(), df[x_col].max()
-        if x_max == x_min:
-            return np.array([x_min]), np.array([df[y_col].mean()])
-            
-        bins_edges = np.linspace(x_min, x_max, bins)
-        # digitize
-        bin_idxs = np.digitize(df[x_col], bins_edges)
-        
-        means_x = []
-        means_y = []
-        for i in range(1, len(bins_edges)):
-            mask = bin_idxs == i
-            if np.any(mask):
-                means_x.append(df[x_col][mask].mean())
-                means_y.append(df[y_col][mask].mean())
-                
-        return means_x, means_y
+        # Drop NaNs
+        rolled = rolled.dropna()
+
+        # Decimate for plotting: limit to ~1000 points to keep Plotly fast
+        if len(rolled) > 1000:
+            indices = np.linspace(0, len(rolled) - 1, 1000).astype(int)
+            final = rolled.iloc[indices]
+        else:
+            final = rolled
+
+        return final[x_col].values, final[y_col].values
+
     except Exception as e:
         print(f"Running mean failed: {e}")
         return [], []
 
-def render_pairwise_plots(df, channels, suffix="", title_prefix=""):
+def render_pairwise_plots(df, channels, suffix="", title_prefix="", reference_df=None):
     """
     Render pairwise plots (triangle)
     """
@@ -74,17 +70,42 @@ def render_pairwise_plots(df, channels, suffix="", title_prefix=""):
                              render_mode='svg') # svg for speed on small points? or webgl
             
             # Running Mean
-            rm_x, rm_y = get_running_mean(plot_df, chX, chY)
+            # Use full dataset (df) for accurate rolling average, not the downsampled plot_df
+            rm_x, rm_y = get_running_mean(df, chX, chY, window=1000)
             if len(rm_x) > 0:
                 fig.add_trace(go.Scatter(x=rm_x, y=rm_y, mode='lines', 
                                          line=dict(color='red', width=2),
                                          name='Running Mean'))
             
-            # Layout log if necessary? Usually data is large. 
-            # If values > 1000, probably reasonable to log for Viz
-            if plot_df[chX].max() > 1000 or plot_df[chY].max() > 1000:
-                fig.update_xaxes(type="log")
-                fig.update_yaxes(type="log")
+            # Axis Synchronization Logic
+            # Use reference_df if provided (e.g., "Uncompensated" data) to lock axes
+            range_df = reference_df if reference_df is not None else df
+            
+            # Determine Log Scale requirement based on max values of the Reference
+            max_x = range_df[chX].max()
+            max_y = range_df[chY].max()
+            
+            use_log_x = (max_x > 1000)
+            use_log_y = (max_y > 1000)
+            
+            def get_range(series, is_log):
+                if is_log:
+                    # For log scale, find positive min/max
+                    pos = series[series > 0]
+                    if pos.empty: return None
+                    # Plotly log range is in log10 units
+                    return [np.log10(pos.min()), np.log10(pos.max())]
+                else:
+                    vmin, vmax = series.min(), series.max()
+                    pad = (vmax - vmin) * 0.05
+                    if pad == 0: pad = 1.0
+                    return [vmin - pad, vmax + pad]
+
+            range_x = get_range(range_df[chX], use_log_x)
+            range_y = get_range(range_df[chY], use_log_y)
+
+            fig.update_xaxes(type="log" if use_log_x else "linear", range=range_x)
+            fig.update_yaxes(type="log" if use_log_y else "linear", range=range_y)
                 
             st.plotly_chart(fig, width="stretch")
 
@@ -217,7 +238,7 @@ def render_compensation_tab():
             st.write("##### Compensated Preview")
             # Apply temporarily for viz
             comp_viz_df = st.session_state.comp_manager.apply_compensation(viz_df, channels, rename=False)
-            render_pairwise_plots(comp_viz_df, channels, title_prefix="Compensated")
+            render_pairwise_plots(comp_viz_df, channels, title_prefix="Compensated", reference_df=viz_df)
 
 
         st.divider()
