@@ -81,15 +81,6 @@ st.sidebar.divider()
 
 # Render Selected Tab
 if selected_tab == "Gating":
-    # Logic for read-only view if gating is complete
-    if st.session_state.gating_complete:
-        st.warning("Gating is marked as complete. To modify gating, please unlock it below. Unlocking will reset Analysis progress.")
-        if st.button("Unlock Gating (Reset Analysis)"):
-            st.session_state.gating_complete = False
-            st.session_state.analysis_complete = False
-            clear_experiment_state() # Ensure fresh state when unlocking
-            st.rerun()
-
     # Render the gating tab content
     render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE)
 

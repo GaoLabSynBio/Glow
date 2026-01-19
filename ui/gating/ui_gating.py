@@ -7,6 +7,7 @@ from scipy.stats import gaussian_kde
 from sklearn.mixture import GaussianMixture
 from .ui_active_learning import render_uncertainty_controls, get_uncertainty_trace, render_labeling_controls, render_reset_controls, get_active_learner
 from glow.canvas.functions import add_plot_to_canvas
+from .ui_file_loader import reset_live_gating, reset_singlet_gating
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -128,6 +129,67 @@ def create_canvas_figure(df, x_col, y_col, title, is_log=False, color_col=None, 
 
 
 def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE):
+    # Check for Reconstruction Flag (after Singlet Reset)
+    if st.session_state.get('reconstruct_live_gate'):
+        try:
+             # Re-Apply Live Gate to Base Experiment
+             if 'base_experiment' in st.session_state:
+                 r_exp = st.session_state.base_experiment.clone()
+                 r_gater = GatingManager()
+                 
+                 # Reconstruct based on accepted params
+                 l_params = st.session_state.get('live_gate_params')
+                 
+                 if l_params:
+                     if l_params['type'] == 'polygon':
+                         r_exp = r_gater.apply_manual_gate(r_exp, "_temp_live_mask_rec", l_params['channels'][0], l_params['channels'][1], l_params['vertices'])
+                         if "_temp_live_mask_rec" in r_exp.data.columns:
+                             r_exp.data = r_exp.data[r_exp.data["_temp_live_mask_rec"]].copy()
+                     elif l_params['type'] == 'label':
+                         # If label, we usually rely on the LAST auto-gating run.
+                         # This is tricky if we don't store the exact model.
+                         # But usually last_gating_params matches.
+                         gp = st.session_state.get('last_gating_params', {})
+                         if gp:
+                             method_name = gp.get('method', 'density').lower() if isinstance(gp.get('method'), str) else 'density'
+                             # Re-run auto gating on base
+                             res_exp = r_gater.auto_gate_live_cells(r_exp, gp.get('x'), gp.get('y'), method=method_name, num_components=gp.get('comp', 2), keep=gp.get('keep', 0.9), sigma=gp.get('sigma', 2.0), eps=gp.get('eps', 0.05), min_samples=gp.get('min_samples', 50), use_outlier_removal=gp.get('use_outliers', False))
+                             lbl = l_params['label']
+                             if '_temp_live_labels' in res_exp.data.columns:
+                                 # Filter
+                                 r_exp.data = res_exp.data[res_exp.data['_temp_live_labels'].astype(str) == str(lbl)].copy()
+                     elif l_params['type'] == 'per_cell_line':
+                         # Multi-Line Reconstruction
+                         gates = l_params['gates']
+                         col_name = l_params['col']
+                         
+                         # We need to construct a mask
+                         full_mask = np.zeros(len(r_exp.data), dtype=bool)
+                         
+                         for line_val, gate_info in gates.items():
+                             row_mask = (r_exp.data[col_name].astype(str) == str(line_val))
+                             if not row_mask.any(): continue
+                             
+                             subset_idxs = r_exp.data.index[row_mask]
+                             
+                             if gate_info['type'] == 'polygon':
+                                 from matplotlib.path import Path
+                                 v = gate_info['vertices']
+                                 ch = gate_info['channels']
+                                 path = Path(v)
+                                 points = r_exp.data.loc[subset_idxs, ch].values
+                                 is_in = path.contains_points(points)
+                                 full_mask[subset_idxs] = is_in
+                                 
+                         r_exp.data = r_exp.data[full_mask].copy()
+                 
+                 st.session_state.gated_experiment = r_exp
+                 del st.session_state['reconstruct_live_gate']
+                 
+        except Exception as e:
+            st.error(f"Reconstruction Error: {e}")
+            del st.session_state['reconstruct_live_gate']
+
     # Gating Section showing the base functionality
     st.subheader("2. Live Gating Setup")
 
@@ -497,8 +559,20 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
             if should_run_gating:
                 # Reset acceptance state so user sees new boundaries
-                if 'gate_accepted' in st.session_state:
-                    del st.session_state['gate_accepted']
+                # EXCEPTION: In Multi-Line mode, 'gate_accepted' indicates the ENTIRE set is done.
+                # Changing the view (cell_line param) triggers this block because params changed.
+                # We should NOT delete gate_accepted if it's already True and we are just switching views/previews.
+                
+                # Check if cell line changed explicitly to clear manual state
+                if current_gating_params.get('cell_line') != last_gating_params.get('cell_line'):
+                     for k in ['manual_vertices', 'pending_manual_vertices', 'show_manual_gating', 'manual_live_verts_input']:
+                         if k in st.session_state: del st.session_state[k]
+
+                is_multi_done = (is_multi_line_meta and st.session_state.get('gate_accepted', False))
+                
+                if not is_multi_done:
+                    if 'gate_accepted' in st.session_state:
+                        del st.session_state['gate_accepted']
 
                 gater = GatingManager()
                 with st.spinner(f"Applying {gating_method} Gating..."):
@@ -529,6 +603,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                 exp = st.session_state.gated_experiment
                 df = exp.data.copy() # Safe copy
+
+                # Filter by Cell Line First (if applicable) to avoid showing global data in Per-Cell-Line view
+                if active_cell_line and cell_line_col and cell_line_col in df.columns:
+                     df = df[df[cell_line_col].astype(str) == str(active_cell_line)].copy()
 
                 # --- Representative File Selection (Request: Gate per cell line on one file) ---
                 if active_cell_line and 'Sample' in df.columns:
@@ -1044,7 +1122,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             btn_label = f"✅ Accept Gate for {active_cell_line}"
 
                         if is_accepted:
-                            btn_label = "Gate Applied (Reset to Change)"
+                            btn_label = "Gate Applied"
 
                         if col1.button(btn_label, disabled=is_accepted, key=f"accept_btn_{ukey}"):
                             # --- Per Cell Line Logic ---
@@ -1162,11 +1240,31 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     if active_cell_line in st.session_state.cell_line_gates:
                                         if st.button(f"🔄 Reset Gate for {active_cell_line}", key=f"reset{ukey}"):
                                             del st.session_state.cell_line_gates[active_cell_line]
+                                            
+                                            # Also reset SINGLET gate for this cell line if it exists (Downstream dependency)
+                                            if 'cell_line_singlet_gates' in st.session_state and active_cell_line in st.session_state.cell_line_singlet_gates:
+                                                del st.session_state.cell_line_singlet_gates[active_cell_line]
+
+                                            # Ensure we uncheck 'done' status so UI allows editing
+                                            if 'gate_accepted' in st.session_state:
+                                                del st.session_state['gate_accepted']
+                                            # Clear aggregate params to force re-evaluation when done
+                                            if 'live_gate_params' in st.session_state:
+                                                del st.session_state['live_gate_params']
+                                            # Force preview refresh
+                                            if 'gated_experiment' in st.session_state:
+                                                del st.session_state['gated_experiment']
                                             st.rerun()
 
                                 if st.button("🗑️ Reset ALL Cell Line Gates", type="secondary"):
-                                    st.session_state.cell_line_gates = {}
+                                    reset_live_gating()
                                     st.rerun()
+                        
+                        # Global Reset Logic (Mirroring Cell Line behavior)
+                        elif st.session_state.get('gate_accepted'):
+                             if st.button("🔄 Reset Live Gating", key=f"reset_live_global"):
+                                 reset_live_gating()
+                                 st.rerun()
 
                         # --- Original/Global Gating Logic (Only if NOT Per Cell Line) ---
                         if not active_cell_line:
@@ -1440,7 +1538,16 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.error(f"Invalid format: {e}")
 
                     # --- Step 3: Singlet Detection ---
-                    if st.session_state.get('gate_accepted'):
+                    # Robust check: If Multi-Line and all gates are present, force acceptance / visibility
+                    is_live_gated = st.session_state.get('gate_accepted', False)
+                    if is_multi_line_meta and not is_live_gated and 'cell_line_gates' in st.session_state:
+                         if len(unique_cell_lines) > 0:
+                             missing_lines = set(unique_cell_lines) - set(st.session_state.cell_line_gates.keys())
+                             if not missing_lines:
+                                 is_live_gated = True
+                                 st.session_state.gate_accepted = True
+
+                    if is_live_gated:
                         st.subheader("4. Singlet Detection")
 
                         # Automatically proceed to Singlet Detection
@@ -1457,6 +1564,16 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                             # Selector for current cell line (independent from Step 1)
                             active_line_singlets = st.selectbox("Select Cell Line for Singlet Gating", unique_cell_lines, key="singlet_cell_line_sel")
+
+                            # Detect change in singlet cell line to reset manual mode
+                            last_s_line = st.session_state.get('last_singlet_cell_line')
+                            if last_s_line != active_line_singlets:
+                                st.session_state.doublet_manual_mode = False
+                                st.session_state.pending_doublet_verts = []
+                                st.session_state.doublet_verts_input = ""
+                                st.session_state.last_singlet_cell_line = active_line_singlets
+                                if 'doublet_manual_mode' in st.session_state and st.session_state.doublet_manual_mode:
+                                     st.rerun()
 
                             # Filter Base Experiment for this cell line
                             subset_mask = base_exp.data[cell_line_col].astype(str) == str(active_line_singlets)
@@ -1576,12 +1693,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                 # Visualization (Scatter)
                                 fig_m = go.Figure()
-                                if d_is_log:
-                                    x_p = np.log10(viz_df[d_x] + 1)
-                                    y_p = np.log10(viz_df[d_y] + 1)
-                                else:
-                                    x_p = viz_df[d_x]
-                                    y_p = viz_df[d_y]
+                                # Use linear coordinates and let Plotly handle log scaling for consistency
+                                x_p = viz_df[d_x]
+                                y_p = viz_df[d_y]
 
                                 fig_m.add_trace(go.Scatter(
                                     x=x_p, y=y_p, mode='markers',
@@ -1593,10 +1707,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     apv = st.session_state.singlet_gate_params["vertices"]
                                     apx_ = [v[0] for v in apv] + [apv[0][0]]
                                     apy_ = [v[1] for v in apv] + [apv[0][1]]
-                                    if d_is_log:
-                                        apx_ = np.log10(np.array(apx_) + 1)
-                                        apy_ = np.log10(np.array(apy_) + 1)
-
+                                    
                                     fig_m.add_trace(go.Scatter(x=apx_, y=apy_, mode="lines",
                                                             line=dict(color="lime", width=3, dash="dash"), name="Applied Manual Gate"))
 
@@ -1607,10 +1718,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     pv_plot = pv + [pv[0]]
                                     pvx = [p[0] for p in pv_plot]
                                     pvy = [p[1] for p in pv_plot]
-
-                                    if d_is_log:
-                                        pvx = np.log10(np.array(pvx) + 1)
-                                        pvy = np.log10(np.array(pvy) + 1)
 
                                     fig_m.add_trace(go.Scatter(x=pvx, y=pvy, mode='lines+markers',
                                                             line=dict(color='#f0f921', width=3), name="Manual Selection"))
@@ -1626,14 +1733,16 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         tickfont=dict(color="black"),
                                         title_font=dict(color="black"),
                                         showgrid=True,
-                                        gridcolor="lightgray"
+                                        gridcolor="lightgray",
+                                        type="log" if d_is_log else "linear"
                                     ),
                                     yaxis=dict(
                                         color="black",
                                         tickfont=dict(color="black"),
                                         title_font=dict(color="black"),
                                         showgrid=True,
-                                        gridcolor="lightgray"
+                                        gridcolor="lightgray",
+                                        type="log" if d_is_log else "linear"
                                     ),
                                     legend=dict(
                                         title=dict(font=dict(color="black")),
@@ -1686,9 +1795,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         sx = np.array([p["x"] for p in pts])
                                         sy = np.array([p["y"] for p in pts])
 
-                                        if d_is_log:
-                                            sx = 10**sx - 1
-                                            sy = 10**sy - 1
+                                        # Points from native log axis are already in linear data coordinates
+                                        # No need to manual conversion
 
                                         candidates = list(zip(sx, sy))
                                         current_verts = st.session_state.get('pending_doublet_verts', [])
@@ -1723,7 +1831,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 if st.session_state.get('pending_doublet_verts'):
                                      current_poly_str_d = "\n".join([f"{v[0]}, {v[1]}" for v in st.session_state.pending_doublet_verts])
                                 else:
-                                     current_poly_str_d = "1000000, 1000000\n100000000, 1000000\n100000000, 100000000\n1000000, 100000000"
+                                     current_poly_str_d = ""
 
                                 def _sync_text_to_plot_d():
                                      txt = st.session_state.doublet_verts_input
@@ -1756,11 +1864,18 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                               st.error("Need 3+ points")
                                           else:
                                               # Save params
-                                              st.session_state.singlet_gate_params = {
+                                              gate_data = {
                                                   'type': 'polygon',
                                                   'vertices': parsed_verts,
                                                   'channels': [d_x, d_y]
                                               }
+                                              st.session_state.singlet_gate_params = gate_data
+
+                                              # IMPORTANT: Save to Cell Line Storage if active
+                                              if active_line_singlets:
+                                                  if 'cell_line_singlet_gates' not in st.session_state:
+                                                      st.session_state.cell_line_singlet_gates = {}
+                                                  st.session_state.cell_line_singlet_gates[active_line_singlets] = gate_data
 
                                               # Apply Gate
                                               from glow.gating.geometry import points_in_polygon
@@ -1771,12 +1886,29 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                               kept = sum(mask)
                                               total = len(mask)
-                                              st.session_state.singlet_gate_stats = f"{kept} / {total} ({(kept/total)*100:.1f}%)"
+                                              
+                                              # Update Stats
+                                              if active_line_singlets:
+                                                  # Aggregate stats if possible, otherwise show this line
+                                                  st.session_state.singlet_gate_stats = f"{kept} / {total} ({(kept/total)*100:.1f}%)"
+                                              else:
+                                                  st.session_state.singlet_gate_stats = f"{kept} / {total} ({(kept/total)*100:.1f}%)"
 
-                                              exp.data["_temp_singlet_mask_auto"] = False
+                                              # Update Experiment Mask
+                                              # Initialize if needed
+                                              if "_temp_singlet_mask_auto" not in exp.data.columns:
+                                                  exp.data["_temp_singlet_mask_auto"] = False
+                                              
+                                              # Reset ONLY for the current subset (indices) to avoid wiping other lines
+                                              exp.data.loc[df_gated.index, "_temp_singlet_mask_auto"] = False
+                                              
+                                              # Apply new mask
                                               exp.data.loc[df_gated.index[mask], "_temp_singlet_mask_auto"] = True
+                                              
                                               st.session_state.gated_experiment = exp
                                               st.session_state.doublets_removed = True
+                                              # Exit manual mode on apply
+                                              st.session_state.doublet_manual_mode = False
                                               # Keep enable to see result
                                               st.success(f"Manual Gate Applied! {kept} events.")
                                               st.rerun()
@@ -1942,10 +2074,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                         if active_line_singlets in st.session_state.cell_line_singlet_gates:
                                                             if st.button(f"🔄 Reset Singlet Gate for {active_line_singlets}", key=f"reset_mlp_s{active_line_singlets}"):
                                                                 del st.session_state.cell_line_singlet_gates[active_line_singlets]
+                                                                if 'doublets_removed' in st.session_state:
+                                                                    del st.session_state['doublets_removed']
+                                                                if 'singlet_gate_params' in st.session_state:
+                                                                    del st.session_state['singlet_gate_params']
+                                                                st.session_state.reconstruct_live_gate = True
                                                                 st.rerun()
 
                                                     if st.button("🗑️ Reset ALL Singlet Gates", type="secondary", key="reset_all_mlp_s"):
-                                                        st.session_state.cell_line_singlet_gates = {}
+                                                        reset_singlet_gating(keep_live_gate=True)
                                                         st.rerun()
                                         else:
                                             st.error("Failed to load MLP model.")
@@ -2143,6 +2280,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                         st.divider() # Separate controls
                                         col_da, col_dr, col_dc = st.columns([1, 1, 1])
+
                                         if col_dc.button("Add Plot to Canvas", key=f"add_singlet_gmm_gate_{sukey}"):
                                             viz_df_canvas = viz_df.copy()
                                             c_col = None # Force consistent Blue color (User Request)
@@ -2164,14 +2302,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         # Actions
 
                                         # Accept Auto
-                                        # Determine Disable State (GMM)
-                                        is_gated = False
-                                        if active_line_singlets:
-                                            if active_line_singlets in st.session_state.get('cell_line_singlet_gates', {}):
-                                                is_gated = True
-                                        elif st.session_state.get('doublets_removed'):
-                                            is_gated = True
-
                                         # Determine Disable State (GMM)
                                         is_gated = False
                                         if active_line_singlets:
@@ -2290,10 +2420,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     if active_line_singlets in st.session_state.cell_line_singlet_gates:
                                                         if st.button(f"🔄 Reset Singlet Gate for {active_line_singlets}", key=f"reset_s{active_line_singlets}"):
                                                             del st.session_state.cell_line_singlet_gates[active_line_singlets]
+                                                            if 'doublets_removed' in st.session_state:
+                                                                del st.session_state['doublets_removed']
+                                                            if 'singlet_gate_params' in st.session_state:
+                                                                del st.session_state['singlet_gate_params']
+                                                            st.session_state.reconstruct_live_gate = True
                                                             st.rerun()
 
                                                     if st.button("🗑️ Reset ALL Singlet Gates", type="secondary", key="reset_all_s"):
-                                                        st.session_state.cell_line_singlet_gates = {}
+                                                        reset_singlet_gating(keep_live_gate=True)
                                                         st.rerun()
 
                                     except Exception as e:

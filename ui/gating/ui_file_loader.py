@@ -32,12 +32,44 @@ class MockExperiment:
     def __repr__(self):
         return f"<MockExperiment: {len(self.data)} events>"
 
+def reset_singlet_gating(keep_live_gate=True):
+    """Clears singlet-specific gating state."""
+    keys = [
+        'singlet_gate_params', 'singlet_gate_stats', 'doublets_removed',
+        'cell_line_singlet_gates', 'pending_doublet_verts', 'doublet_verts_input',
+        'doublet_manual_mode', 'show_doublet_gating'
+    ]
+    for k in keys:
+        if k in st.session_state:
+            del st.session_state[k]
+    
+    # If keeping live gate, signal that we need to reconstruct the live-only experiment
+    # to "undo" any singlet filtering that happened to gated_experiment
+    if keep_live_gate and st.session_state.get('gate_accepted'):
+        st.session_state.reconstruct_live_gate = True
+
+def reset_live_gating():
+    """Clears live gating state and singlet state."""
+    reset_singlet_gating(keep_live_gate=False)
+    
+    keys = [
+        'live_gate_params', 'live_gate_stats', 'gate_accepted',
+        'cell_line_gates', 'last_gating_params', 'current_auto_boundary',
+        'suggested_live_label', 'manual_vertices', 'pending_manual_vertices',
+        'manual_live_verts_input', 'show_manual_gating', 'gated_experiment',
+        'reconstruct_live_gate'
+    ]
+    for k in keys:
+        if k in st.session_state:
+            del st.session_state[k]
+
 def clear_experiment_state():
     """Clears all experiment-related data from session state to ensure fresh loading."""
-    for key in ['base_experiment', 'gated_experiment', 'analysis_experiment',
-                'live_gate_params', 'singlet_gate_params', 'fixed_gate_params',
-                'live_gate_stats', 'singlet_gate_stats', 'gate_accepted',
-                'doublets_removed', 'positive_gates', 'threshold_gate',
+    # Full wipe
+    reset_live_gating()
+    
+    for key in ['base_experiment', 'analysis_experiment',
+                'fixed_gate_params', 'positive_gates', 'threshold_gate',
                 'selected_channels', 'persistent_selected_channels']:
         if key in st.session_state:
             del st.session_state[key]
