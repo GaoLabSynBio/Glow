@@ -29,10 +29,34 @@ def render_plot_tab():
     # Filter channels based on selection in Gating tab if available
     # Use persistent state to survive tab switch
     user_selected = st.session_state.get('persistent_selected_channels')
+    
+    # --- Compensation Logic (Plot Tab) ---
+    all_cols = filtered_experiment.data.columns
+    comp_cols = [c for c in all_cols if c.startswith("comp_")]
+    has_comp = len(comp_cols) > 0
+    use_comp = False
+    
+    if has_comp:
+        use_comp = st.checkbox("Use Compensated Data", value=True, key="use_comp_plot")
+
     if user_selected is not None:
-        channels = [c for c in all_available_channels if c in user_selected]
+        raw_channels = [c for c in all_available_channels if c in user_selected]
     else:
-        channels = all_available_channels
+        raw_channels = all_available_channels
+        
+    # Apply Substitution
+    channels = []
+    if use_comp:
+        for c in raw_channels:
+            comp_name = f"comp_{c}"
+            if comp_name in all_cols:
+                channels.append(comp_name)
+            else:
+                # Keep original if comp version doesn't exist (e.g. FSC/SSC)
+                channels.append(c)
+    else:
+        # If not using comp, ensure we don't show comp_cols (if they leaked into all_available)
+        channels = [c for c in raw_channels if not c.startswith("comp_")]
 
     with st.sidebar:
         st.subheader("Plot Settings")

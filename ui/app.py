@@ -30,6 +30,7 @@ from gating.view import render_gating_tab
 from analysis.view import render_analysis_tab
 from plot.view import render_plot_tab
 from canvas.view import render_canvas_tab
+from compensation.view import render_compensation_tab
 from gating.ui_file_loader import clear_experiment_state
 
 st.title("Glow Flow Analysis Pipeline")
@@ -48,6 +49,11 @@ st.sidebar.title("Navigation")
 # Determine available tabs based on state
 # User request: Always show Analysis, Plot, and Canvas
 tabs = ["Gating", "Analysis", "Plot", "Canvas"]
+
+# Conditional Compensation Tab
+if st.session_state.get('run_compensation', False) or st.session_state.current_tab == "Compensation":
+    if "Compensation" not in tabs:
+        tabs.insert(1, "Compensation")
 
 # Ensure current tab is valid
 if st.session_state.current_tab not in tabs:
@@ -77,6 +83,9 @@ if selected_tab == "Gating":
 
     # Render the gating tab content
     render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE)
+
+elif selected_tab == "Compensation":
+    render_compensation_tab()
 
 elif selected_tab == "Analysis":
     render_analysis_tab()

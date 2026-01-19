@@ -315,6 +315,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
             with st.spinner("Loading Experiment Data..."):
                 loader = DataLoader()
                 st.session_state.base_experiment = loader.load_as_cytoflow_experiment(st.session_state.loaded_files)
+                
+                # Check for Compensated Channels
+                if st.session_state.base_experiment:
+                     comp_cols = [c for c in st.session_state.base_experiment.data.columns if c.startswith("comp_")]
+                     if comp_cols:
+                         st.session_state.has_precomputed_compensation = True
+                         st.toast(f"Detected {len(comp_cols)} compensated channels in dataset.", icon="ℹ️")
 
         # We work with base_experiment for channel selection
         base_exp = st.session_state.base_experiment
@@ -653,7 +660,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             sx = [v[0] for v in sv] + [sv[0][0]]
                             sy = [v[1] for v in sv] + [sv[0][1]]
                             fig.add_trace(go.Scatter(x=sx, y=sy, mode='lines',
-                                                    line=dict(color='black', width=4),
+                                                    line=dict(color='red', width=4),
                                                     name=f"Saved Gate ({active_cell_line})"))
 
                     # --- Auto-Gating Visualization (Centroids & Ellipses) ---
@@ -762,7 +769,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                     # Determine Style
                                     if is_target:
-                                        line_color = 'black'
+                                        line_color = 'red'
                                         line_width = 4
                                         trace_name = "Suggested Live"
                                         # Save this one for the action
@@ -2382,6 +2389,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             else:
                                 st.info("Load data to enable channel selection.")
 
+                            # Compensation Option
+                            do_compensation = st.checkbox("Run Compensation before Analysis (Optional)", key="enable_comp_step")
+
                             if st.button("✅ Finalize Gating & Proceed to Analysis", type="primary", key="proceed_analysis_main"):
                                 with st.spinner("Finalizing analysis dataset..."):
                                     # --- Reconstruction Logic for Analysis (Ported from View.py) ---
@@ -2514,6 +2524,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         # --- Drop Unselected Channels for Analysis ---
                                         if export_only_selected_channels and st.session_state.get('selected_channels'):
                                             keep_ch = set(st.session_state.selected_channels)
+                                            
+                                            # If precomputed compensation exists, also keep the corresponding comp_ channels
+                                            # even if they weren't explicitly in the 'selected_channels' list (which usually just has raw names)
+                                            if st.session_state.get('has_precomputed_compensation', False):
+                                                 for raw_c in list(keep_ch):
+                                                      comp_c = f"comp_{raw_c}"
+                                                      if comp_c in full_exp.data.columns:
+                                                           keep_ch.add(comp_c)
+
                                             if hasattr(base, 'channels'):
                                                 all_ch = list(base.channels)
                                                 to_drop = [c for c in all_ch if c not in keep_ch]
@@ -2530,7 +2549,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                         st.session_state.analysis_experiment = full_exp
                                         st.session_state.gating_complete = True
-                                        st.session_state.current_tab = "Analysis"
+                                        
+                                        if do_compensation:
+                                            st.session_state.run_compensation = True
+                                            st.session_state.current_tab = "Compensation"
+                                        else:
+                                            st.session_state.run_compensation = False
+                                            st.session_state.current_tab = "Analysis"
+                                            
                                         st.rerun()
 
                                     except Exception as e:
