@@ -233,11 +233,12 @@ def render_analysis_tab():
                                 height=200,
                                 xaxis_type="log" if use_log_v else "linear",
                                 showlegend=True, # Show legend to identify samples
-                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10, color="black")),
                                 plot_bgcolor='white',
                                 paper_bgcolor='white',
-                                xaxis=dict(showgrid=True, gridcolor='lightgrey'),
-                                yaxis=dict(showgrid=False, showticklabels=False)
+                                font=dict(color="black"),
+                                xaxis=dict(showgrid=True, gridcolor='lightgrey', color='black', tickfont=dict(color='black')),
+                                yaxis=dict(showgrid=False, showticklabels=False, color='black', tickfont=dict(color='black'))
                             )
                             st.plotly_chart(fig_g, width="stretch")
                     except Exception as e:
@@ -694,14 +695,15 @@ def render_analysis_tab():
                             # Log axes if requested
                             xaxis_type="log" if use_log else "linear",
                             xaxis_range=layout_xaxis_range,
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color="black")),
                             hovermode="x unified",
                             clickmode='event+select', # Allow clicking to select points
                             # Dragmode 'select' enables box selection
                             # Fixed range prevents accidental zoom toggling
                             dragmode='select' if is_range else 'zoom',
-                            xaxis=dict(fixedrange=True),
-                            yaxis=dict(fixedrange=True),
+                            xaxis=dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
+                            yaxis=dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
+                            font=dict(color="black")
                         )
 
                         # Capture selection events
@@ -955,7 +957,10 @@ def render_analysis_tab():
                         xaxis_title=sel_x, yaxis_title=sel_y,
                         xaxis_type="log" if use_log else "linear",
                         yaxis_type="log" if use_log else "linear",
-                        dragmode="pan", clickmode="event+select"
+                        dragmode="pan", clickmode="event+select",
+                        font=dict(color="black"),
+                        xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
+                        yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey')
                     )
 
                     st.plotly_chart(fig, width="stretch", on_select="rerun", key=q_plot_key)
@@ -1169,7 +1174,10 @@ def render_analysis_tab():
                         xaxis_type="log" if use_log else "linear",
                         yaxis_type="log" if use_log else "linear",
                         dragmode="pan",
-                        clickmode="event+select"
+                        clickmode="event+select",
+                        font=dict(color="black"),
+                        xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
+                        yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey')
                     )
 
                     st.plotly_chart(fig, width="stretch", on_select="rerun", key=plot_key, selection_mode="points")
