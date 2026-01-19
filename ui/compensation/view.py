@@ -107,7 +107,7 @@ def render_pairwise_plots(df, channels, suffix="", title_prefix="", reference_df
             fig.update_xaxes(type="log" if use_log_x else "linear", range=range_x)
             fig.update_yaxes(type="log" if use_log_y else "linear", range=range_y)
                 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
 
 def render_compensation_tab():

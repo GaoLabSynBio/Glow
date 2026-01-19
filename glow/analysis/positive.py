@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+from glow.gating.geometry import points_in_polygon
+from glow.gating.geometry import points_in_polygon
 
 # Define internal gating columns to exclude from grouping (Shared with stats.py)
 EXCLUDE_CONDITIONS = [
@@ -161,15 +163,53 @@ def get_recursive_mask(df, parent_name, defined_gates):
     grandparent_mask = get_recursive_mask(df, target_gate.get('parent', 'Singlets'), defined_gates)
 
     # 3. Apply the current gate's threshold
-    channel = target_gate['channel']
-
-    # Handle Range vs Binary
+    # Handle Range, Binary, or Quadrant
     if target_gate.get('type') == 'range':
+        channel = target_gate['channel']
         min_val = target_gate.get('min', -np.inf)
         max_val = target_gate.get('max', np.inf)
         current_gate_mask = (df[channel] >= min_val) & (df[channel] <= max_val)
+    elif target_gate.get('type') == 'quadrant':
+        # Quadrant Gate Logic
+        ch_x = target_gate['channel_x']
+        ch_y = target_gate['channel_y']
+        th_x = float(target_gate['threshold_x'])
+        th_y = float(target_gate['threshold_y'])
+        quads = target_gate['quadrant'] 
+        if isinstance(quads, str): quads = [quads]
+        
+        combined_mask = pd.Series([False] * len(df), index=df.index)
+        for quad in quads:
+            if quad[0] == '+': mx = (df[ch_x] > th_x)
+            else: mx = (df[ch_x] <= th_x)
+            if quad[1] == '+': my = (df[ch_y] > th_y)
+            else: my = (df[ch_y] <= th_y)
+            combined_mask |= (mx & my)
+        current_gate_mask = combined_mask
+
+    elif target_gate.get('type') == 'polygon':
+        ch_x = target_gate['channel_x']
+        ch_y = target_gate['channel_y']
+        verts = target_gate['vertices']
+        # points_in_polygon expects (N, 2) array
+        # Ensure correct order: X, Y
+        points = df[[ch_x, ch_y]].values
+        # Mask is boolean array
+        current_gate_mask = points_in_polygon(points, verts)
+
+    elif target_gate.get('type') == 'polygon':
+        ch_x = target_gate['channel_x']
+        ch_y = target_gate['channel_y']
+        verts = target_gate['vertices']
+        # points_in_polygon expects (N, 2) array
+        # Ensure correct order: X, Y
+        points = df[[ch_x, ch_y]].values
+        # Mask is boolean array
+        current_gate_mask = points_in_polygon(points, verts)
+
     else:
         # Backward compatibility or standard binary
+        channel = target_gate['channel']
         threshold = target_gate['threshold']
         if target_gate.get('direction') == 'negative':
             current_gate_mask = (df[channel] <= threshold)
@@ -190,7 +230,15 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
     df = experiment.data
     results = []
 
-    channel = gate['channel']
+    if gate.get('type') == 'quadrant':
+        channel = f"{gate['channel_x']}:{gate['channel_y']}"
+    elif gate.get('type') == 'polygon':
+        channel = f"{gate['channel_x']}:{gate['channel_y']}"
+    elif gate.get('type') == 'polygon':
+        channel = f"{gate['channel_x']}:{gate['channel_y']}"
+    else:
+        channel = gate['channel']
+
     # threshold = gate['threshold'] # access locally inside loop or use getter
     parent_name = gate.get('parent', 'Singlets')
     label = gate.get('label', f"{channel}+")
@@ -237,13 +285,58 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
 
         if parent_count > 0:
             # 3. Apply This Gate
-            vals = parent_population[channel]
+            if gate.get('type') == 'quadrant':
+                 # Re-implement quadrant logic on the parent_population
+                 ch_x = gate['channel_x']
+                 ch_y = gate['channel_y']
+                 vals_x = parent_population[ch_x]
+                 vals_y = parent_population[ch_y]
+                 
+                 th_x = float(gate['threshold_x'])
+                 th_y = float(gate['threshold_y'])
+                 quads = gate['quadrant']
+                 if isinstance(quads, str): quads = [quads]
+                 
+                 combined_mask = pd.Series([False] * len(parent_population), index=parent_population.index)
+                 for quad in quads:
+                     if quad[0] == '+': mx = (vals_x > th_x)
+                     else: mx = (vals_x <= th_x)
+                     if quad[1] == '+': my = (vals_y > th_y)
+                     else: my = (vals_y <= th_y)
+                     combined_mask |= (mx & my)
+                 pos_count = combined_mask.sum()
 
-            if gate.get('type') == 'range':
+            elif gate.get('type') == 'polygon':
+                 ch_x = gate['channel_x']
+                 ch_y = gate['channel_y']
+                 verts = gate['vertices']
+                 
+                 # Prepare points for PARENT population
+                 points = parent_population[[ch_x, ch_y]].values
+                 
+                 mask = points_in_polygon(points, verts)
+                 pos_count = mask.sum()
+
+            elif gate.get('type') == 'polygon':
+                 ch_x = gate['channel_x']
+                 ch_y = gate['channel_y']
+                 verts = gate['vertices']
+                 
+                 # Prepare points for PARENT population
+                 points = parent_population[[ch_x, ch_y]].values
+                 
+                 mask = points_in_polygon(points, verts)
+                 pos_count = mask.sum()
+
+            elif gate.get('type') == 'range':
+                 channel = gate['channel']
+                 vals = parent_population[channel]
                  min_val = gate.get('min', -np.inf)
                  max_val = gate.get('max', np.inf)
                  pos_count = ((vals >= min_val) & (vals <= max_val)).sum()
             else:
+                 channel = gate['channel']
+                 vals = parent_population[channel]
                  threshold = gate['threshold']
                  if gate.get('direction') == 'negative':
                      pos_count = (vals <= threshold).sum()

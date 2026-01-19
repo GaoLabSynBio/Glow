@@ -62,7 +62,7 @@ def render_canvas_tab():
 
                 # Introspection to determine controls
                 has_mappable = False
-                
+
                 # We need to peek at the object to know what controls to show
                 if plot_data.get("type") == "matplotlib":
                     f = plot_data["fig"]
@@ -98,13 +98,13 @@ def render_canvas_tab():
                 if has_mappable:
                     # User requested default to "viridis" (which is coincidentally detecting as default anyway)
                     # And allow changing.
-                    
+
                     cmaps = ["viridis", "plasma", "inferno", "magma", "cividis", "Greys", "Purples", "Blues", "Greens", "Oranges", "Reds", "YlOrBr", "YlOrRd", "OrRd", "PuRd", "RdPu", "BuPu", "GnBu", "PuBu", "YlGnBu", "PuBuGn", "BuGn", "YlGn", "jet", "rainbow", "Spectral"]
                     current_cmap = settings.get("main_cmap", "viridis")
                     if current_cmap not in cmaps: current_cmap = "viridis"
-                    
+
                     main_cmap = st.selectbox("Select Colormap", cmaps, index=cmaps.index(current_cmap), key=f"mc_{plot_id}")
-                
+
                 # Save settings
                 plot_data["settings"]["width_scale"] = width_scale
                 plot_data["settings"]["height_scale"] = height_scale
@@ -134,13 +134,13 @@ def render_canvas_tab():
                         fig._glow_orig_size = fig.get_size_inches()
 
                     w_orig, h_orig = fig._glow_orig_size
-                    
+
                     # Apply Aspect Ratio & Font Scale
                     # To effectively scale font UP, we shrink the figure size (inches) so that relative text size is larger
                     # To stretch width, we multiply width inches
                     target_w = (w_orig * width_scale) / font_scale
                     target_h = (h_orig * height_scale) / font_scale
-                    
+
                     fig.set_size_inches(target_w, target_h)
 
                     # Update Font Family
@@ -153,7 +153,7 @@ def render_canvas_tab():
                     # Iterate through axes and collections
                     for ax in fig.axes:
                         # Update Axis Labels/Title Colors if needed? Usually we just color data.
-                        
+
                         for collection in ax.collections:
                             # Only apply to PathCollections (Scatter) which have sizes
                             if hasattr(collection, "get_sizes") and hasattr(collection, "set_sizes"):
@@ -184,7 +184,7 @@ def render_canvas_tab():
                     # Increase DPI with scale to maintain sharpness/resolution
                     fig.savefig(buf, format="png", bbox_inches="tight", dpi=100 * font_scale)
 
-                    st.image(buf, use_container_width=True)
+                    st.image(buf, width="stretch")
 
                     # Reset buffer for downloading SVG (optional, or reuse fig)
                     # Stack buttons vertically
@@ -194,7 +194,7 @@ def render_canvas_tab():
                         st.download_button("Download SVG", buf_svg.getvalue(), f"{title}.svg", "image/svg+xml", key=f"dl_svg_{plot_id}")
                     except:
                         pass
-                
+
                     buf_png = io.BytesIO()
                     try:
                         fig.savefig(buf_png, format="png", bbox_inches="tight", dpi=300)
@@ -216,13 +216,13 @@ def render_canvas_tab():
                     update_font = dict(size=12 * font_scale)
                     if font_family != "default":
                         update_font["family"] = font_family
-                    
+
                     fig.update_layout(font=update_font)
 
                     # Color Override - Always active for mappables
                     # Detection logic was: has colorscale or color array.
                     # We blindly update trace marker colorscale if it exists or we can infer it should?
-                    # Safer: Update colorscale on ALL traces that theoretically support it. 
+                    # Safer: Update colorscale on ALL traces that theoretically support it.
                     # If they don't have scalar data, colorscale is ignored by plotly usually.
                     fig.update_traces(marker=dict(colorscale=main_cmap))
 
@@ -235,24 +235,24 @@ def render_canvas_tab():
 
                     # Usage of Aspect Ratio
                     # We always use container width to ensure fitting
-                    use_container_width = True
+
                     layout_updates = {}
-                    
+
                     # To adjust aspect ratio while fitting width:
                     # Width is fixed (Container Width).
                     # If WidthScale increases (Wants wider), we must DECREASE HEIGHT.
                     # If HeightScale increases (Wants taller), we INCREASE HEIGHT.
-                    
+
                     base_h = 450 # Default Plotly height standard
-                    
+
                     # New Height = Base * HeightScale / WidthScale
                     new_height = base_h * (height_scale / width_scale)
                     layout_updates["height"] = int(new_height)
                     layout_updates["width"] = None # Let container handle it
-                        
+
                     fig.update_layout(**layout_updates)
 
-                    st.plotly_chart(fig, use_container_width=use_container_width)
+                    st.plotly_chart(fig, width="stretch")
 
                     # Download Buttons for Plotly
                     # Stack vertically

@@ -94,8 +94,13 @@ def render_analysis_tab():
 
     # Ensure threshold_gate object is synced with list
     for g in st.session_state.positive_gates:
-        lbl = g.get('label', f"{g['channel']}+")
-        st.session_state.threshold_gate[lbl] = g['threshold']
+        if 'channel' in g:
+            lbl = g.get('label', f"{g['channel']}+")
+        else:
+            lbl = g.get('label', "Gate")
+
+        if 'threshold' in g:
+            st.session_state.threshold_gate[lbl] = g['threshold']
 
     # Dynamically build full table using Recursive Logic
     full_df = stats_df.copy()
@@ -119,121 +124,154 @@ def render_analysis_tab():
     if st.session_state.positive_gates:
         st.write("### Defined Gates")
         for i, g in enumerate(st.session_state.positive_gates):
-            with st.expander(f"Gate {i+1}: {g.get('label', g['channel']+'+')} (Parent: {g.get('parent', 'Singlets')})"):
-                st.write(f"**Channel:** {g['channel']}")
+            # Safe label retrieval
+            if 'channel' in g:
+                 fallback_lbl = f"{g['channel']}+"
+            else:
+                 fallback_lbl = "Gate"
 
-                # Check Type
-                if g.get('type') == 'range':
+            lbl = g.get('label', fallback_lbl)
+
+            with st.expander(f"Gate {i+1}: {lbl} (Parent: {g.get('parent', 'Singlets')})"):
+
+                gate_type = g.get('type', 'binary')
+                is_1d = False
+
+                if gate_type == 'quadrant':
+                     st.write(f"**Type:** 2D Quadrant")
+                     st.write(f"**Channels:** {g.get('channel_x')} vs {g.get('channel_y')}")
+                     q_val = g.get('quadrant')
+                     if isinstance(q_val, list): q_val = "/".join(q_val)
+                     st.write(f"**Quadrant:** {q_val} (Thresholds: {g.get('threshold_x'):.2f}, {g.get('threshold_y'):.2f})")
+                     st.info("Visualization not available for 2D gates in this summary view.")
+
+                elif gate_type == 'polygon':
+                     st.write(f"**Type:** 2D Polygon")
+                     st.write(f"**Channels:** {g.get('channel_x')} vs {g.get('channel_y')}")
+                     st.write(f"**Vertices:** {len(g.get('vertices', []))} points")
+                     st.info("Visualization not available for 2D gates in this summary view.")
+
+                elif gate_type == 'range':
+                     st.write(f"**Channel:** {g.get('channel')}")
                      st.write(f"**Range:** {g.get('min'):.2f} - {g.get('max'):.2f}")
                      st.write(f"**Filter Path:** {g.get('parent', 'Singlets')} -> {g['channel']} in [{g.get('min'):.2f}, {g.get('max'):.2f}]")
+                     is_1d = True
+
                 else:
+                     # Binary / Legacy
+                     st.write(f"**Channel:** {g.get('channel')}")
                      op = ">" if g.get('direction', 'positive') == 'positive' else "<="
-                     st.write(f"**Threshold:** {g['threshold']:.2f} ({g.get('direction', 'positive')})")
-                     st.write(f"**Filter Path:** {g.get('parent', 'Singlets')} -> {g['channel']} {op} {g['threshold']:.2f}")
+                     t = g.get('threshold', 0)
+                     st.write(f"**Threshold:** {t:.2f} ({g.get('direction', 'positive')})")
+                     st.write(f"**Filter Path:** {g.get('parent', 'Singlets')} -> {g['channel']} {op} {t:.2f}")
+                     is_1d = True
 
-                # --- Visualization ---
-                # Fetch data for this gate context
-                try:
-                    # Use SAVED samples if available (to match user's creation view), otherwise default default
-                    if 'samples' in g:
-                        disp_samples = g['samples']
-                    else:
-                        # Fallback for legacy gates or missing data
-                        if 'Sample' in full_df.columns:
-                            avail_samples = full_df['Sample'].unique().tolist()
+                # --- Visualization (1D Only) ---
+                if is_1d:
+                    # Fetch data for this gate context
+                    try:
+                        # Use SAVED samples if available (to match user's creation view), otherwise default default
+                        if 'samples' in g:
+                            disp_samples = g['samples']
                         else:
-                            avail_samples = experiment.data['Sample'].unique().tolist()
-                        # Default to first 1 sample to mimic "creation" view default
-                        disp_samples = avail_samples[:1] 
-
-                    # Get Data from PARENT population
-                    p_gate = g.get('parent', 'Singlets')
-                    ch = g['channel']
-                    
-                    data_map_v = get_channel_data_for_samples(experiment, ch, disp_samples, parent_gate_name=p_gate, defined_gates=st.session_state.positive_gates)
-                    
-                    # Prepare Plot
-                    fig_g = go.Figure()
-                    
-                    # Determine range for axis
-                    all_vals_v = []
-                    for s in data_map_v:
-                        all_vals_v.extend(data_map_v[s])
-                    all_vals_v = np.array([x for x in all_vals_v if not np.isnan(x)])
-                    
-                    if len(all_vals_v) > 0:
-                        # Auto-Log detection: if max > 1000 usually log is better for flow
-                        # But let's check negative values.
-                        use_log_v = (np.mean(all_vals_v) > 100) and (np.min(all_vals_v) > 0)
-                        
-                        # Calculate Domain
-                        if use_log_v:
-                            # Filter <= 0
-                            pos_v = all_vals_v[all_vals_v > 0]
-                            if len(pos_v) > 0:
-                                x_min_v, x_max_v = np.percentile(pos_v, 0.1), np.percentile(pos_v, 99.9)
-                                d_dom = np.logspace(np.log10(x_min_v), np.log10(x_max_v), 200)
+                            # Fallback for legacy gates or missing data
+                            if 'Sample' in full_df.columns:
+                                avail_samples = full_df['Sample'].unique().tolist()
                             else:
-                                d_dom = np.linspace(0, 1, 100)
-                        else:
-                             x_min_v, x_max_v = np.percentile(all_vals_v, 0.1), np.percentile(all_vals_v, 99.9)
-                             d_dom = np.linspace(x_min_v, x_max_v, 200)
+                                avail_samples = experiment.data['Sample'].unique().tolist()
+                            # Default to first 1 sample to mimic "creation" view default
+                            disp_samples = avail_samples[:1]
 
-                        # Plot KDEs
-                        colors_v = px.colors.qualitative.Plotly
-                        for idx, s in enumerate(disp_samples):
-                            if s in data_map_v:
-                                v = data_map_v[s]
-                                v = v[~np.isnan(v)]
-                                if len(v) < 10: continue # Skip empty
-                                
-                                try:
-                                    if use_log_v:
-                                        v_p = v[v > 0]
-                                        if len(v_p) < 10: continue
-                                        kde = gaussian_kde(np.log10(v_p))
-                                        y_dom = kde(np.log10(d_dom))
-                                    else:
-                                        kde = gaussian_kde(v)
-                                        y_dom = kde(d_dom)
-                                    
-                                    c = colors_v[idx % len(colors_v)]
-                                    fig_g.add_trace(go.Scatter(x=d_dom, y=y_dom, mode='lines', line=dict(color=c), name=s, fill='tozeroy', opacity=0.3))
-                                except:
-                                    pass
-                        
-                        # Add Threshold/Range Line
-                        if g.get('type') == 'range':
-                             t_min, t_max = g.get('min'), g.get('max')
-                             fig_g.add_vrect(x0=t_min, x1=t_max, fillcolor="green", opacity=0.1, layer="below", line_width=0)
-                             fig_g.add_vline(x=t_min, line_dash="dash", line_color="green")
-                             fig_g.add_vline(x=t_max, line_dash="dash", line_color="green")
-                        else:
-                             thr = g['threshold']
-                             is_pos = (g.get('direction', 'positive') == 'positive')
-                             color_line = "green" if is_pos else "red"
-                             fig_g.add_vline(x=thr, line_dash="dash", line_color=color_line, line_width=2)
-                             
-                             # Shading
-                             # Approximate simplifying shading
-                             if is_pos:
-                                 fig_g.add_vrect(x0=thr, x1=max(d_dom), fillcolor="green", opacity=0.1, layer="below", line_width=0)
-                             else:
-                                 fig_g.add_vrect(x0=min(d_dom), x1=thr, fillcolor="red", opacity=0.1, layer="below", line_width=0)
+                        # Get Data from PARENT population
+                        p_gate = g.get('parent', 'Singlets')
+                        ch = g['channel']
 
-                        fig_g.update_layout(
-                            margin=dict(l=0, r=0, t=20, b=0),
-                            height=200,
-                            xaxis_type="log" if use_log_v else "linear",
-                            showlegend=True, # Show legend to identify samples
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
-                            # plot_bgcolor='white', # Removed to support Dark Mode / Theme
-                            xaxis=dict(showgrid=True, gridcolor='lightgrey'),
-                            yaxis=dict(showgrid=False, showticklabels=False)
-                        )
-                        st.plotly_chart(fig_g, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Could not load visualization: {e}")
+                        data_map_v = get_channel_data_for_samples(experiment, ch, disp_samples, parent_gate_name=p_gate, defined_gates=st.session_state.positive_gates)
+
+                        # Prepare Plot
+                        fig_g = go.Figure()
+
+                        # Determine range for axis
+                        all_vals_v = []
+                        for s in data_map_v:
+                            all_vals_v.extend(data_map_v[s])
+                        all_vals_v = np.array([x for x in all_vals_v if not np.isnan(x)])
+
+                        if len(all_vals_v) > 0:
+                            # Auto-Log detection: if max > 1000 usually log is better for flow
+                            # But let's check negative values.
+                            use_log_v = (np.mean(all_vals_v) > 100) and (np.min(all_vals_v) > 0)
+
+                            # Calculate Domain
+                            if use_log_v:
+                                # Filter <= 0
+                                pos_v = all_vals_v[all_vals_v > 0]
+                                if len(pos_v) > 0:
+                                    x_min_v, x_max_v = np.percentile(pos_v, 0.1), np.percentile(pos_v, 99.9)
+                                    d_dom = np.logspace(np.log10(x_min_v), np.log10(x_max_v), 200)
+                                else:
+                                    d_dom = np.linspace(0, 1, 100)
+                            else:
+                                 x_min_v, x_max_v = np.percentile(all_vals_v, 0.1), np.percentile(all_vals_v, 99.9)
+                                 d_dom = np.linspace(x_min_v, x_max_v, 200)
+
+                            # Plot KDEs
+                            colors_v = px.colors.qualitative.Plotly
+                            for idx, s in enumerate(disp_samples):
+                                if s in data_map_v:
+                                    v = data_map_v[s]
+                                    v = v[~np.isnan(v)]
+                                    if len(v) < 10: continue # Skip empty
+
+                                    try:
+                                        if use_log_v:
+                                            v_p = v[v > 0]
+                                            if len(v_p) < 10: continue
+                                            kde = gaussian_kde(np.log10(v_p))
+                                            y_dom = kde(np.log10(d_dom))
+                                        else:
+                                            kde = gaussian_kde(v)
+                                            y_dom = kde(d_dom)
+
+                                        c = colors_v[idx % len(colors_v)]
+                                        fig_g.add_trace(go.Scatter(x=d_dom, y=y_dom, mode='lines', line=dict(color=c), name=s, fill='tozeroy', opacity=0.3))
+                                    except:
+                                        pass
+
+                            # Add Threshold/Range Line
+                            if g.get('type') == 'range':
+                                 t_min, t_max = g.get('min'), g.get('max')
+                                 fig_g.add_vrect(x0=t_min, x1=t_max, fillcolor="green", opacity=0.1, layer="below", line_width=0)
+                                 fig_g.add_vline(x=t_min, line_dash="dash", line_color="green")
+                                 fig_g.add_vline(x=t_max, line_dash="dash", line_color="green")
+                            else:
+                                 thr = g['threshold']
+                                 is_pos = (g.get('direction', 'positive') == 'positive')
+                                 color_line = "green" if is_pos else "red"
+                                 fig_g.add_vline(x=thr, line_dash="dash", line_color=color_line, line_width=2)
+
+                                 # Shading
+                                 # Approximate simplifying shading
+                                 if is_pos:
+                                     fig_g.add_vrect(x0=thr, x1=max(d_dom), fillcolor="green", opacity=0.1, layer="below", line_width=0)
+                                 else:
+                                     fig_g.add_vrect(x0=min(d_dom), x1=thr, fillcolor="red", opacity=0.1, layer="below", line_width=0)
+
+                            fig_g.update_layout(
+                                margin=dict(l=0, r=0, t=20, b=0),
+                                height=200,
+                                xaxis_type="log" if use_log_v else "linear",
+                                showlegend=True, # Show legend to identify samples
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10, color="black")),
+                                plot_bgcolor='white',
+                                paper_bgcolor='white',
+                                font=dict(color="black"),
+                                xaxis=dict(showgrid=True, gridcolor='lightgrey', color='black', tickfont=dict(color='black')),
+                                yaxis=dict(showgrid=False, showticklabels=False, color='black', tickfont=dict(color='black'))
+                            )
+                            st.plotly_chart(fig_g, width="stretch")
+                    except Exception as e:
+                        st.error(f"Could not load visualization: {e}")
 
                 if st.button(f"Delete Gate {i+1}", key=f"del_gate_{i}"):
                      removed = st.session_state.positive_gates.pop(i)
@@ -259,6 +297,13 @@ def render_analysis_tab():
         # Options: Singlets + any defined gates
         parent_options = ['Singlets'] + [g['label'] for g in st.session_state.positive_gates]
         parent_gate = st.selectbox("Select Parent Population", parent_options, index=0)
+        # --- MODE SELECTION ---
+        st.write("### Analysis Mode")
+        mode_c1, mode_c2 = st.columns([1, 3])
+        with mode_c1:
+            analysis_mode = st.radio("Mode", ["1D Histogram", "2D Quadrant", "2D Polygon"], horizontal=True, label_visibility="collapsed")
+        is_quadrant = (analysis_mode == "2D Quadrant")
+
 
         # --- CHANNEL SELECTION ---
         # Identify all numeric channels in the dataset
@@ -270,21 +315,21 @@ def render_analysis_tab():
         # Get selected channels from Gating tab
         # Use persistent state to ensure it survives tab switching
         user_selected = st.session_state.get('persistent_selected_channels')
-        
+
         # --- Compensation Switch ---
         # Check if compensated channels exist
         comp_cols = [c for c in all_numeric if c.startswith("Comp-")]
         has_comp = len(comp_cols) > 0
         use_comp = False
-        
+
         if has_comp:
             use_comp = st.checkbox("Use Compensated Data", value=True, key="use_comp_analysis")
-            
+
         # --- Helper for Fluorophore Filtering ---
         COMMON_FLUORS = [
-            "GFP", "EGFP", "mCherry", "Cherry", "APC", "FITC", "PE", "DAPI", "PerCP", 
-            "BV", "Brilliant", "Cy", "Cy3", "Cy5", "Cy7", "BFP", "EBFP", "TagBFP", "SB", 
-            "RFP", "dsRed", "tdTomato", "YFP", "EYFP", "mNeon", "AmCyan", "Pacific Blue", 
+            "GFP", "EGFP", "mCherry", "Cherry", "APC", "FITC", "PE", "DAPI", "PerCP",
+            "BV", "Brilliant", "Cy", "Cy3", "Cy5", "Cy7", "BFP", "EBFP", "TagBFP", "SB",
+            "RFP", "dsRed", "tdTomato", "YFP", "EYFP", "mNeon", "AmCyan", "Pacific Blue",
             "Pacific Orange", "Alexa", "eFluor", "Hoechst", "PI", "7-AAD", "Zombie", "Live/Dead", "DraQ"
         ]
         def is_fluorophore(ch_name):
@@ -298,11 +343,11 @@ def render_analysis_tab():
         if user_selected is not None:
             # Filter 1: In User Selection
             step1 = [c for c in all_numeric if c not in ignore_cols and c in user_selected]
-            
+
             # --- Apply Compensation Logic ---
             # If use_comp, we replace original channels with "Comp-" versions IF available
             final_selection = []
-            
+
             if use_comp:
                 for c in step1:
                     comp_name = f"Comp-{c}"
@@ -317,7 +362,7 @@ def render_analysis_tab():
             # Filter 2: Is Fluorophore (Analysis Specific Requirement)
             # Apply to the potentially comp-swapped list
             valid_channels = sorted([c for c in final_selection if is_fluorophore(c)])
-            
+
             # Fallback
             if not valid_channels:
                  valid_channels = sorted([c for c in final_selection if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])])
@@ -336,7 +381,7 @@ def render_analysis_tab():
                          continue
                      else:
                          source_cols.append(c)
-            
+
             valid_channels = sorted([
                 c for c in source_cols
                 if c not in ignore_cols and is_fluorophore(c)
@@ -364,457 +409,891 @@ def render_analysis_tab():
                  # Fallback: at least remove Experiment_Name
                  valid_channels = [vc for vc in valid_channels if vc != "Experiment_Name"]
 
-        # Use columns for layout
-        c1, c2 = st.columns([1, 2])
 
-        with c1:
-            # Use a key to prevent reset issues, though usually fine
-            selected_channel = st.selectbox("Select X-Axis Channel", valid_channels, key="analysis_channel_select")
+        if analysis_mode == "1D Histogram":
+            # =========================================================
+            # 1D HISTOGRAM / DENSITY LOGIC (Legacy)
+            # =========================================================
+            # Use columns for layout
+            c1, c2 = st.columns([1, 2])
 
-        if selected_channel:
-            # B. Sample Selection for Visualization
-            sample_list = full_df['Sample'].unique().tolist()
-            # Default to the first sample
-            default_samples = [sample_list[0]] if sample_list else []
 
-            with c2:
-                selected_samples = st.multiselect("Select Samples to Overlay", sample_list, default=default_samples, key="analysis_sample_select")
+            with c1:
+                # Use a key to prevent reset issues, though usually fine
+                selected_channel = st.selectbox("Select X-Axis Channel", valid_channels, key="analysis_channel_select")
 
-            if selected_samples:
-                # Fetch Data, Filtered by Parent gate
-                data_map = get_channel_data_for_samples(experiment, selected_channel, selected_samples, parent_gate_name=parent_gate, defined_gates=st.session_state.positive_gates)
+            if selected_channel:
+                # B. Sample Selection for Visualization
+                sample_list = full_df['Sample'].unique().tolist()
+                # Default to the first sample
+                default_samples = [sample_list[0]] if sample_list else []
 
-                # determine range for slider
-                all_values = []
-                for s in data_map:
-                    # Add check for valid arrays
-                    if len(data_map[s]) > 0:
-                         all_values.extend(data_map[s])
+                with c2:
+                    selected_samples = st.multiselect("Select Samples to Overlay", sample_list, default=default_samples, key="analysis_sample_select")
 
-                # Robust NaN filtering
-                all_values = np.array([x for x in all_values if not np.isnan(x)])
+                if selected_samples:
+                    # Fetch Data, Filtered by Parent gate
+                    data_map = get_channel_data_for_samples(experiment, selected_channel, selected_samples, parent_gate_name=parent_gate, defined_gates=st.session_state.positive_gates)
 
-                if len(all_values) == 0:
-                    st.warning("No valid data found for selected samples.")
-                else:
-                    # Checkbox for log scale
-                    use_log = st.checkbox("Log Scale Plot", value=True)
+                    # determine range for slider
+                    all_values = []
+                    for s in data_map:
+                        # Add check for valid arrays
+                        if len(data_map[s]) > 0:
+                             all_values.extend(data_map[s])
 
-                    # Check validity for log
-                    if use_log and np.max(all_values) <= 0:
-                        st.warning("No positive values for Log scale. Switching to Linear.")
-                        use_log = False
+                    # Robust NaN filtering
+                    all_values = np.array([x for x in all_values if not np.isnan(x)])
 
-                    # We need to determine a common X-axis range for the plot
-                    # Based on the aggregation of all selected data
-                    if use_log:
-                        valid_data_for_range = all_values[all_values > 0]
-                        if len(valid_data_for_range) == 0:
-                             # Should be caught above, but safety
-                             plot_min, plot_max = 0, 1
-                        else:
-                            # Use percentiles to find "High Density Region" and exclude far outliers
-                            plot_min = float(np.percentile(valid_data_for_range, 0.1)) # 0.1th percentile
-                            plot_max = float(np.percentile(valid_data_for_range, 99.9)) # 99.9th percentile
+                    if len(all_values) == 0:
+                        st.warning("No valid data found for selected samples.")
                     else:
-                        valid_data_for_range = all_values
-                        # For Linear, user requested min to be 0
-                        plot_min = 0.0
-                        # Max 99.9th percentile to catch main pop
-                        plot_max = float(np.percentile(valid_data_for_range, 99.9))
-                        if plot_max <= 0: plot_max = 1.0
+                        # Checkbox for log scale
+                        use_log = st.checkbox("Log Scale Plot", value=True)
 
-                    # Ensure non-singular
-                    if plot_min >= plot_max:
-                        plot_max = plot_min + 1.0
+                        # Check validity for log
+                        if use_log and np.max(all_values) <= 0:
+                            st.warning("No positive values for Log scale. Switching to Linear.")
+                            use_log = False
 
-                    # C. Threshold Selection
-                    st.write("### Threshold Selection")
-
-                    # 1. Gate Type Selection
-                    col_type, col_dir = st.columns([2, 1])
-                    with col_type:
-                        gate_type = st.radio("Gate Type", ["Binary (Threshold)", "Range (Min - Max)"], horizontal=True)
-
-                    is_range = (gate_type == "Range (Min - Max)")
-
-                    is_negative = False
-                    if not is_range:
-                        with col_dir:
-                            gate_direction = st.radio("Population", ["Positive (>)", "Negative (<)"], horizontal=True)
-                            is_negative = (gate_direction == "Negative (<)")
-
-                    st.info("Tip: Select a point on the plot to automatically set the threshold.")
-
-                    # keys for session state - INCLUDE PARENT NAME to avoid collisions
-                    thr_key = f"thresh_val_{selected_channel}_p{parent_gate}"
-                    min_key = f"range_min_{selected_channel}_p{parent_gate}"
-                    max_key = f"range_max_{selected_channel}_p{parent_gate}"
-
-                    # Initialize logic
-                    if thr_key not in st.session_state:
-                         st.session_state[thr_key] = (plot_min + plot_max) / 2.0
-                    if min_key not in st.session_state:
-                         st.session_state[min_key] = plot_min + (plot_max - plot_min) * 0.2
-                    if max_key not in st.session_state:
-                         st.session_state[max_key] = plot_max - (plot_max - plot_min) * 0.2
-
-                    # Checkbounds for single threshold
-                    if st.session_state[thr_key] < plot_min: st.session_state[thr_key] = plot_min
-                    if st.session_state[thr_key] > plot_max: st.session_state[thr_key] = plot_max
-
-                    # Create placeholder for input widget to be rendered AFTER chart interaction logic
-                    # input_placeholder = st.empty() # REMOVED: Render directly to avoid flickering
-
-                    # REMOVED: Render Inputs Immediately (using current Session State)
-                    # if is_range:
-                    #      col_min, col_max = st.columns(2)
-                    #      with col_min:
-                    #           curr_min = st.number_input("Min Threshold", key=min_key, min_value=float(plot_min), max_value=float(plot_max))
-                    #      with col_max:
-                    #           curr_max = st.number_input("Max Threshold", key=max_key, min_value=float(plot_min), max_value=float(plot_max))
-                    #      curr_threshold = (curr_min, curr_max)
-                    # else:
-                    #      curr_val = st.number_input("Threshold Value", key=thr_key, min_value=float(plot_min), max_value=float(plot_max))
-                    #      curr_threshold = curr_val
-
-                    # Capture selection events BEFORE rendering chart to avoid "select twice" bug
-                    # We check the session state key directly
-                    plot_key = f"plot_{selected_channel}_{parent_gate}"
-                    selection_data = st.session_state.get(plot_key)
-
-                    if selection_data and selection_data.get("selection"):
-                        sel = selection_data["selection"]
-                        # 1. Box Selection (Range)
-                        if sel.get("box"):
-                             box = sel["box"][0]
-                             x_range = box.get("x", [])
-                             if x_range and len(x_range) >= 2:
-                                  sel_min, sel_max = sorted(x_range[:2])
-                                  if is_range:
-                                       if abs(float(sel_min) - st.session_state[min_key]) > 0.0001 or \
-                                          abs(float(sel_max) - st.session_state[max_key]) > 0.0001:
-                                            st.session_state[min_key] = float(sel_min)
-                                            st.session_state[max_key] = float(sel_max)
-                                            st.rerun()
-                                  else:
-                                       # For binary, use box center or start? User likely wants box for range, click for binary.
-                                       # But let's support box as threshold set too.
-                                       if abs(float(sel_min) - st.session_state[thr_key]) > 0.0001:
-                                            st.session_state[thr_key] = float(sel_min)
-                                            st.rerun()
-
-                        # 2. Point Click (Binary)
-                        if sel.get("points"):
-                             point = sel["points"][0]
-                             sel_x = point.get("x")
-                             if sel_x is not None:
-                                  if is_range:
-                                       # Move closest bound
-                                       dist_min = abs(float(sel_x) - st.session_state[min_key])
-                                       dist_max = abs(float(sel_x) - st.session_state[max_key])
-                                       if dist_min < dist_max:
-                                            if abs(float(sel_x) - st.session_state[min_key]) > 0.0001:
-                                                 st.session_state[min_key] = float(sel_x)
-                                                 st.rerun()
-                                       else:
-                                            if abs(float(sel_x) - st.session_state[max_key]) > 0.0001:
-                                                 st.session_state[max_key] = float(sel_x)
-                                                 st.rerun()
-                                  else:
-                                       if abs(float(sel_x) - st.session_state[thr_key]) > 0.0001:
-                                            st.session_state[thr_key] = float(sel_x)
-                                            st.rerun()
-
-                    # Render Inputs
-                    if is_range:
-                         col_min, col_max = st.columns(2)
-                         with col_min:
-                              # Clip values to ensure they are within the dynamic bounds allowed by the widget
-                              # We use plot_max * 10 to allow user to go beyond percentile limits if they type it
-                              curr_min = st.number_input("Min Threshold", key=min_key, 
-                                                       min_value=float(min(plot_min, st.session_state[min_key])), 
-                                                       max_value=float(max(plot_max*2, st.session_state[min_key])))
-                         with col_max:
-                              curr_max = st.number_input("Max Threshold", key=max_key, 
-                                                       min_value=float(min(plot_min, st.session_state[max_key])), 
-                                                       max_value=float(max(plot_max*2, st.session_state[max_key])))
-                         curr_threshold = (curr_min, curr_max)
-                    else:
-                         # For binary mode, use a single point selection logic
-                         curr_val = st.number_input("Threshold Value", key=thr_key, 
-                                                  min_value=float(min(plot_min, st.session_state[thr_key])), 
-                                                  max_value=float(max(plot_max*2, st.session_state[thr_key])))
-                         curr_threshold = curr_val
-
-                    # D. Interactive KDE Plot
-                    # Colors
-                    colors = px.colors.qualitative.Plotly
-
-
-                    # Generate support points for KDE
-                    # If Log: generate in log space then transform back
-                    if use_log:
-                        # Log filtering ensures plot_min > 0
-                        if plot_min <= 0: plot_min = np.min(valid_data_for_range[valid_data_for_range > 0])
-
-                        x_log_min = np.log10(plot_min)
-                        x_log_max = np.log10(plot_max)
-                        # Add buffer
-                        pad = (x_log_max - x_log_min) * 0.1
-                        x_log_domain = np.linspace(x_log_min - pad, x_log_max + pad, 200)
-                        x_domain = np.power(10, x_log_domain)
-                    else:
-                        # Linear
-                        pad = (plot_max - plot_min) * 0.1
-                        # Ensure we don't go below 0 if requested
-                        start = max(0, plot_min - pad)
-                        x_domain = np.linspace(start, plot_max + pad, 200)
-
-                    fig = go.Figure()
-
-                    # Add an invisible "Click Catcher" trace for binary mode to make the whole plot area clickable
-                    # (Plotly point selection only triggers on actual traces)
-                    if not is_range:
-                        fig.add_trace(go.Scatter(
-                            x=x_domain,
-                            y=[0] * len(x_domain),
-                            mode='markers',
-                            marker=dict(size=20, opacity=0),
-                            showlegend=False,
-                            hoverinfo='none',
-                            name="click_catcher"
-                        ))
-
-                    # Iterate samples and plot KDE
-                    for i, s in enumerate(selected_samples):
-                        if s in data_map:
-                            vals = data_map[s]
-
-                            vals = vals[~np.isnan(vals)]
-
-                            if len(vals) < 2:
-                                continue
-
-                            # Prepare data for KDE
-                            if use_log:
-                                # Filter positive
-                                qt_vals = vals[vals > 0]
-                                if len(qt_vals) < 2: continue
-                                dataset = np.log10(qt_vals)
-                                # Eval on log domain
-                                try:
-                                    kde = gaussian_kde(dataset)
-                                    y_vals = kde(np.log10(x_domain))
-                                except Exception:
-                                    continue
+                        # We need to determine a common X-axis range for the plot
+                        # Based on the aggregation of all selected data
+                        if use_log:
+                            valid_data_for_range = all_values[all_values > 0]
+                            if len(valid_data_for_range) == 0:
+                                 # Should be caught above, but safety
+                                 plot_min, plot_max = 0, 1
                             else:
-                                dataset = vals
-                                try:
-                                    kde = gaussian_kde(dataset)
-                                    y_vals = kde(x_domain)
-                                except Exception:
-                                    continue
+                                # Use percentiles to find "High Density Region" and exclude far outliers
+                                plot_min = float(np.percentile(valid_data_for_range, 0.1)) # 0.1th percentile
+                                plot_max = float(np.percentile(valid_data_for_range, 99.9)) # 99.9th percentile
+                        else:
+                            valid_data_for_range = all_values
+                            # For Linear, user requested min to be 0
+                            plot_min = 0.0
+                            # Max 99.9th percentile to catch main pop
+                            plot_max = float(np.percentile(valid_data_for_range, 99.9))
+                            if plot_max <= 0: plot_max = 1.0
 
-                            # Normalize Area? Gaussian_kde integrates to 1.
-                            # We can plot as is.
+                        # Ensure non-singular
+                        if plot_min >= plot_max:
+                            plot_max = plot_min + 1.0
 
-                            color = colors[i % len(colors)]
+                        # C. Threshold Selection
+                        st.write("### Threshold Selection")
 
+                        # 1. Gate Type Selection
+                        col_type, col_dir = st.columns([2, 1])
+                        with col_type:
+                            gate_type = st.radio("Gate Type", ["Binary (Threshold)", "Range (Min - Max)"], horizontal=True)
+
+                        is_range = (gate_type == "Range (Min - Max)")
+
+                        is_negative = False
+                        if not is_range:
+                            with col_dir:
+                                gate_direction = st.radio("Population", ["Positive (>)", "Negative (<)"], horizontal=True)
+                                is_negative = (gate_direction == "Negative (<)")
+
+                        st.info("Tip: Select a point on the plot to automatically set the threshold.")
+
+                        # keys for session state - INCLUDE PARENT NAME to avoid collisions
+                        thr_key = f"thresh_val_{selected_channel}_p{parent_gate}"
+                        min_key = f"range_min_{selected_channel}_p{parent_gate}"
+                        max_key = f"range_max_{selected_channel}_p{parent_gate}"
+
+                        # Initialize logic
+                        if thr_key not in st.session_state:
+                             st.session_state[thr_key] = (plot_min + plot_max) / 2.0
+                        if min_key not in st.session_state:
+                             st.session_state[min_key] = plot_min + (plot_max - plot_min) * 0.2
+                        if max_key not in st.session_state:
+                             st.session_state[max_key] = plot_max - (plot_max - plot_min) * 0.2
+
+                        # Checkbounds for single threshold
+                        if st.session_state[thr_key] < plot_min: st.session_state[thr_key] = plot_min
+                        if st.session_state[thr_key] > plot_max: st.session_state[thr_key] = plot_max
+
+                        # Create placeholder for input widget to be rendered AFTER chart interaction logic
+                        # input_placeholder = st.empty() # REMOVED: Render directly to avoid flickering
+
+                        # REMOVED: Render Inputs Immediately (using current Session State)
+                        # if is_range:
+                        #      col_min, col_max = st.columns(2)
+                        #      with col_min:
+                        #           curr_min = st.number_input("Min Threshold", key=min_key, min_value=float(plot_min), max_value=float(plot_max))
+                        #      with col_max:
+                        #           curr_max = st.number_input("Max Threshold", key=max_key, min_value=float(plot_min), max_value=float(plot_max))
+                        #      curr_threshold = (curr_min, curr_max)
+                        # else:
+                        #      curr_val = st.number_input("Threshold Value", key=thr_key, min_value=float(plot_min), max_value=float(plot_max))
+                        #      curr_threshold = curr_val
+
+                        # Capture selection events BEFORE rendering chart to avoid "select twice" bug
+                        # We check the session state key directly
+                        plot_key = f"plot_{selected_channel}_{parent_gate}"
+                        selection_data = st.session_state.get(plot_key)
+
+                        if selection_data and selection_data.get("selection"):
+                            sel = selection_data["selection"]
+                            # 1. Box Selection (Range)
+                            if sel.get("box"):
+                                 box = sel["box"][0]
+                                 x_range = box.get("x", [])
+                                 if x_range and len(x_range) >= 2:
+                                      sel_min, sel_max = sorted(x_range[:2])
+                                      if is_range:
+                                           if abs(float(sel_min) - st.session_state[min_key]) > 0.0001 or \
+                                              abs(float(sel_max) - st.session_state[max_key]) > 0.0001:
+                                                st.session_state[min_key] = float(sel_min)
+                                                st.session_state[max_key] = float(sel_max)
+                                                st.rerun()
+                                      else:
+                                           # For binary, use box center or start? User likely wants box for range, click for binary.
+                                           # But let's support box as threshold set too.
+                                           if abs(float(sel_min) - st.session_state[thr_key]) > 0.0001:
+                                                st.session_state[thr_key] = float(sel_min)
+                                                st.rerun()
+
+                            # 2. Point Click (Binary)
+                            if sel.get("points"):
+                                 point = sel["points"][0]
+                                 sel_x = point.get("x")
+                                 if sel_x is not None:
+                                      if is_range:
+                                           # Move closest bound
+                                           dist_min = abs(float(sel_x) - st.session_state[min_key])
+                                           dist_max = abs(float(sel_x) - st.session_state[max_key])
+                                           if dist_min < dist_max:
+                                                if abs(float(sel_x) - st.session_state[min_key]) > 0.0001:
+                                                     st.session_state[min_key] = float(sel_x)
+                                                     st.rerun()
+                                           else:
+                                                if abs(float(sel_x) - st.session_state[max_key]) > 0.0001:
+                                                     st.session_state[max_key] = float(sel_x)
+                                                     st.rerun()
+                                      else:
+                                           if abs(float(sel_x) - st.session_state[thr_key]) > 0.0001:
+                                                st.session_state[thr_key] = float(sel_x)
+                                                st.rerun()
+
+                        # Render Inputs
+                        if is_range:
+                             col_min, col_max = st.columns(2)
+                             with col_min:
+                                  # Clip values to ensure they are within the dynamic bounds allowed by the widget
+                                  # We use plot_max * 10 to allow user to go beyond percentile limits if they type it
+                                  curr_min = st.number_input("Min Threshold", key=min_key,
+                                                           min_value=float(min(plot_min, st.session_state[min_key])),
+                                                           max_value=float(max(plot_max*2, st.session_state[min_key])))
+                             with col_max:
+                                  curr_max = st.number_input("Max Threshold", key=max_key,
+                                                           min_value=float(min(plot_min, st.session_state[max_key])),
+                                                           max_value=float(max(plot_max*2, st.session_state[max_key])))
+                             curr_threshold = (curr_min, curr_max)
+                        else:
+                             # For binary mode, use a single point selection logic
+                             curr_val = st.number_input("Threshold Value", key=thr_key,
+                                                      min_value=float(min(plot_min, st.session_state[thr_key])),
+                                                      max_value=float(max(plot_max*2, st.session_state[thr_key])))
+                             curr_threshold = curr_val
+
+                        # D. Interactive KDE Plot
+                        # Colors
+                        colors = px.colors.qualitative.Plotly
+
+
+                        # Generate support points for KDE
+                        # If Log: generate in log space then transform back
+                        if use_log:
+                            # Log filtering ensures plot_min > 0
+                            if plot_min <= 0: plot_min = np.min(valid_data_for_range[valid_data_for_range > 0])
+
+                            x_log_min = np.log10(plot_min)
+                            x_log_max = np.log10(plot_max)
+                            # Add buffer
+                            pad = (x_log_max - x_log_min) * 0.1
+                            x_log_domain = np.linspace(x_log_min - pad, x_log_max + pad, 200)
+                            x_domain = np.power(10, x_log_domain)
+                        else:
+                            # Linear
+                            pad = (plot_max - plot_min) * 0.1
+                            # Ensure we don't go below 0 if requested
+                            start = max(0, plot_min - pad)
+                            x_domain = np.linspace(start, plot_max + pad, 200)
+
+                        fig = go.Figure()
+
+                        # Add an invisible "Click Catcher" trace for binary mode to make the whole plot area clickable
+                        # (Plotly point selection only triggers on actual traces)
+                        if not is_range:
                             fig.add_trace(go.Scatter(
                                 x=x_domain,
-                                y=y_vals,
-                                mode='lines+markers', # Markers needed for click targeting
-                                marker=dict(size=20, color=color, opacity=0), # Invisible markers but hit-testable
-                                line=dict(color=color, width=2),
-                                name=s,
-                                fill='tozeroy',
-                                opacity=0.6,
-                                hovertemplate=f"<b>{s}</b><br>Intensity: %{{x}}<br>Density: %{{y}}<extra></extra>"
+                                y=[0] * len(x_domain),
+                                mode='markers',
+                                marker=dict(size=20, opacity=0),
+                                showlegend=False,
+                                hoverinfo='none',
+                                name="click_catcher"
                             ))
 
-                    # Update Layout
-                    # Range determined by logic above
-                    layout_xaxis_range = None # Auto, or use strict
-                    if use_log:
-                        # strict range from percentiles
-                        layout_xaxis_range = [np.log10(plot_min), np.log10(plot_max * 1.5)] # Little extra headroom
-                    else:
-                        layout_xaxis_range = [0, plot_max * 1.1]
-
-                    # Get Current Value for Line (from State)
-                    # We use the state value because we haven't rendered component yet
-                    curr_val_for_line = st.session_state[thr_key]
-
-                    # Add Threshold Line (Visual Feedback)
-                    if is_range:
-                         rmin = st.session_state[min_key]
-                         rmax = st.session_state[max_key]
-
-                         # Add shaded region
-                         fig.add_vrect(x0=rmin, x1=rmax, fillcolor="green", opacity=0.1, layer="below", line_width=0)
-
-                         fig.add_vline(x=rmin, line_width=2, line_dash="dash", line_color="green",
-                                      annotation_text=f"Min: {rmin:.1f}", annotation_position="top left")
-                         fig.add_vline(x=rmax, line_width=2, line_dash="dash", line_color="green",
-                                      annotation_text=f"Max: {rmax:.1f}", annotation_position="top right")
-                    else:
-                         fill_color = "red" if is_negative else "blue" # Use red for neg? Or vice versa. Let's use standard convention.
-                         # Usually Positive = Green/Blue, Negative = Red/Gray.
-                         # Let's use Green for Positive, Red for Negative shading.
-                         shade_color = "red" if is_negative else "green"
-
-                         if is_negative:
-                             # Shade from Min to Threshold
-                             # Use plot_min, but ensure it covers the view
-                             range_min = plot_min if plot_min > 0 else (x_domain[0] if len(x_domain)>0 else 0)
-                             if use_log and range_min <= 0: range_min = 1e-1 # Safety
-
-                             fig.add_vrect(x0=range_min/10, x1=curr_val_for_line, fillcolor=shade_color, opacity=0.1, layer="below", line_width=0)
-                             annot_pos = "top left"
-                         else:
-                             # Shade from Threshold to Max
-                             fig.add_vrect(x0=curr_val_for_line, x1=plot_max*10, fillcolor=shade_color, opacity=0.1, layer="below", line_width=0)
-                             annot_pos = "top right"
-
-                         fig.add_vline(x=curr_val_for_line, line_width=2, line_dash="dash", line_color="red",
-                                      annotation_text=f"Threshold: {curr_val_for_line:.1f}", annotation_position=annot_pos)
-
-                    fig.update_layout(
-                        title=f"Density Plot: {selected_channel} (Subset: {parent_gate})",
-                        xaxis_title=selected_channel,
-                        yaxis_title="Density",
-                        # Log axes if requested
-                        xaxis_type="log" if use_log else "linear",
-                        xaxis_range=layout_xaxis_range,
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                        hovermode="closest",
-                        clickmode='event+select', # Allow clicking to select points
-                        # Dragmode 'select' enables box selection
-                        # Fixed range prevents accidental zoom toggling
-                        dragmode='select' if is_range else 'zoom',
-                        xaxis=dict(fixedrange=True),
-                        yaxis=dict(fixedrange=True),
-                    )
-
-                    # Capture selection events
-                    # on_select="rerun" ensures app updates when a point is selected (clicked)
-                    # Enable box selection
-                    # Add unique KEY to prevent state leakage
-                    selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
-
-                    if st.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
-                        # Create Matplotlib Figure for Canvas
-                        import matplotlib.pyplot as plt
-                        mpl_fig, mpl_ax = plt.subplots(figsize=(6, 4))
-
+                        # Iterate samples and plot KDE
                         for i, s in enumerate(selected_samples):
                             if s in data_map:
                                 vals = data_map[s]
+
                                 vals = vals[~np.isnan(vals)]
-                                if len(vals) < 2: continue
 
-                                try:
-                                    if use_log:
-                                        qt_vals = vals[vals > 0]
-                                        if len(qt_vals) < 2: continue
-                                        dataset = np.log10(qt_vals)
-                                        kde = gaussian_kde(dataset)
-                                        y_vals = kde(np.log10(x_domain))
-                                    else:
-                                        dataset = vals
-                                        kde = gaussian_kde(dataset)
-                                        y_vals = kde(x_domain)
-
-                                    color = colors[i % len(colors)]
-                                    mpl_ax.plot(x_domain, y_vals, color=color, label=s, linewidth=2, zorder=10)
-
-                                    # Isolate fill to catch specific errors
-                                    try:
-                                        mpl_ax.fill_between(x_domain, y_vals, y2=0, color=color, alpha=0.5, zorder=5)
-                                    except Exception as e:
-                                        st.warning(f"Fill error for {s}: {e}")
-                                except Exception as e:
-                                    st.warning(f"Plot error for {s}: {e}")
+                                if len(vals) < 2:
                                     continue
 
+                                # Prepare data for KDE
+                                if use_log:
+                                    # Filter positive
+                                    qt_vals = vals[vals > 0]
+                                    if len(qt_vals) < 2: continue
+                                    dataset = np.log10(qt_vals)
+                                    # Eval on log domain
+                                    try:
+                                        kde = gaussian_kde(dataset)
+                                        y_vals = kde(np.log10(x_domain))
+                                    except Exception:
+                                        continue
+                                else:
+                                    dataset = vals
+                                    try:
+                                        kde = gaussian_kde(dataset)
+                                        y_vals = kde(x_domain)
+                                    except Exception:
+                                        continue
+
+                                # Normalize Area? Gaussian_kde integrates to 1.
+                                # We can plot as is.
+
+                                color = colors[i % len(colors)]
+
+                                fig.add_trace(go.Scatter(
+                                    x=x_domain,
+                                    y=y_vals,
+                                    mode='lines+markers', # Markers needed for click targeting
+                                    marker=dict(size=20, color=color, opacity=0), # Invisible markers but hit-testable
+                                    line=dict(color=color, width=2),
+                                    name=s,
+                                    fill='tozeroy',
+                                    opacity=0.6,
+                                    hovertemplate=f"<b>{s}</b><br>Intensity: %{{x}}<br>Density: %{{y}}<extra></extra>"
+                                ))
+
+                        # Update Layout
+                        # Range determined by logic above
+                        layout_xaxis_range = None # Auto, or use strict
                         if use_log:
-                            mpl_ax.set_xscale('log')
-
-                        mpl_ax.set_title(f"Density Plot: {selected_channel} (Subset: {parent_gate})")
-                        mpl_ax.set_xlabel(selected_channel)
-                        mpl_ax.set_ylabel("Density")
-                        mpl_ax.set_ylim(bottom=0)
-                        mpl_ax.spines['top'].set_visible(False)
-                        mpl_ax.spines['right'].set_visible(False)
-
-                        # Add Threshold Line (Background)
-                        if is_range:
-                            rmin = st.session_state[min_key]
-                            rmax = st.session_state[max_key]
-                            mpl_ax.axvline(x=rmin, color='green', linestyle='--', linewidth=2, zorder=3)
-                            mpl_ax.axvline(x=rmax, color='green', linestyle='--', linewidth=2, zorder=3)
-                            mpl_ax.axvspan(rmin, rmax, color='green', alpha=0.1, zorder=1)
+                            # strict range from percentiles
+                            layout_xaxis_range = [np.log10(plot_min), np.log10(plot_max * 1.5)] # Little extra headroom
                         else:
-                            mpl_ax.axvline(x=curr_val_for_line, color='red', linestyle='--', linewidth=2, zorder=3)
-                            shade_color = "red" if is_negative else "green"
-                            if is_negative:
-                                mpl_ax.axvspan(x_domain[0], curr_val_for_line, color=shade_color, alpha=0.1, zorder=1)
+                            layout_xaxis_range = [0, plot_max * 1.1]
+
+                        # Get Current Value for Line (from State)
+                        # We use the state value because we haven't rendered component yet
+                        curr_val_for_line = st.session_state[thr_key]
+
+                        # Add Threshold Line (Visual Feedback)
+                        if is_range:
+                             rmin = st.session_state[min_key]
+                             rmax = st.session_state[max_key]
+
+                             # Add shaded region
+                             fig.add_vrect(x0=rmin, x1=rmax, fillcolor="green", opacity=0.1, layer="below", line_width=0)
+
+                             fig.add_vline(x=rmin, line_width=2, line_dash="dash", line_color="green",
+                                          annotation_text=f"Min: {rmin:.1f}", annotation_position="top left")
+                             fig.add_vline(x=rmax, line_width=2, line_dash="dash", line_color="green",
+                                          annotation_text=f"Max: {rmax:.1f}", annotation_position="top right")
+                        else:
+                             fill_color = "red" if is_negative else "blue" # Use red for neg? Or vice versa. Let's use standard convention.
+                             # Usually Positive = Green/Blue, Negative = Red/Gray.
+                             # Let's use Green for Positive, Red for Negative shading.
+                             shade_color = "red" if is_negative else "green"
+
+                             if is_negative:
+                                 # Shade from Min to Threshold
+                                 # Use plot_min, but ensure it covers the view
+                                 range_min = plot_min if plot_min > 0 else (x_domain[0] if len(x_domain)>0 else 0)
+                                 if use_log and range_min <= 0: range_min = 1e-1 # Safety
+
+                                 fig.add_vrect(x0=range_min/10, x1=curr_val_for_line, fillcolor=shade_color, opacity=0.1, layer="below", line_width=0)
+                                 annot_pos = "top left"
+                             else:
+                                 # Shade from Threshold to Max
+                                 fig.add_vrect(x0=curr_val_for_line, x1=plot_max*10, fillcolor=shade_color, opacity=0.1, layer="below", line_width=0)
+                                 annot_pos = "top right"
+
+                             fig.add_vline(x=curr_val_for_line, line_width=2, line_dash="dash", line_color="red",
+                                          annotation_text=f"Threshold: {curr_val_for_line:.1f}", annotation_position=annot_pos)
+
+                        fig.update_layout(
+                            title=f"Density Plot: {selected_channel} (Subset: {parent_gate})",
+                            xaxis_title=selected_channel,
+                            yaxis_title="Density",
+                            plot_bgcolor="white",
+                            paper_bgcolor="white",
+                            # Log axes if requested
+                            xaxis_type="log" if use_log else "linear",
+                            xaxis_range=layout_xaxis_range,
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color="black")),
+                            hovermode="x unified",
+                            clickmode='event+select', # Allow clicking to select points
+                            # Dragmode 'select' enables box selection
+                            # Fixed range prevents accidental zoom toggling
+                            dragmode='select' if is_range else 'zoom',
+                            xaxis=dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
+                            yaxis=dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
+                            font=dict(color="black")
+                        )
+
+                        # Capture selection events
+                        # on_select="rerun" ensures app updates when a point is selected (clicked)
+                        # Enable box selection
+                        # Add unique KEY to prevent state leakage
+                        selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
+
+                        if st.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
+                            # Create Matplotlib Figure for Canvas
+                            import matplotlib.pyplot as plt
+                            mpl_fig, mpl_ax = plt.subplots(figsize=(6, 4))
+
+                            for i, s in enumerate(selected_samples):
+                                if s in data_map:
+                                    vals = data_map[s]
+                                    vals = vals[~np.isnan(vals)]
+                                    if len(vals) < 2: continue
+
+                                    try:
+                                        if use_log:
+                                            qt_vals = vals[vals > 0]
+                                            if len(qt_vals) < 2: continue
+                                            dataset = np.log10(qt_vals)
+                                            kde = gaussian_kde(dataset)
+                                            y_vals = kde(np.log10(x_domain))
+                                        else:
+                                            dataset = vals
+                                            kde = gaussian_kde(dataset)
+                                            y_vals = kde(x_domain)
+
+                                        color = colors[i % len(colors)]
+                                        mpl_ax.plot(x_domain, y_vals, color=color, label=s, linewidth=2, zorder=10)
+
+                                        # Isolate fill to catch specific errors
+                                        try:
+                                            mpl_ax.fill_between(x_domain, y_vals, y2=0, color=color, alpha=0.5, zorder=5)
+                                        except Exception as e:
+                                            st.warning(f"Fill error for {s}: {e}")
+                                    except Exception as e:
+                                        st.warning(f"Plot error for {s}: {e}")
+                                        continue
+
+                            if use_log:
+                                mpl_ax.set_xscale('log')
+
+                            mpl_ax.set_title(f"Density Plot: {selected_channel} (Subset: {parent_gate})")
+                            mpl_ax.set_xlabel(selected_channel)
+                            mpl_ax.set_ylabel("Density")
+                            mpl_ax.set_ylim(bottom=0)
+                            mpl_ax.spines['top'].set_visible(False)
+                            mpl_ax.spines['right'].set_visible(False)
+
+                            # Add Threshold Line (Background)
+                            if is_range:
+                                rmin = st.session_state[min_key]
+                                rmax = st.session_state[max_key]
+                                mpl_ax.axvline(x=rmin, color='green', linestyle='--', linewidth=2, zorder=3)
+                                mpl_ax.axvline(x=rmax, color='green', linestyle='--', linewidth=2, zorder=3)
+                                mpl_ax.axvspan(rmin, rmax, color='green', alpha=0.1, zorder=1)
                             else:
-                                mpl_ax.axvspan(curr_val_for_line, x_domain[-1], color=shade_color, alpha=0.1, zorder=1)
+                                mpl_ax.axvline(x=curr_val_for_line, color='red', linestyle='--', linewidth=2, zorder=3)
+                                shade_color = "red" if is_negative else "green"
+                                if is_negative:
+                                    mpl_ax.axvspan(x_domain[0], curr_val_for_line, color=shade_color, alpha=0.1, zorder=1)
+                                else:
+                                    mpl_ax.axvspan(curr_val_for_line, x_domain[-1], color=shade_color, alpha=0.1, zorder=1)
+
+                            mpl_ax.legend()
+                            mpl_fig.tight_layout()
+
+                            add_plot_to_canvas(mpl_fig, f"Density Plot: {selected_channel} (Subset: {parent_gate})")
+                            st.success("Plot added to canvas!")
+                            plt.close(mpl_fig)
+
+                        # Finalize Gate
+                        ac1, ac2 = st.columns(2)
+                        if ac1.button("Save & Apply Gate"):
+                            # Logic to save the gate
+                            suffix = "+"
+                            if is_range: suffix = "_rng"
+                            elif is_negative: suffix = "-"
+
+                            gate_label = f"{selected_channel}{suffix}"
+                            if parent_gate != "Singlets":
+                                gate_label = f"{parent_gate} -> {selected_channel}{suffix}"
+
+                            # Determine final gate object structure
+                            new_gate = {
+                                'channel': selected_channel,
+                                'parent': parent_gate,
+                                'label': gate_label,
+                                'type': 'range' if is_range else 'binary',
+                                'direction': 'negative' if is_negative else 'positive',
+                                'samples': selected_samples # Persist the samples used for visualization
+                            }
+
+                            if is_range:
+                                 new_gate['min'] = curr_threshold[0]
+                                 new_gate['max'] = curr_threshold[1]
+                                 # For backward compat or display, we can store threshold as tuple or string representation
+                                 new_gate['threshold'] = curr_threshold
+                            else:
+                                 new_gate['threshold'] = curr_threshold
+
+                            st.session_state.positive_gates.append(new_gate)
+
+                            # Save to threshold_gate object for plotting usage
+                            st.session_state.threshold_gate[gate_label] = curr_threshold
+
+                            st.session_state.show_gate_creator = False # Hide creator
+                            st.success(f"Added Gate: {new_gate['label']}")
+                            st.rerun()
+
+                        with ac2:
+                            if st.button("Cancel"):
+                                st.session_state.show_gate_creator = False
+                                st.rerun()
+
+
+
+
+        elif analysis_mode == "2D Quadrant":
+            # =========================================================
+            # 2D QUADRANT LOGIC
+            # =========================================================
+            c_x, c_y, c_s = st.columns([1, 1, 2])
+            with c_x:
+                sel_x = st.selectbox("X Channel", valid_channels, key="quad_x")
+            with c_y:
+                idx_y = 1 if len(valid_channels) > 1 else 0
+                sel_y = st.selectbox("Y Channel", valid_channels, index=idx_y, key="quad_y")
+
+            sample_list = full_df['Sample'].unique().tolist()
+            with c_s:
+                def_samp = [sample_list[0]] if sample_list else []
+                sel_samps = st.multiselect("Samples", sample_list, default=def_samp, key="quad_samp")
+
+            if sel_x and sel_y and sel_samps:
+                # Fetch Data
+                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates)
+                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates)
+
+                # Combine
+                arr_x, arr_y = [], []
+                for s in sel_samps:
+                    if s in d_x and s in d_y:
+                        vx, vy = d_x[s], d_y[s]
+                        # Trim to min length if mismatch (unlikely if same dataframe)
+                        l = min(len(vx), len(vy))
+                        arr_x.extend(vx[:l])
+                        arr_y.extend(vy[:l])
+
+                arr_x = np.array(arr_x); arr_y = np.array(arr_y)
+                valid_mask = (~np.isnan(arr_x)) & (~np.isnan(arr_y))
+                arr_x = arr_x[valid_mask]; arr_y = arr_y[valid_mask]
+
+                if len(arr_x) == 0:
+                    st.warning("No data.")
+                else:
+                    use_log = st.checkbox("Log Scale", value=True, key="quad_log")
+                    if use_log:
+                        pos_mask = (arr_x > 0) & (arr_y > 0)
+                        arr_x_p = arr_x[pos_mask]; arr_y_p = arr_y[pos_mask]
+                        if len(arr_x_p) == 0: use_log = False
+                        else:
+                             arr_x, arr_y = arr_x_p, arr_y_p
+
+                    # Init Thresholds
+                    qk_x = f"qx_{sel_x}_{sel_y}_{parent_gate}"
+                    qk_y = f"qy_{sel_x}_{sel_y}_{parent_gate}"
+
+                    min_x, max_x = np.min(arr_x), np.max(arr_x)
+                    min_y, max_y = np.min(arr_y), np.max(arr_y)
+
+                    if qk_x not in st.session_state: st.session_state[qk_x] = (min_x + max_x)/2
+                    if qk_y not in st.session_state: st.session_state[qk_y] = (min_y + max_y)/2
+
+                    # Interaction
+                    q_plot_key = f"plot_quad_{sel_x}_{sel_y}"
+                    if q_plot_key in st.session_state and st.session_state[q_plot_key].get("selection"):
+                         sel = st.session_state[q_plot_key]["selection"]
+                         if sel.get("points"):
+                              pt = sel["points"][0]
+                              st.session_state[qk_x] = pt["x"]
+                              st.session_state[qk_y] = pt["y"]
+
+                    # Inputs
+                    col_tx, col_ty = st.columns(2)
+                    with col_tx: curr_tx = st.number_input(f"{sel_x} Threshold", key=qk_x, format="%.4f")
+                    with col_ty: curr_ty = st.number_input(f"{sel_y} Threshold", key=qk_y, format="%.4f")
+
+                    # Scatter Plot
+                    # Downsample for speed
+                    if len(arr_x) > 5000:
+                         # Use fixed seed for consistent visualization
+                         rng = np.random.RandomState(42)
+                         indices = rng.choice(len(arr_x), 5000, replace=False)
+                         plot_x, plot_y = arr_x[indices], arr_y[indices]
+                    else:
+                         plot_x, plot_y = arr_x, arr_y
+
+                    fig = go.Figure()
+
+                    # Define Quadrant Shapes (Colored Backgrounds)
+                    x_span = max_x - min_x; y_span = max_y - min_y
+                    if use_log:
+                        b_xmin = min_x / 5; b_xmax = max_x * 5
+                        b_ymin = min_y / 5; b_ymax = max_y * 5
+                    else:
+                        pad_x = x_span * 0.1 if x_span > 0 else 1.0
+                        pad_y = y_span * 0.1 if y_span > 0 else 1.0
+                        b_xmin = min_x - pad_x; b_xmax = max_x + pad_x
+                        b_ymin = min_y - pad_y; b_ymax = max_y + pad_y
+
+                    # Q1: UL (X-, Y+) - Top Left
+                    fig.add_shape(type="rect",
+                        x0=b_xmin, y0=curr_ty, x1=curr_tx, y1=b_ymax,
+                        fillcolor="rgba(255, 99, 71, 0.15)", line_width=0, layer="below"
+                    )
+                    # Q2: UR (X+, Y+) - Top Right
+                    fig.add_shape(type="rect",
+                        x0=curr_tx, y0=curr_ty, x1=b_xmax, y1=b_ymax,
+                        fillcolor="rgba(60, 179, 113, 0.15)", line_width=0, layer="below"
+                    )
+                    # Q3: LR (X+, Y-) - Bottom Right
+                    fig.add_shape(type="rect",
+                        x0=curr_tx, y0=b_ymin, x1=b_xmax, y1=curr_ty,
+                        fillcolor="rgba(100, 149, 237, 0.15)", line_width=0, layer="below"
+                    )
+                    # Q4: LL (X-, Y-) - Bottom Left
+                    fig.add_shape(type="rect",
+                        x0=b_xmin, y0=b_ymin, x1=curr_tx, y1=curr_ty,
+                        fillcolor="rgba(128, 128, 128, 0.15)", line_width=0, layer="below"
+                    )
+
+                    fig.add_trace(go.Scattergl(
+                        x=plot_x, y=plot_y, mode='markers',
+                        marker=dict(size=3, color='blue', opacity=0.5),
+                        name='Events'
+                    ))
+
+                    # Add Lines (Crosshair)
+                    fig.add_vline(x=curr_tx, line_color="black", line_width=1, line_dash="dash")
+                    fig.add_hline(y=curr_ty, line_color="black", line_width=1, line_dash="dash")
+
+                    fig.update_layout(
+                        title=f"Quadrant: {sel_x} vs {sel_y}",
+                        plot_bgcolor="white",
+                        paper_bgcolor="white",
+                        xaxis_title=sel_x, yaxis_title=sel_y,
+                        xaxis_type="log" if use_log else "linear",
+                        yaxis_type="log" if use_log else "linear",
+                        dragmode="pan", clickmode="event+select",
+                        font=dict(color="black"),
+                        xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
+                        yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey')
+                    )
+
+                    st.plotly_chart(fig, width="stretch", on_select="rerun", key=q_plot_key)
+
+                    # Add to Canvas Button
+                    if st.button("Add This Scatter Plot to Canvas", key=f"add_analysis_quad_{sel_x}_{sel_y}_{parent_gate}"):
+                        import matplotlib.pyplot as plt
+                        mpl_fig, mpl_ax = plt.subplots(figsize=(6, 6))
+                        colors_c = px.colors.qualitative.Plotly
+                        for i, s in enumerate(sel_samps):
+                             if s in d_x and s in d_y:
+                                  vx, vy = d_x[s], d_y[s]
+                                  l_min = min(len(vx), len(vy))
+                                  vx = vx[:l_min]; vy = vy[:l_min]
+                                  mask = (~np.isnan(vx)) & (~np.isnan(vy))
+                                  if use_log: mask = mask & (vx > 0) & (vy > 0)
+                                  vx = vx[mask]; vy = vy[mask]
+                                  if len(vx) > 0:
+                                       if len(vx) > 2000:
+                                            rng = np.random.RandomState(42)
+                                            idx = rng.choice(len(vx), 2000, replace=False)
+                                            vx = vx[idx]; vy = vy[idx]
+                                       c = colors_c[i%len(colors_c)]
+                                       mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+                        if use_log: mpl_ax.set_xscale("log"); mpl_ax.set_yscale("log")
+                        mpl_ax.set_title(f"{sel_x} vs {sel_y}")
+                        mpl_ax.set_xlabel(sel_x); mpl_ax.set_ylabel(sel_y)
+                        mpl_ax.axvline(x=curr_tx, color="black", linestyle="--")
+                        mpl_ax.axhline(y=curr_ty, color="black", linestyle="--")
+                        mpl_ax.legend()
+                        mpl_fig.tight_layout()
+                        add_plot_to_canvas(mpl_fig, f"Scatter: {sel_x} vs {sel_y}")
+                        st.success("Added to Canvas!")
+                        plt.close(mpl_fig)
+
+                    st.write("#### Save Quadrants")
+                    st.write("Select which populations to create:")
+
+                    sq1, sq2, sq3, sq4 = st.columns(4)
+                    save_UL = sq1.checkbox(f"Q1: {sel_x}- {sel_y}+", value=True)
+                    save_UR = sq2.checkbox(f"Q2: {sel_x}+ {sel_y}+", value=True)
+                    save_LR = sq3.checkbox(f"Q3: {sel_x}+ {sel_y}-", value=True)
+                    save_LL = sq4.checkbox(f"Q4: {sel_x}- {sel_y}-", value=True)
+
+                    if st.button("Create Selected Gates"):
+                        selected_quads = []
+                        suffixes = []
+                        if save_UL:
+                            selected_quads.append("-+")
+                            suffixes.append("-+")
+                        if save_UR:
+                            selected_quads.append("++")
+                            suffixes.append("++")
+                        if save_LR:
+                            selected_quads.append("+-")
+                            suffixes.append("+-")
+                        if save_LL:
+                            selected_quads.append("--")
+                            suffixes.append("--")
+
+                        if selected_quads:
+                            # Combined Label
+                            if len(suffixes) == 1:
+                                lbl_suffix = f"{sel_x}{suffixes[0][0]} {sel_y}{suffixes[0][1]}"
+                            else:
+                                lbl_suffix = f"{sel_x}/{sel_y} Combined"
+
+                            lbl = f"{parent_gate} -> {lbl_suffix}" if parent_gate!='Singlets' else lbl_suffix
+                            new_g = {
+                                'type': 'quadrant',
+                                'parent': parent_gate,
+                                'label': lbl,
+                                'channel_x': sel_x, 'channel_y': sel_y,
+                                'threshold_x': curr_tx, 'threshold_y': curr_ty,
+                                'quadrant': selected_quads,
+                                'samples': sel_samps
+                            }
+                            st.session_state.positive_gates.append(new_g)
+
+                        st.session_state.show_gate_creator = False
+                        st.rerun()
+
+                    if st.button("Cancel Quad"):
+                         st.session_state.show_gate_creator = False
+                         st.rerun()
+
+        elif analysis_mode == "2D Polygon":
+            # =========================================================
+            # 2D POLYGON LOGIC
+            # =========================================================
+            c_x, c_y, c_s = st.columns([1, 1, 2])
+            with c_x:
+                sel_x = st.selectbox("X Channel", valid_channels, key="poly_x")
+            with c_y:
+                idx_y = 1 if len(valid_channels) > 1 else 0
+                sel_y = st.selectbox("Y Channel", valid_channels, index=idx_y, key="poly_y")
+
+            sample_list = full_df['Sample'].unique().tolist()
+            with c_s:
+                def_samp = [sample_list[0]] if sample_list else []
+                sel_samps = st.multiselect("Samples", sample_list, default=def_samp, key="poly_samp")
+
+            if sel_x and sel_y and sel_samps:
+                # Fetch Data
+                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates)
+                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates)
+
+                # Combine
+                arr_x, arr_y = [], []
+                for s in sel_samps:
+                    if s in d_x and s in d_y:
+                        vx, vy = d_x[s], d_y[s]
+                        l = min(len(vx), len(vy))
+                        arr_x.extend(vx[:l])
+                        arr_y.extend(vy[:l])
+
+                arr_x = np.array(arr_x); arr_y = np.array(arr_y)
+                valid_mask = (~np.isnan(arr_x)) & (~np.isnan(arr_y))
+                arr_x = arr_x[valid_mask]; arr_y = arr_y[valid_mask]
+
+                if len(arr_x) == 0:
+                    st.warning("No data.")
+                else:
+                    use_log = st.checkbox("Log Scale", value=True, key="poly_log")
+                    if use_log:
+                        pos_mask = (arr_x > 0) & (arr_y > 0)
+                        arr_x_p = arr_x[pos_mask]; arr_y_p = arr_y[pos_mask]
+                        if len(arr_x_p) == 0: use_log = False
+                        else:
+                             arr_x, arr_y = arr_x_p, arr_y_p
+
+                    # Manage Vertices
+                    poly_key = f"poly_verts_{sel_x}_{sel_y}_{parent_gate}"
+                    if poly_key not in st.session_state: st.session_state[poly_key] = []
+
+                    # Graph Interaction
+                    plot_key = f"plot_poly_{sel_x}_{sel_y}"
+
+                    # Retrieve Selection
+                    if plot_key in st.session_state and st.session_state[plot_key].get("selection"):
+                         sel = st.session_state[plot_key]["selection"]
+                         if sel.get("points"):
+                              pts = sel["points"]
+                              current_verts = st.session_state[poly_key]
+                              new_pts_list = []
+                              for p in pts:
+                                   px_v, py_v = p["x"], p["y"]
+                                   is_new = True
+                                   for existing in current_verts:
+                                        if abs(existing[0]-px_v) < 1e-5 and abs(existing[1]-py_v) < 1e-5:
+                                             is_new = False; break
+                                   if is_new:
+                                        new_pts_list.append((px_v, py_v))
+                              if new_pts_list:
+                                   st.session_state[poly_key].extend(new_pts_list)
+
+                    # Control Buttons
+                    col_b1, col_b2 = st.columns(2)
+                    with col_b1:
+                         if st.button("Clear Vertices"):
+                              st.session_state[poly_key] = []
+                              st.rerun()
+                         if st.button("Remove Last Point"):
+                              if st.session_state[poly_key]:
+                                   st.session_state[poly_key].pop()
+                                   st.rerun()
+
+                    with col_b2:
+                         st.info(f"Points Selected: {len(st.session_state[poly_key])}")
+
+                    # Scatter Plot with Polygon Overlay
+                    if len(arr_x) > 5000:
+                         rng = np.random.RandomState(42)
+                         indices = rng.choice(len(arr_x), 5000, replace=False)
+                         plot_x, plot_y = arr_x[indices], arr_y[indices]
+                    else:
+                         plot_x, plot_y = arr_x, arr_y
+
+                    fig = go.Figure()
+
+                    # 1. Data Trace
+                    fig.add_trace(go.Scattergl(
+                        x=plot_x, y=plot_y, mode='markers',
+                        marker=dict(size=3, color='blue', opacity=0.5),
+                        name='Events',
+                        hoverinfo='none'
+                    ))
+
+                    # 2. Polygon Trace
+                    verts = st.session_state[poly_key]
+                    if len(verts) > 0:
+                         if len(verts) >= 3:
+                              vx = [v[0] for v in verts] + [verts[0][0]]
+                              vy = [v[1] for v in verts] + [verts[0][1]]
+                         else:
+                              vx = [v[0] for v in verts]
+                              vy = [v[1] for v in verts]
+
+                         fig.add_trace(go.Scatter(
+                              x=vx, y=vy, mode='lines+markers',
+                              line=dict(color='orange', width=2),
+                              marker=dict(size=6, color='orange'),
+                              name='Polygon'
+                         ))
+
+                    fig.update_layout(
+                        title=f"Polygon: {sel_x} vs {sel_y} (Click points to define)",
+                        plot_bgcolor="white",
+                        paper_bgcolor="white",
+                        xaxis_title=sel_x, yaxis_title=sel_y,
+                        xaxis_type="log" if use_log else "linear",
+                        yaxis_type="log" if use_log else "linear",
+                        dragmode="pan",
+                        clickmode="event+select",
+                        font=dict(color="black"),
+                        xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
+                        yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey')
+                    )
+
+                    st.plotly_chart(fig, width="stretch", on_select="rerun", key=plot_key, selection_mode="points")
+
+                    # Add to Canvas Button
+                    if st.button("Add This Scatter Plot to Canvas", key=f"add_analysis_poly_{sel_x}_{sel_y}_{parent_gate}"):
+                        import matplotlib.pyplot as plt
+                        mpl_fig, mpl_ax = plt.subplots(figsize=(6, 6))
+                        colors_c = px.colors.qualitative.Plotly
+                        for i, s in enumerate(sel_samps):
+                             if s in d_x and s in d_y:
+                                  vx, vy = d_x[s], d_y[s]
+                                  l_min = min(len(vx), len(vy))
+                                  vx = vx[:l_min]; vy = vy[:l_min]
+                                  mask = (~np.isnan(vx)) & (~np.isnan(vy))
+                                  if use_log: mask = mask & (vx > 0) & (vy > 0)
+                                  vx = vx[mask]; vy = vy[mask]
+                                  if len(vx) > 0:
+                                       if len(vx) > 2000:
+                                            rng = np.random.RandomState(42)
+                                            idx = rng.choice(len(vx), 2000, replace=False)
+                                            vx = vx[idx]; vy = vy[idx]
+                                       c = colors_c[i%len(colors_c)]
+                                       mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+
+                        if use_log:
+                             mpl_ax.set_xscale("log")
+                             mpl_ax.set_yscale("log")
+
+                        mpl_ax.set_title(f"Polygon: {sel_x} vs {sel_y}")
+                        mpl_ax.set_xlabel(sel_x)
+                        mpl_ax.set_ylabel(sel_y)
+
+                        # Plot Polygon
+                        if len(verts) > 0:
+                             if len(verts) >= 3:
+                                  vx_poly = [v[0] for v in verts] + [verts[0][0]]
+                                  vy_poly = [v[1] for v in verts] + [verts[0][1]]
+                             else:
+                                  vx_poly = [v[0] for v in verts]
+                                  vy_poly = [v[1] for v in verts]
+                             mpl_ax.plot(vx_poly, vy_poly, color='orange', linewidth=2, marker='o', markersize=4)
 
                         mpl_ax.legend()
                         mpl_fig.tight_layout()
-
-                        add_plot_to_canvas(mpl_fig, f"Density Plot: {selected_channel} (Subset: {parent_gate})")
-                        st.success("Plot added to canvas!")
+                        add_plot_to_canvas(mpl_fig, f"Polygon Scatter: {sel_x} vs {sel_y}")
+                        st.success("Added to Canvas!")
                         plt.close(mpl_fig)
 
-                    # Finalize Gate
-                    ac1, ac2 = st.columns(2)
-                    if ac1.button("Save & Apply Gate"):
-                        # Logic to save the gate
-                        suffix = "+"
-                        if is_range: suffix = "_rng"
-                        elif is_negative: suffix = "-"
+                    st.write("#### Save Polygon Gate")
+                    if len(verts) >= 3:
+                         if st.button("Create Gate"):
+                              lbl = f"{parent_gate} -> {sel_x}:{sel_y} Poly" if parent_gate!='Singlets' else f"{sel_x}:{sel_y} Poly"
+                              new_g = {
+                                  'type': 'polygon',
+                                  'parent': parent_gate,
+                                  'label': lbl,
+                                  'channel_x': sel_x, 'channel_y': sel_y,
+                                  'vertices': verts,
+                                  'samples': sel_samps
+                              }
+                              st.session_state.positive_gates.append(new_g)
+                              del st.session_state[poly_key]
+                              st.session_state.show_gate_creator = False
+                              st.rerun()
+                    else:
+                         st.warning("Select at least 3 points to form a polygon.")
 
-                        gate_label = f"{selected_channel}{suffix}"
-                        if parent_gate != "Singlets":
-                            gate_label = f"{parent_gate} -> {selected_channel}{suffix}"
-
-                        # Determine final gate object structure
-                        new_gate = {
-                            'channel': selected_channel,
-                            'parent': parent_gate,
-                            'label': gate_label,
-                            'type': 'range' if is_range else 'binary',
-                            'direction': 'negative' if is_negative else 'positive',
-                            'samples': selected_samples # Persist the samples used for visualization
-                        }
-
-                        if is_range:
-                             new_gate['min'] = curr_threshold[0]
-                             new_gate['max'] = curr_threshold[1]
-                             # For backward compat or display, we can store threshold as tuple or string representation
-                             new_gate['threshold'] = curr_threshold
-                        else:
-                             new_gate['threshold'] = curr_threshold
-
-                        st.session_state.positive_gates.append(new_gate)
-
-                        # Save to threshold_gate object for plotting usage
-                        st.session_state.threshold_gate[gate_label] = curr_threshold
-
-                        st.session_state.show_gate_creator = False # Hide creator
-                        st.success(f"Added Gate: {new_gate['label']}")
-                        st.rerun()
-
-                    with ac2:
-                        if st.button("Cancel"):
-                            st.session_state.show_gate_creator = False
-                            st.rerun()
-
-
+                    if st.button("Cancel Polygon"):
+                         st.session_state.show_gate_creator = False
+                         st.rerun()
     # -------------------------------------------------------------------------
     # 4. Navigation
     # -------------------------------------------------------------------------
