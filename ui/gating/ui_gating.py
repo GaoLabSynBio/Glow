@@ -1078,20 +1078,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.session_state.manual_live_verts_input = "\n".join([f"{v[0]}, {v[1]}" for v in final_pending])
                                 st.rerun()
 
-                    # Confirmation UI
-                    if st.session_state.get('pending_manual_vertices'):
-                        st.divider()
-                        st.info(f"Selected {len(st.session_state.pending_manual_vertices)} points. Confirm to create gate?")
-                        conf_col1, conf_col2 = st.columns(2)
-                        if conf_col1.button("✅ Confirm New Gate"):
-                            st.session_state.manual_vertices = st.session_state.pending_manual_vertices
-                            del st.session_state.pending_manual_vertices
-                            st.rerun()
-
-                        if conf_col2.button("❌ Discard Selection"):
-                            del st.session_state.pending_manual_vertices
-                            st.rerun()
-
                     # Helper for logging
                     if ActiveLearningLogger:
                         try:
@@ -1409,17 +1395,44 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         if st.session_state.get('manual_vertices'):
                             current_poly_str = "\n".join([f"{v[0]}, {v[1]}" for v in st.session_state.manual_vertices])
                         else:
-                            current_poly_str = f"1000000, 1000000\n100000000, 1000000\n100000000, 100000000\n1000000, 100000000"
+                            current_poly_str = ""
+
+                        # Buttons Layout: Apply on top, Text in middle, Undo/Exit below
+                        col_top_apply = st.columns(1)[0]
+                        apply_clicked = col_top_apply.button("✅ Apply Manual Gate", type="primary", use_container_width=True, key="apply_live_gate_top")
 
                         vertices_text = st.text_area("Polygon Vertices (x, y per line)", current_poly_str, height=150, key="manual_live_verts_input")
 
-                        if st.button("Apply Manual Gate"):
+                        col_ma2, col_ma3 = st.columns(2)
+                        
+                        if col_ma2.button("Undo Last Point", key="undo_live_pt"):
+                            curr = st.session_state.get('pending_manual_vertices', [])
+                            if curr:
+                                st.session_state.pending_manual_vertices = curr[:-1]
+                                st.session_state.manual_live_verts_input = "\n".join([f"{v[0]}, {v[1]}" for v in curr[:-1]])
+                                st.rerun()
+
+                        if col_ma3.button("Exit Manual Mode", key="exit_manual_live"):
+                            st.session_state.show_manual_gating = False
+                            st.rerun()
+
+                        if apply_clicked:
                             # Parse
                             try:
-                                vertices = []
-                                for line in vertices_text.strip().split('\n'):
-                                    p = line.split(',')
-                                    vertices.append((float(p[0].strip()), float(p[1].strip())))
+                                # Use pending vertices if any (from clicking), else fallback to text area
+                                if st.session_state.get('pending_manual_vertices'):
+                                    vertices = st.session_state.pending_manual_vertices
+                                else:
+                                    vertices = []
+                                    for line in vertices_text.strip().split('\n'):
+                                        if not line.strip(): continue
+                                        p = line.split(',')
+                                        if len(p) >= 2:
+                                            vertices.append((float(p[0].strip()), float(p[1].strip())))
+
+                                if len(vertices) < 3:
+                                    st.error("Please select at least 3 points on the plot or enter them in the text area.")
+                                    st.stop()
 
                                 gater = GatingManager()
 
@@ -1502,7 +1515,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 percent = (kept_cells / total_cells) * 100 if total_cells > 0 else 0
                                 st.session_state.live_gate_stats = f"{kept_cells} / {total_cells} ({percent:.1f}%)"
 
-                                st.session_state.gated_experiment = manual_exp
+                                # In Per-Cell-Line mode, we avoid overwriting with a single-line subset
+                                if is_multi_line_meta and active_cell_line:
+                                    st.session_state.gated_experiment = base_exp
+                                else:
+                                    st.session_state.gated_experiment = manual_exp
+                                
                                 st.session_state.manual_vertices = vertices # Save for visualization
 
                                 # Determine Cell Line for logging
@@ -1532,6 +1550,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.session_state.gate_accepted = True
                                 st.session_state.doublets_removed = False # Reset downstream step
                                 st.session_state.show_manual_gating = False
+                                if 'pending_manual_vertices' in st.session_state:
+                                    del st.session_state.pending_manual_vertices
                                 st.rerun()
 
                             except Exception as e:
@@ -1549,6 +1569,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                     if is_live_gated:
                         st.subheader("4. Singlet Detection")
+
+                        # Ensure exp is initialized for singlet gating
+                        exp = st.session_state.get('gated_experiment')
+                        if exp is None:
+                            exp = base_exp.clone()
+                            st.session_state.gated_experiment = exp
 
                         # Automatically proceed to Singlet Detection
                         is_doublet_mode = True # not st.session_state.get('doublets_removed', False)
@@ -1900,10 +1926,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                   exp.data["_temp_singlet_mask_auto"] = False
                                               
                                               # Reset ONLY for the current subset (indices) to avoid wiping other lines
-                                              exp.data.loc[df_gated.index, "_temp_singlet_mask_auto"] = False
+                                              # Use intersection to avoid KeyError if indices were filtered out
+                                              valid_indices = df_gated.index.intersection(exp.data.index)
+                                              exp.data.loc[valid_indices, "_temp_singlet_mask_auto"] = False
                                               
                                               # Apply new mask
-                                              exp.data.loc[df_gated.index[mask], "_temp_singlet_mask_auto"] = True
+                                              valid_mask_indices = df_gated.index[mask].intersection(exp.data.index)
+                                              exp.data.loc[valid_mask_indices, "_temp_singlet_mask_auto"] = True
                                               
                                               st.session_state.gated_experiment = exp
                                               st.session_state.doublets_removed = True
@@ -2057,8 +2086,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     kept, total = sum(mask_full), len(preds)
                                                     st.session_state.singlet_gate_stats = f"{kept} / {total} ({(kept/total)*100:.1f}%)"
 
-                                                    exp.data["_temp_singlet_mask_auto"] = False
-                                                    exp.data.loc[df_gated.index[mask_full], "_temp_singlet_mask_auto"] = True
+                                                    if "_temp_singlet_mask_auto" not in exp.data.columns:
+                                                        exp.data["_temp_singlet_mask_auto"] = False
+                                                    
+                                                    valid_indices = df_gated.index[mask_full].intersection(exp.data.index)
+                                                    exp.data.loc[valid_indices, "_temp_singlet_mask_auto"] = True
 
                                                     st.session_state.gated_experiment = exp
                                                     st.session_state.doublets_removed = True
