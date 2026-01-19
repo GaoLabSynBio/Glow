@@ -6,7 +6,7 @@ from .ui_metadata import render_metadata_upload_section
 
 # Helper for Cell Line Detection
 def detect_cell_line_from_path(path):
-    if not path: return "COLO"
+    if not path: return "HEK"
     filename = os.path.basename(path)
     dirname = os.path.basename(os.path.dirname(path))
     full_str = f"{dirname}_{filename}"
@@ -15,7 +15,7 @@ def detect_cell_line_from_path(path):
     known_lines = ["colo", "hek", "hug1n", "snu", "b16", "cho", "hela", "jurkat"]
     for line in known_lines:
         if line.lower() in full_str.lower(): return line.upper().upper()
-    return "COLO"
+    return "HEK"
 
 # Mock Experiment Class to emulate Cytoflow structure for downstream compatibility
 class MockExperiment:
@@ -144,52 +144,77 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     for m in meta:
                         m['Cell_Line'] = detect_cell_line_from_path(m.get('original_path'))
                     st.session_state.preview_meta = meta
+                    st.session_state.working_df_dir = pd.DataFrame(meta)
+                    # Reset
+                    if 'dir_cols_selected' in st.session_state:
+                         del st.session_state['dir_cols_selected']
+                    if 'dir_custom_cols' in st.session_state:
+                         del st.session_state['dir_custom_cols']
+                    if 'dir_new_col_input' in st.session_state:
+                         del st.session_state['dir_new_col_input']
 
                 if st.session_state.preview_meta:
                     st.subheader("Edit Metadata Structure")
 
+                    if 'working_df_dir' not in st.session_state:
+                         st.session_state.working_df_dir = pd.DataFrame(st.session_state.preview_meta)
+
+                    # Sync back to preview_meta so upload uses current state
+                    if 'working_df_dir' in st.session_state:
+                         st.session_state.preview_meta = st.session_state.working_df_dir.to_dict('records')
+
                     # --- Metadata Upload ---
-                    render_metadata_upload_section(key_prefix="dir")
+                    render_metadata_upload_section(key_prefix="dir", reset_keys=['working_df_dir'])
 
-                    # 1. Define fields user wants
+                    # 1. Custom Fields Persistence
+                    if 'dir_custom_cols' not in st.session_state:
+                         st.session_state.dir_custom_cols = []
+
                     default_cols = ["Replicate", "Cell_Line", "Experiment_Name", "Timepoint", "Concentration"]
-                    st.write("Current Metadata Fields:")
-
-                    # User custom fields manager
-                    if 'custom_metadata_fields' not in st.session_state:
-                         st.session_state.custom_metadata_fields = []
-
-                    with st.expander("Manage Custom Metadata Columns"):
-                         c1, c2 = st.columns([3, 1])
-                         with c1:
-                              new_custom_csv = st.text_input("Add custom column names (comma separated)",
-                                                            value=", ".join(st.session_state.custom_metadata_fields),
-                                                            help="Example: Part, Promoter, Strain")
-                         with c2:
-                              if st.button("Update Columns"):
-                                   # Parse CSV
-                                   if new_custom_csv:
-                                        new_fields = [f.strip() for f in new_custom_csv.split(",") if f.strip()]
-                                        st.session_state.custom_metadata_fields = new_fields
-                                   else:
-                                        st.session_state.custom_metadata_fields = []
-                                   st.rerun()
-
-                    # Dynamic options
                     preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
                     extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path']]
 
-                    all_selectable = default_cols + extra_opts + st.session_state.custom_metadata_fields
-                    # Remove duplicates while preserving order
+                    # 2. Add New Column Interface
+                    def add_dir_custom_column():
+                         new_col = st.session_state.get("dir_new_col_input", "").strip()
+                         if new_col:
+                              if new_col not in st.session_state.dir_custom_cols:
+                                   st.session_state.dir_custom_cols.append(new_col)
+                              
+                              current = st.session_state.get("dir_cols_selected", [])
+                              if new_col not in current:
+                                   st.session_state.dir_cols_selected = current + [new_col]
+                              st.session_state.dir_new_col_input = ""
+
+                    c1, c2 = st.columns([0.7, 0.3])
+                    with c1:
+                         st.text_input("Add Custom Column", key="dir_new_col_input", on_change=add_dir_custom_column, placeholder="Type column name and press Enter")
+                    with c2:
+                         st.write("")
+                         st.write("")
+                         st.button("Add", key="dir_add_btn", on_click=add_dir_custom_column)
+
+                    # 3. Available Options
+                    all_selectable = default_cols + extra_opts + st.session_state.dir_custom_cols
                     seen = set()
                     all_selectable = [x for x in all_selectable if not (x in seen or seen.add(x))]
 
+                    # Sanitize
+                    if 'dir_cols_selected' in st.session_state:
+                         st.session_state.dir_cols_selected = [c for c in st.session_state.dir_cols_selected if c in all_selectable]
+
+                    # 4. Defaults
+                    if 'dir_cols_selected' not in st.session_state:
+                         default_selection = ["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else [])
+                         st.session_state.dir_cols_selected = [c for c in default_selection if c in all_selectable]
+
                     cols_to_use = st.multiselect("Select columns to annotate:",
                                                 options=all_selectable,
-                                                default=["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else []))
+                                                key="dir_cols_selected")
 
-                    # 2. Prepare DataFrame
-                    df_preview = pd.DataFrame(st.session_state.preview_meta)
+                    # 5. Prepare DataFrame from Persistent State
+                    df_preview = st.session_state.working_df_dir
+
 
                     # Ensure selected columns exist
                     for col in cols_to_use:
@@ -218,7 +243,12 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                                     "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
                                                 },
                                                 width="stretch",
-                                                num_rows="fixed")
+                                                num_rows="fixed",
+                                                key="dir_editor")
+
+                    # Persist edits
+                    if edited_df is not None:
+                         st.session_state.working_df_dir[edited_df.columns] = edited_df
 
                     if st.button("Confirm and Load Directory files"):
                         with st.spinner("Processing files..."):
@@ -227,7 +257,20 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                             if 'Cell_Line' in edited_df.columns:
                                 edited_df['Cell_Line'] = edited_df['Cell_Line'].astype(str).str.upper()
                             final_meta = edited_df.to_dict('records')
-                            loaded_files = loader.process_files(final_meta, output_dir="processed_fcs_ui")
+
+                            # Local Sanitization Fix: Propagate clean keys immediately
+                            sanitized_meta_list = []
+                            for m in final_meta:
+                                clean_m = {}
+                                for k, v in m.items():
+                                    clean_k = re.sub(r'[^0-9a-zA-Z_]', '_', str(k))
+                                    if clean_k and clean_k[0].isdigit():
+                                         clean_k = "_" + clean_k
+                                    if not clean_k: clean_k = "col_" + str(hash(k))
+                                    clean_m[clean_k] = v
+                                sanitized_meta_list.append(clean_m)
+
+                            loaded_files = loader.process_files(sanitized_meta_list, output_dir="processed_fcs_ui")
                             st.session_state.loaded_files = loaded_files
                             st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
                             st.write("Loaded Metadata Sample:", pd.DataFrame(loaded_files).head())
@@ -261,25 +304,78 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                      st.session_state.preview_meta = []
 
                 if st.button("Generate Preview from Uploads"):
-                     meta = loader.generate_preview_metadata(st.session_state.uploaded_paths, rename_strategy='folder_name')
-                     for m in meta:
-                        m['Cell_Line'] = detect_cell_line_from_path(m.get('original_path'))
+                     meta = loader.generate_preview_metadata(st.session_state.uploaded_paths)
                      st.session_state.preview_meta = meta
+                     st.session_state.working_df = pd.DataFrame(meta)
+                     # Do NOT reset custom columns or selection to allow persistence
+                     if "new_col_input" in st.session_state:
+                         del st.session_state["new_col_input"]
 
                 if st.session_state.preview_meta:
                     st.subheader("Edit Metadata Structure")
-                    render_metadata_upload_section(key_prefix="upload")
+                    if 'working_df' not in st.session_state:
+                         st.session_state.working_df = pd.DataFrame(st.session_state.preview_meta)
+
+                    # Sync back to preview_meta so upload uses current state
+                    if 'working_df' in st.session_state:
+                         st.session_state.preview_meta = st.session_state.working_df.to_dict('records')
+
+                    render_metadata_upload_section(key_prefix="upload", reset_keys=['working_df'])
+
+                    # 1. Manage Custom Columns Persistence
+                    if 'user_custom_cols' not in st.session_state:
+                        st.session_state.user_custom_cols = []
 
                     default_cols = ["Replicate", "Cell_Line", "Experiment_Name", "Timepoint", "Concentration"]
                     preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
                     extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path']]
 
-                    cols_to_use = st.multiselect("Select columns to annotate:",
-                                                options=default_cols + extra_opts + ["Custom1", "Custom2"],
-                                                default=["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else []),
-                                                key="upload_cols")
+                    # 2. Add New Column Interface
+                    def add_custom_column():
+                        new_col = st.session_state.get("new_col_input", "").strip()
+                        if new_col:
+                            # Add to custom columns list if not present
+                            if new_col not in st.session_state.user_custom_cols:
+                                st.session_state.user_custom_cols.append(new_col)
+                            
+                            # Add to selection list if not present
+                            current_selection = st.session_state.get("upload_cols_selected", [])
+                            if new_col not in current_selection:
+                                st.session_state.upload_cols_selected = current_selection + [new_col]
+                            
+                            # Clear input
+                            st.session_state.new_col_input = ""
 
-                    df_preview = pd.DataFrame(st.session_state.preview_meta)
+                    c1, c2 = st.columns([0.7, 0.3])
+                    with c1:
+                        st.text_input("Add Custom Column", key="new_col_input", on_change=add_custom_column, placeholder="Type column name and press Enter")
+                    with c2:
+                        st.write("") # Spacer
+                        st.write("")
+                        st.button("Add", on_click=add_custom_column)
+
+                    # 3. Define Available Options
+                    available_options = default_cols + extra_opts + st.session_state.user_custom_cols
+                    # Deduplicate while preserving order
+                    seen = set()
+                    available_options = [x for x in available_options if not (x in seen or seen.add(x))]
+
+                    # Sanitize existing selection to avoid errors if options changed
+                    if 'upload_cols_selected' in st.session_state:
+                         st.session_state.upload_cols_selected = [c for c in st.session_state.upload_cols_selected if c in available_options]
+
+                    # 4. Initialize Selection Default (First Run Only)
+                    if 'upload_cols_selected' not in st.session_state:
+                        default_selection = ["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else [])
+                        # Ensure defaults are valid options
+                        st.session_state.upload_cols_selected = [c for c in default_selection if c in available_options]
+
+                    # 5. Multiselect for Display/Removal
+                    cols_to_use = st.multiselect("Selected Metadata Columns:",
+                                                options=available_options,
+                                                key="upload_cols_selected")
+
+                    df_preview = st.session_state.working_df
                     for col in cols_to_use:
                         if col not in df_preview.columns:
                             df_preview[col] = ""
@@ -304,6 +400,10 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                                 num_rows="fixed",
                                                 key="upload_editor")
 
+                    # Persist edits to working_df so they survive column changes
+                    if edited_df is not None:
+                         st.session_state.working_df[edited_df.columns] = edited_df
+
                     if st.button("Confirm and Load Uploaded files"):
                         with st.spinner("Processing files..."):
                             clear_experiment_state()
@@ -311,7 +411,20 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                             if 'Cell_Line' in edited_df.columns:
                                 edited_df['Cell_Line'] = edited_df['Cell_Line'].astype(str).str.upper()
                             final_meta = edited_df.to_dict('records')
-                            loaded_files = loader.process_files(final_meta, output_dir="processed_fcs_ui")
+
+                            # Local Sanitization Fix: Propagate clean keys immediately
+                            sanitized_meta_list = []
+                            for m in final_meta:
+                                clean_m = {}
+                                for k, v in m.items():
+                                    clean_k = re.sub(r'[^0-9a-zA-Z_]', '_', str(k))
+                                    if clean_k and clean_k[0].isdigit():
+                                         clean_k = "_" + clean_k
+                                    if not clean_k: clean_k = "col_" + str(hash(k))
+                                    clean_m[clean_k] = v
+                                sanitized_meta_list.append(clean_m)
+
+                            loaded_files = loader.process_files(sanitized_meta_list, output_dir="processed_fcs_ui")
                             st.session_state.loaded_files = loaded_files
                             st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
 

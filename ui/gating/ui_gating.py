@@ -2265,6 +2265,212 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             else:
                                 st.info("Load data to enable channel selection.")
 
+                            st.divider()
+                            with st.expander("6. Export Data (Optional)", expanded=False):
+                                st.write("Configure export options below.")
+                            
+                                export_mode = st.radio("Export Mode", ["Gated Population (Live + Singlets)", "Full Population (Annotated)"], horizontal=True)
+
+                                # Determine Experiment Name for filename
+                                import os
+                                import io
+                                experiment_name = "experiment"
+                                if 'loaded_files' in st.session_state and st.session_state.loaded_files:
+                                    try:
+                                        experiment_name = os.path.basename(os.path.dirname(st.session_state.loaded_files[0]))
+                                    except:
+                                        pass
+                            
+                                final_csv = None
+                                file_name = "processed_data.csv.gz"
+
+                                # User-specified filename
+                                custom_export_name = st.text_input("Custom Filename (Optional)", value="", placeholder=f"Default: {experiment_name}_gated (or _full)", help="Enter a custom name for the exported file. Extension will be added automatically.")
+
+                                if st.button("Generate Export File", key="generate_export"):
+                                    with st.spinner("Reconstructing dataset for export..."):
+                                        # Clone base
+                                        full_exp = st.session_state.base_experiment.clone()
+                                        bgater = GatingManager()
+
+                                        # 1. Re-Apply Live Gate (if exists)
+                                        l_params = st.session_state.get('live_gate_params')
+                                        if l_params:
+                                            if l_params['type'] == 'polygon':
+                                                full_exp = bgater.apply_manual_gate(full_exp, "_temp_live_mask_reconstructed", l_params['channels'][0], l_params['channels'][1], l_params['vertices'])
+                                            elif l_params['type'] == 'label':
+                                                gp = st.session_state.get('last_gating_params', {})
+                                                if gp:
+                                                    method_name = gp.get('method', 'density').lower() if isinstance(gp.get('method'), str) else 'density'
+                                                    res_exp = bgater.auto_gate_live_cells(full_exp, gp.get('x'), gp.get('y'), method=method_name, num_components=gp.get('comp', 2), keep=gp.get('keep', 0.9), sigma=gp.get('sigma', 2.0), eps=gp.get('eps', 0.05), min_samples=gp.get('min_samples', 50), use_outlier_removal=gp.get('use_outliers', False))
+                                                    lbl = l_params['label']
+                                                    if '_temp_live_labels' in res_exp.data.columns:
+                                                        matches = (res_exp.data['_temp_live_labels'].astype(str) == str(lbl))
+                                                        full_exp.data['_temp_live_mask_reconstructed'] = matches
+                                                        # Register metadata to prevent Cytoflow crashes
+                                                        if '_temp_live_mask_reconstructed' not in full_exp.metadata:
+                                                            full_exp.metadata['_temp_live_mask_reconstructed'] = {'type': 'condition'}
+                                            elif l_params['type'] == 'per_cell_line':
+                                                # Handle Per-Cell-Line Gating Reconstruction
+                                                full_exp.data['_temp_live_mask_reconstructed'] = False
+                                                if '_temp_live_mask_reconstructed' not in full_exp.metadata:
+                                                    full_exp.metadata['_temp_live_mask_reconstructed'] = {'type': 'condition'}
+
+                                                gates = l_params['gates']
+                                                col_name = l_params['col']
+                                                for line_val, gate_info in gates.items():
+                                                    row_mask = (full_exp.data[col_name].astype(str) == str(line_val))
+                                                    if not row_mask.any(): continue
+                                                    
+                                                    subset_idxs = full_exp.data.index[row_mask]
+                                                    if gate_info['type'] == 'polygon':
+                                                        from matplotlib.path import Path
+                                                        v = gate_info['vertices']
+                                                        ch = gate_info['channels']
+                                                        path = Path(v)
+                                                        points = full_exp.data.loc[subset_idxs, ch].values
+                                                        is_in = path.contains_points(points)
+                                                        full_exp.data.loc[subset_idxs, '_temp_live_mask_reconstructed'] = is_in
+
+                                            # 2. Re-Apply Singlet Gate (if exists)
+                                            s_params = st.session_state.get('singlet_gate_params')
+                                            if s_params:
+                                                if s_params['type'] == 'polygon':
+                                                    full_exp = bgater.apply_manual_gate(full_exp, "_temp_singlet_mask_manual", s_params['channels'][0], s_params['channels'][1], s_params['vertices'])
+
+                                            # 3. Final Assembly
+                                            df_export = full_exp.data.copy()
+
+                                            # Create "cells" column
+                                            if '_temp_live_mask_reconstructed' in df_export.columns:
+                                                df_export['cells'] = df_export['_temp_live_mask_reconstructed']
+                                            elif '_temp_live_labels' in df_export.columns and l_params and l_params.get('type') == 'label':
+                                                lbl = l_params['label']
+                                                df_export['cells'] = (df_export['_temp_live_labels'].astype(str) == str(lbl))
+                                            else:
+                                                # If no live gate, everything is 'cells' OR 'not cells'? Assuming all.
+                                                df_export['cells'] = True
+
+                                            # Create "singlets" column
+                                            if '_temp_singlet_mask_manual' in df_export.columns:
+                                                df_export['singlets'] = df_export['_temp_singlet_mask_manual']
+                                            elif s_params and s_params.get("type") == "mlp":
+                                                try:
+                                                    from glow.active_learning.models import SingletClassifier
+                                                    clf = SingletClassifier.load("data/singlet_model_full.pkl")
+                                                    X = df_export[s_params["diff_channels"]].values
+                                                    if np.max(X) > 10: X = np.log10(X + 1)
+                                                    c_type = s_params.get("cell_type", "colo")
+                                                    ids = np.zeros(len(X), dtype=int)
+                                                    cts = np.array([c_type] * len(X))
+                                                    preds = clf.predict(X, dataset_ids=ids, cell_types=cts)
+                                                    df_export["singlets"] = (preds == 1)
+                                                except Exception as e:
+                                                    st.warning(f"MLP Singlet calc failed: {e}")
+                                                    df_export["singlets"] = False
+                                            elif s_params and s_params.get('type') == 'gmm_mahalanobis':
+                                                 try:
+                                                    X = df_export[s_params['channels']].values
+                                                    d_mean = s_params['mean']
+                                                    inv_cov = np.linalg.inv(s_params['cov'])
+                                                    threshold = s_params.get('threshold', 2.5)
+                                                    diff = X - d_mean
+                                                    dist = np.sqrt(np.sum((diff @ inv_cov) * diff, axis=1))
+                                                    df_export['singlets'] = (dist <= threshold)
+                                                 except Exception:
+                                                     df_export['singlets'] = False
+                                            elif s_params and s_params.get('type') == 'per_cell_line':
+                                                 # Handle Per-Cell-Line Singlet
+                                                 df_export['singlets'] = False
+                                                 gates = s_params['gates']
+                                                 col_name = s_params['col']
+                                                 for line_val, gate in gates.items():
+                                                     row_mask = (df_export[col_name].astype(str) == str(line_val))
+                                                     if not row_mask.any(): continue
+                                                     subset_idxs = df_export.index[row_mask]
+                                                     if gate['type'] == 'gmm_mahalanobis':
+                                                         ch = gate['channels']
+                                                         X_s = df_export.loc[subset_idxs, ch].values
+                                                         d_m = gate['mean']
+                                                         i_c = np.linalg.inv(gate['cov'])
+                                                         thr = gate.get('threshold', 2.5)
+                                                         df_s = X_s - d_m
+                                                         d_sq = np.sum((df_s @ i_c) * df_s, axis=1)
+                                                         df_export.loc[subset_idxs, 'singlets'] = (np.sqrt(d_sq) <= thr)
+                                                     elif gate['type'] == 'polygon':
+                                                         from matplotlib.path import Path
+                                                         v = gate['vertices']
+                                                         ch = gate['channels']
+                                                         path = Path(v)
+                                                         points = df_export.loc[subset_idxs, ch].values
+                                                         is_in = path.contains_points(points)
+                                                         df_export.loc[subset_idxs, 'singlets'] = is_in
+                                            else:
+                                                # Default False if no singlet gate defined
+                                                df_export['singlets'] = False # Or True if skipped?
+
+                                            # Safe-fill NaNs
+                                            df_export['cells'] = df_export['cells'].fillna(False).astype(bool)
+                                            df_export['singlets'] = df_export['singlets'].fillna(False).astype(bool)
+
+                                            # Enforce Logic: Singlets must be Cells
+                                            df_export.loc[~df_export['cells'], 'singlets'] = False
+
+                                            # MODE SELECTION
+                                            if export_mode == "Gated Population (Live + Singlets)":
+                                                # Filter ROWS
+                                                df_export = df_export[df_export['cells'] & df_export['singlets']].copy()
+                                                default_suffix = "_gated"
+                                            else:
+                                                default_suffix = "_full"
+                                            
+                                            # Determine Filename
+                                            if custom_export_name and custom_export_name.strip():
+                                                base_name = custom_export_name.strip()
+                                                # Strip extension if user typed it
+                                                if base_name.lower().endswith(".zip"): base_name = base_name[:-4]
+                                                if base_name.lower().endswith(".csv.gz"): base_name = base_name[:-7]
+                                                if base_name.lower().endswith(".csv"): base_name = base_name[:-4]
+                                                
+                                                file_name = f"{base_name}.csv.gz"
+                                            else:
+                                                file_name = f"{experiment_name}{default_suffix}.csv.gz"
+
+                                            # Drop Unselected Channels
+                                            if export_only_selected_channels and st.session_state.get('selected_channels'):
+                                                all_ch = list(getattr(st.session_state.base_experiment, 'channels', []))
+                                                keep_ch = list(st.session_state.selected_channels)
+                                                to_drop = [c for c in all_ch if c not in keep_ch]
+                                                cols_to_drop = [c for c in to_drop if c in df_export.columns]
+                                                if cols_to_drop:
+                                                    df_export.drop(columns=cols_to_drop, inplace=True)
+                                                # Defragment frame
+                                                df_export = df_export.copy()
+
+                                            # Cleanup temps
+                                            temp_cols = [c for c in df_export.columns if str(c).startswith('_temp_')]
+                                            if temp_cols: df_export.drop(columns=temp_cols, inplace=True)
+
+                                            # Compress using ZIP (More robust than single GZIP file)
+                                            import zipfile
+                                            buf = io.BytesIO()
+                                            csv_name = file_name.replace('.csv.gz', '.csv')
+                                            zip_name = file_name.replace('.csv.gz', '.zip')
+                                        
+                                            with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+                                                zf.writestr(csv_name, df_export.to_csv(index=False))
+                                            
+                                            st.session_state.final_csv_export = buf.getvalue()
+                                            st.session_state.final_csv_name = zip_name
+                                        
+                                            st.success(f"Export ready: {zip_name} ({len(st.session_state.final_csv_export)/1024:.1f} KB)")
+                                    
+                                if 'final_csv_export' in st.session_state and st.session_state.final_csv_export:
+                                    st.download_button("Download Exported CSV (ZIP)", data=st.session_state.final_csv_export, file_name=st.session_state.final_csv_name, mime="application/zip")
+                                    if st.button("Clear Export Cache"):
+                                        del st.session_state.final_csv_export
+                                        st.rerun()
+
                             # Compensation Option
                             do_compensation = st.checkbox("Run Compensation before Analysis (Optional)", key="enable_comp_step")
 
@@ -2424,327 +2630,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                     except Exception as e:
                                         st.error(f"Error preparing analysis: {e}")
-
-                            st.divider()
-                            st.subheader("6. Export Data (Optional)")
-                            
-                            export_mode = st.radio("Export Mode", ["Gated Population (Live + Singlets)", "Full Population (Annotated)"], horizontal=True)
-
-                            # Determine Experiment Name for filename
-                            import os
-                            import io
-                            experiment_name = "experiment"
-                            if 'loaded_files' in st.session_state and st.session_state.loaded_files:
-                                try:
-                                    experiment_name = os.path.basename(os.path.dirname(st.session_state.loaded_files[0]))
-                                except:
-                                    pass
-                            
-                            final_csv = None
-                            file_name = "processed_data.csv.gz"
-
-                            if st.button("Generate Export File", key="generate_export"):
-                                with st.spinner("Reconstructing dataset for export..."):
-                                    try:
-                                        # Clone base
-                                        full_exp = st.session_state.base_experiment.clone()
-                                        bgater = GatingManager()
-
-                                        # 1. Re-Apply Live Gate (if exists)
-                                        l_params = st.session_state.get('live_gate_params')
-                                        if l_params:
-                                            if l_params['type'] == 'polygon':
-                                                full_exp = bgater.apply_manual_gate(full_exp, "_temp_live_mask_reconstructed", l_params['channels'][0], l_params['channels'][1], l_params['vertices'])
-                                            elif l_params['type'] == 'label':
-                                                gp = st.session_state.get('last_gating_params', {})
-                                                if gp:
-                                                    method_name = gp.get('method', 'density').lower() if isinstance(gp.get('method'), str) else 'density'
-                                                    res_exp = bgater.auto_gate_live_cells(full_exp, gp.get('x'), gp.get('y'), method=method_name, num_components=gp.get('comp', 2), keep=gp.get('keep', 0.9), sigma=gp.get('sigma', 2.0), eps=gp.get('eps', 0.05), min_samples=gp.get('min_samples', 50), use_outlier_removal=gp.get('use_outliers', False))
-                                                    lbl = l_params['label']
-                                                    if '_temp_live_labels' in res_exp.data.columns:
-                                                        matches = (res_exp.data['_temp_live_labels'].astype(str) == str(lbl))
-                                                        full_exp.data['_temp_live_mask_reconstructed'] = matches
-                                                        # Register metadata to prevent Cytoflow crashes
-                                                        if '_temp_live_mask_reconstructed' not in full_exp.metadata:
-                                                            full_exp.metadata['_temp_live_mask_reconstructed'] = {'type': 'condition'}
-                                            elif l_params['type'] == 'per_cell_line':
-                                                # Handle Per-Cell-Line Gating Reconstruction
-                                                full_exp.data['_temp_live_mask_reconstructed'] = False
-                                                if '_temp_live_mask_reconstructed' not in full_exp.metadata:
-                                                    full_exp.metadata['_temp_live_mask_reconstructed'] = {'type': 'condition'}
-
-                                                gates = l_params['gates']
-                                                col_name = l_params['col']
-                                                for line_val, gate_info in gates.items():
-                                                    row_mask = (full_exp.data[col_name].astype(str) == str(line_val))
-                                                    if not row_mask.any(): continue
-                                                    
-                                                    subset_idxs = full_exp.data.index[row_mask]
-                                                    if gate_info['type'] == 'polygon':
-                                                        from matplotlib.path import Path
-                                                        v = gate_info['vertices']
-                                                        ch = gate_info['channels']
-                                                        path = Path(v)
-                                                        points = full_exp.data.loc[subset_idxs, ch].values
-                                                        is_in = path.contains_points(points)
-                                                        full_exp.data.loc[subset_idxs, '_temp_live_mask_reconstructed'] = is_in
-
-                                        # 2. Re-Apply Singlet Gate (if exists)
-                                        s_params = st.session_state.get('singlet_gate_params')
-                                        if s_params:
-                                            if s_params['type'] == 'polygon':
-                                                full_exp = bgater.apply_manual_gate(full_exp, "_temp_singlet_mask_manual", s_params['channels'][0], s_params['channels'][1], s_params['vertices'])
-
-                                        # 3. Final Assembly
-                                        df_export = full_exp.data.copy()
-
-                                        # Create "cells" column
-                                        if '_temp_live_mask_reconstructed' in df_export.columns:
-                                            df_export['cells'] = df_export['_temp_live_mask_reconstructed']
-                                        elif '_temp_live_labels' in df_export.columns and l_params and l_params.get('type') == 'label':
-                                            lbl = l_params['label']
-                                            df_export['cells'] = (df_export['_temp_live_labels'].astype(str) == str(lbl))
-                                        else:
-                                            # If no live gate, everything is 'cells' OR 'not cells'? Assuming all.
-                                            df_export['cells'] = True
-
-                                        # Create "singlets" column
-                                        if '_temp_singlet_mask_manual' in df_export.columns:
-                                            df_export['singlets'] = df_export['_temp_singlet_mask_manual']
-                                        elif s_params and s_params.get("type") == "mlp":
-                                            try:
-                                                from glow.active_learning.models import SingletClassifier
-                                                clf = SingletClassifier.load("data/singlet_model_full.pkl")
-                                                X = df_export[s_params["diff_channels"]].values
-                                                if np.max(X) > 10: X = np.log10(X + 1)
-                                                c_type = s_params.get("cell_type", "colo")
-                                                ids = np.zeros(len(X), dtype=int)
-                                                cts = np.array([c_type] * len(X))
-                                                preds = clf.predict(X, dataset_ids=ids, cell_types=cts)
-                                                df_export["singlets"] = (preds == 1)
-                                            except Exception as e:
-                                                st.warning(f"MLP Singlet calc failed: {e}")
-                                                df_export["singlets"] = False
-                                        elif s_params and s_params.get('type') == 'gmm_mahalanobis':
-                                             try:
-                                                X = df_export[s_params['channels']].values
-                                                d_mean = s_params['mean']
-                                                inv_cov = np.linalg.inv(s_params['cov'])
-                                                threshold = s_params.get('threshold', 2.5)
-                                                diff = X - d_mean
-                                                dist = np.sqrt(np.sum((diff @ inv_cov) * diff, axis=1))
-                                                df_export['singlets'] = (dist <= threshold)
-                                             except Exception:
-                                                 df_export['singlets'] = False
-                                        elif s_params and s_params.get('type') == 'per_cell_line':
-                                             # Handle Per-Cell-Line Singlet
-                                             df_export['singlets'] = False
-                                             gates = s_params['gates']
-                                             col_name = s_params['col']
-                                             for line_val, gate in gates.items():
-                                                 row_mask = (df_export[col_name].astype(str) == str(line_val))
-                                                 if not row_mask.any(): continue
-                                                 subset_idxs = df_export.index[row_mask]
-                                                 if gate['type'] == 'gmm_mahalanobis':
-                                                     ch = gate['channels']
-                                                     X_s = df_export.loc[subset_idxs, ch].values
-                                                     d_m = gate['mean']
-                                                     i_c = np.linalg.inv(gate['cov'])
-                                                     thr = gate.get('threshold', 2.5)
-                                                     df_s = X_s - d_m
-                                                     d_sq = np.sum((df_s @ i_c) * df_s, axis=1)
-                                                     df_export.loc[subset_idxs, 'singlets'] = (np.sqrt(d_sq) <= thr)
-                                                 elif gate['type'] == 'polygon':
-                                                     from matplotlib.path import Path
-                                                     v = gate['vertices']
-                                                     ch = gate['channels']
-                                                     path = Path(v)
-                                                     points = df_export.loc[subset_idxs, ch].values
-                                                     is_in = path.contains_points(points)
-                                                     df_export.loc[subset_idxs, 'singlets'] = is_in
-                                        else:
-                                            # Default False if no singlet gate defined
-                                            df_export['singlets'] = False # Or True if skipped?
-
-                                        # Safe-fill NaNs
-                                        df_export['cells'] = df_export['cells'].fillna(False).astype(bool)
-                                        df_export['singlets'] = df_export['singlets'].fillna(False).astype(bool)
-
-                                        # Enforce Logic: Singlets must be Cells
-                                        df_export.loc[~df_export['cells'], 'singlets'] = False
-
-                                        # MODE SELECTION
-                                        if export_mode == "Gated Population (Live + Singlets)":
-                                            # Filter ROWS
-                                            df_export = df_export[df_export['cells'] & df_export['singlets']].copy()
-                                            file_name = f"{experiment_name}_gated.csv.gz"
-                                        else:
-                                            file_name = f"{experiment_name}_full.csv.gz"
-
-                                        # Drop Unselected Channels
-                                        if export_only_selected_channels and st.session_state.get('selected_channels'):
-                                            all_ch = list(getattr(st.session_state.base_experiment, 'channels', []))
-                                            keep_ch = list(st.session_state.selected_channels)
-                                            to_drop = [c for c in all_ch if c not in keep_ch]
-                                            cols_to_drop = [c for c in to_drop if c in df_export.columns]
-                                            if cols_to_drop:
-                                                df_export.drop(columns=cols_to_drop, inplace=True)
-                                            # Defragment frame
-                                            df_export = df_export.copy()
-
-                                        # Cleanup temps
-                                        temp_cols = [c for c in df_export.columns if str(c).startswith('_temp_')]
-                                        if temp_cols: df_export.drop(columns=temp_cols, inplace=True)
-
-                                        # Compress using ZIP (More robust than single GZIP file)
-                                        import zipfile
-                                        buf = io.BytesIO()
-                                        csv_name = file_name.replace('.csv.gz', '.csv')
-                                        zip_name = file_name.replace('.csv.gz', '.zip')
-                                        
-                                        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-                                            zf.writestr(csv_name, df_export.to_csv(index=False))
-                                            
-                                        st.session_state.final_csv_export = buf.getvalue()
-                                        st.session_state.final_csv_name = zip_name
-                                        
-                                        st.success(f"Export ready: {zip_name} ({len(st.session_state.final_csv_export)/1024:.1f} KB)")
-                                    
-                                    except Exception as e:
-                                        st.error(f"Export failed: {e}")
-                                        import traceback
-                                        traceback.print_exc()
-
-                            if 'final_csv_export' in st.session_state and st.session_state.final_csv_export:
-                                st.download_button("Download Exported CSV (ZIP)", data=st.session_state.final_csv_export, file_name=st.session_state.final_csv_name, mime="application/zip")
-                                if st.button("Clear Export Cache"):
-                                    del st.session_state.final_csv_export
-                                    st.rerun()
-
-                            if st.button("Proceed to Analysis", key="btn_proceed_analysis_2"):
-                                with st.spinner("Preparing analysis..."):
-                                    # Copy of reconstruction logic to ensure Analysis Experiment is up to date
-                                    try:
-                                        base_an = st.session_state.base_experiment
-                                        full_exp_an = base_an.clone()
-                                        full_exp_an.data['cells'] = False
-                                        full_exp_an.metadata['cells'] = {'type': 'condition'}
-                                        full_exp_an.data['singlets'] = False
-                                        full_exp_an.metadata['singlets'] = {'type': 'condition'}
-                                        
-                                        bgater_an = GatingManager()
-                                        
-                                        # 1. LIVE Gate
-                                        l_params = st.session_state.get('live_gate_params')
-                                        if l_params:
-                                            if l_params['type'] == 'polygon':
-                                                full_exp_an = bgater_an.apply_manual_gate(full_exp_an, "_temp_live_mask_rec", l_params['channels'][0], l_params['channels'][1], l_params['vertices'])
-                                                full_exp_an.data['cells'] = full_exp_an.data["_temp_live_mask_rec"].astype(bool)
-                                            elif l_params['type'] == 'label':
-                                                gp = st.session_state.get('last_gating_params', {})
-                                                if gp:
-                                                    method_name = gp.get('method', 'density').lower() if isinstance(gp.get('method'), str) else 'density'
-                                                    res_exp = bgater_an.auto_gate_live_cells(full_exp_an, gp.get('x'), gp.get('y'), method=method_name, num_components=gp.get('comp', 2), keep=gp.get('keep', 0.9), sigma=gp.get('sigma', 2.0), eps=gp.get('eps', 0.05), min_samples=gp.get('min_samples', 50), use_outlier_removal=gp.get('use_outliers', False))
-                                                    lbl = l_params['label']
-                                                    if '_temp_live_labels' in res_exp.data.columns:
-                                                        full_exp_an.data['cells'] = (res_exp.data['_temp_live_labels'].astype(str) == str(lbl))
-                                            elif l_params['type'] == 'per_cell_line':
-                                                full_exp_an.data['cells'] = False
-                                                gates = l_params['gates']
-                                                col_name = l_params['col']
-                                                for line_val, gate_info in gates.items():
-                                                    row_mask = (full_exp_an.data[col_name].astype(str) == str(line_val))
-                                                    if not row_mask.any(): continue
-                                                    subset_idxs = full_exp_an.data.index[row_mask]
-                                                    if gate_info['type'] == 'polygon':
-                                                        from matplotlib.path import Path
-                                                        v = gate_info['vertices']
-                                                        ch = gate_info['channels']
-                                                        path = Path(v)
-                                                        points = full_exp_an.data.loc[subset_idxs, ch].values
-                                                        is_in = path.contains_points(points)
-                                                        full_exp_an.data.loc[subset_idxs, 'cells'] = is_in
-                                        else:
-                                            full_exp_an.data['cells'] = True
-
-                                        # 2. SINGLET Gate
-                                        s_params = st.session_state.get('singlet_gate_params')
-                                        if s_params:
-                                            if s_params['type'] == 'polygon':
-                                                full_exp_an = bgater_an.apply_manual_gate(full_exp_an, "_temp_singlet_mask_rec", s_params['channels'][0], s_params['channels'][1], s_params['vertices'])
-                                                full_exp_an.data['singlets'] = full_exp_an.data["_temp_singlet_mask_rec"].astype(bool)
-                                            elif s_params.get('type') == 'gmm_mahalanobis':
-                                                X = full_exp_an.data[s_params['channels']].values
-                                                d_mean = s_params['mean']
-                                                inv_cov = np.linalg.inv(s_params['cov'])
-                                                threshold = s_params.get('threshold', 2.5)
-                                                diff = X - d_mean
-                                                dist = np.sqrt(np.sum((diff @ inv_cov) * diff, axis=1))
-                                                full_exp_an.data['singlets'] = (dist <= threshold)
-                                            elif s_params.get("type") == "mlp":
-                                                try:
-                                                    from glow.active_learning.models import SingletClassifier
-                                                    clf = SingletClassifier.load("data/singlet_model_full.pkl")
-                                                    X = full_exp_an.data[s_params["diff_channels"]].values
-                                                    if np.max(X) > 10: X = np.log10(X + 1)
-                                                    c_type = s_params.get("cell_type", "colo")
-                                                    ids = np.zeros(len(X), dtype=int)
-                                                    cts = np.array([c_type] * len(X))
-                                                    preds = clf.predict(X, dataset_ids=ids, cell_types=cts)
-                                                    full_exp_an.data["singlets"] = (preds == 1)
-                                                except Exception as e:
-                                                    full_exp_an.data["singlets"] = False
-                                            elif s_params.get('type') == 'per_cell_line':
-                                                 gates = s_params['gates']
-                                                 col_name = s_params['col']
-                                                 for line_val, gate in gates.items():
-                                                     row_mask = (full_exp_an.data[col_name].astype(str) == str(line_val))
-                                                     if not row_mask.any(): continue
-                                                     subset_idxs = full_exp_an.data.index[row_mask]
-                                                     if gate['type'] == 'gmm_mahalanobis':
-                                                         ch = gate['channels']
-                                                         X_s = full_exp_an.data.loc[subset_idxs, ch].values
-                                                         d_m = gate['mean']
-                                                         i_c = np.linalg.inv(gate['cov'])
-                                                         thr = gate.get('threshold', 2.5)
-                                                         df_s = X_s - d_m
-                                                         d_sq = np.sum((df_s @ i_c) * df_s, axis=1)
-                                                         full_exp_an.data.loc[subset_idxs, 'singlets'] = (np.sqrt(d_sq) <= thr)
-                                                     elif gate['type'] == 'polygon':
-                                                         from matplotlib.path import Path
-                                                         v = gate['vertices']
-                                                         ch = gate['channels']
-                                                         path = Path(v)
-                                                         points = full_exp_an.data.loc[subset_idxs, ch].values
-                                                         is_in = path.contains_points(points)
-                                                         full_exp_an.data.loc[subset_idxs, 'singlets'] = is_in
-
-                                        # Dependency
-                                        full_exp_an.data.loc[~full_exp_an.data['cells'], 'singlets'] = False
-
-                                        # Cleanup
-                                        temp_c = [c for c in full_exp_an.data.columns if str(c).startswith('_temp_')]
-                                        if temp_c: full_exp_an.data.drop(columns=temp_c, inplace=True)
-
-                                        # Filter channels
-                                        if export_only_selected_channels and st.session_state.get('selected_channels'):
-                                            keep_ch = set(st.session_state.selected_channels)
-                                            if hasattr(base_an, 'channels'):
-                                                all_ch = list(base_an.channels)
-                                                to_drop = [c for c in all_ch if c not in keep_ch]
-                                                cols_to_drop = [c for c in to_drop if c in full_exp_an.data.columns]
-                                                if cols_to_drop: full_exp_an.data.drop(columns=cols_to_drop, inplace=True)
-                                                for c in to_drop:
-                                                    if c in full_exp_an.metadata: del full_exp_an.metadata[c]
-
-                                        st.session_state.analysis_experiment = full_exp_an
-
-                                    except Exception as e:
-                                        print(f"Error rebuilding analysis: {e}")
-
-                                st.session_state.gating_complete = True
-                                st.session_state.current_tab = "Analysis"
-                                st.rerun()
 
                 except Exception as e:
                     st.write(e) # Debug
