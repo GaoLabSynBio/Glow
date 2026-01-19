@@ -2625,6 +2625,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         else:
                                             st.session_state.run_compensation = False
                                             st.session_state.current_tab = "Analysis"
+
+                                        # Optimize Cache: Clear raw files now that we have analysis_experiment
+                                        if DataLoader:
+                                            DataLoader.clear_upload_cache()
                                             
                                         st.rerun()
 

@@ -109,6 +109,19 @@ class DataLoader:
         paths.sort(key=self._natural_sort_key)
         return paths
 
+    @staticmethod
+    def clear_upload_cache(target_dir="data/uploaded_raw"):
+        """
+        Clears the upload cache directory to free up space.
+        """
+        if os.path.exists(target_dir):
+            try:
+                shutil.rmtree(target_dir)
+                os.makedirs(target_dir, exist_ok=True)
+                print(f"Cache cleared: {target_dir}")
+            except Exception as e:
+                print(f"Failed to clear cache {target_dir}: {e}")
+
     def parse_file_paths_from_text(self, file_path_list_file):
         paths = []
         if not os.path.exists(file_path_list_file):

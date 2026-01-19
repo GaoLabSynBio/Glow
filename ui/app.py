@@ -42,6 +42,15 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'current_tab' not in st.session_state:
     st.session_state.current_tab = "Gating"
+    
+# Initial Cache Cleanup (Optimized Data Management)
+if 'cleanup_done' not in st.session_state and DataLoader:
+    # Clear active learning/temp data on fresh start
+    DataLoader.clear_upload_cache()
+    # Create necessary dirs if missing
+    os.makedirs("data/uploaded_raw", exist_ok=True)
+    st.session_state.cleanup_done = True
+
 
 # Sidebar Navigation
 st.sidebar.title("Navigation")
