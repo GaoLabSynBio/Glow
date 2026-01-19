@@ -2464,9 +2464,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     if '_temp_live_labels' in res_exp.data.columns:
                                                         matches = (res_exp.data['_temp_live_labels'].astype(str) == str(lbl))
                                                         full_exp.data['_temp_live_mask_reconstructed'] = matches
+                                                        # Register metadata to prevent Cytoflow crashes
+                                                        if '_temp_live_mask_reconstructed' not in full_exp.metadata:
+                                                            full_exp.metadata['_temp_live_mask_reconstructed'] = {'type': 'condition'}
                                             elif l_params['type'] == 'per_cell_line':
                                                 # Handle Per-Cell-Line Gating Reconstruction
                                                 full_exp.data['_temp_live_mask_reconstructed'] = False
+                                                if '_temp_live_mask_reconstructed' not in full_exp.metadata:
+                                                    full_exp.metadata['_temp_live_mask_reconstructed'] = {'type': 'condition'}
+
                                                 gates = l_params['gates']
                                                 col_name = l_params['col']
                                                 for line_val, gate_info in gates.items():

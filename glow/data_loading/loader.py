@@ -229,9 +229,73 @@ class DataLoader:
             except Exception as e:
                 print(f"Failed to create Tube for {meta.get('current_path')}: {e}")
 
+        # Modified Loading Logic: Handle disjoint channels by unioning per-tube Experiments
         if tubes:
-            import_op = cytoflow.ImportOp(tubes=tubes, conditions=import_conditions_schema)
-            experiment = import_op.apply()
-            return experiment
+            # Attempt standard import first (Optimized)
+            try:
+                import_op = cytoflow.ImportOp(tubes=tubes, conditions=import_conditions_schema)
+                experiment = import_op.apply()
+                return experiment
+            except Exception as e:
+                # Check for channel mismatch error or generic CytoflowOpError
+                msg = str(e)
+                if "doesn't have the same channels" in msg or "CytoflowOpError" in str(type(e)):
+                    print(f"Standard import failed ({msg}). Attempting manual channel union...")
+                    
+                    # Manual Union Strategy
+                    loaded_dfs = []
+                    combined_metadata = {}
+                    
+                    for tube in tubes:
+                        try:
+                            # Import single tube
+                            op = cytoflow.ImportOp(tubes=[tube], conditions=import_conditions_schema)
+                            ex = op.apply()
+                            loaded_dfs.append(ex.data)
+                            
+                            # Merge Metadata
+                            # Cytoflow requires metadata for all columns (channels & conditions)
+                            # We accumulate unique metadata entries.
+                            for k, v in ex.metadata.items():
+                                if k not in combined_metadata:
+                                    # Copy to avoid reference issues
+                                    combined_metadata[k] = v.copy() if isinstance(v, dict) else v
+                                else:
+                                    # If it exists, merge for conditions
+                                    existing = combined_metadata[k]
+                                    if isinstance(existing, dict) and existing.get('type') == 'condition':
+                                        current_vals = set(existing.get('values', []))
+                                        new_vals = v.get('values', [])
+                                        # Update values list with new seen values
+                                        updated_vals = list(current_vals.union(new_vals))
+                                        updated_vals.sort()
+                                        existing['values'] = updated_vals
+                                    # For channels, we assume metadata (voltage etc) is acceptable from the first source
+                                    
+                        except Exception as e_inner:
+                            print(f"Error loading individual tube {tube.file}: {e_inner}")
+                    
+                    if not loaded_dfs:
+                        return None
+                        
+                    # Concatenate all (Columns will be unioned, missing values -> NaN)
+                    combined_df = pd.concat(loaded_dfs, axis=0, ignore_index=True, sort=False)
+                    
+                    # Fill missing numeric channels with 0.0
+                    numeric_cols = combined_df.select_dtypes(include=[np.number]).columns
+                    combined_df[numeric_cols] = combined_df[numeric_cols].fillna(0.0)
+                    
+                    # Create unified experiment manually
+                    try:
+                        unified_experiment = cytoflow.Experiment()
+                        unified_experiment.data = combined_df
+                        unified_experiment.metadata = combined_metadata
+                        return unified_experiment
+                    except Exception as e_final:
+                         print(f"Failed to create unified experiment: {e_final}")
+                         return None
+                else:
+                    # Propagate other errors
+                    raise e
         else:
             return None

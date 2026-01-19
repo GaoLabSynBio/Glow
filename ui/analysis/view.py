@@ -26,6 +26,35 @@ def render_analysis_tab():
         st.error("No experiment loaded. Please go back to Gating tab.")
         return
 
+    # --- UNIFY COMPENSATED CHANNEL NAMES ---
+    # Requirement: Rename "Comp_{fluor}-A" (or comp_) to "Comp-{fluor}-A"
+    # Working on a clone/copy to avoid modifying shared session state used by Gating
+    if hasattr(experiment, 'clone'):
+        experiment = experiment.clone()
+    
+    rename_map = {}
+    for col in experiment.data.columns:
+        # Check for comp_ or Comp_ prefix (but not Comp-)
+        if (col.startswith("comp_") or col.startswith("Comp_")) and not col.startswith("Comp-"):
+             parts = col.split('_', 1)
+             if len(parts) == 2:
+                 suffix = parts[1]
+                 new_name = f"Comp-{suffix}"
+                 rename_map[col] = new_name
+    
+    if rename_map:
+        experiment.data = experiment.data.rename(columns=rename_map)
+        # Update session state gates if they reference old names
+        if 'positive_gates' in st.session_state:
+             for g in st.session_state.positive_gates:
+                 if g.get('channel') in rename_map:
+                     old_name = g['channel']
+                     new_name = rename_map[old_name]
+                     g['channel'] = new_name
+                     # Try to update label if it looks generic
+                     if 'label' in g:
+                         g['label'] = g['label'].replace(old_name, new_name)
+
     # -------------------------------------------------------------------------
     # 2. Summary Statistics Table
     # -------------------------------------------------------------------------
@@ -244,7 +273,7 @@ def render_analysis_tab():
         
         # --- Compensation Switch ---
         # Check if compensated channels exist
-        comp_cols = [c for c in all_numeric if c.startswith("comp_")]
+        comp_cols = [c for c in all_numeric if c.startswith("Comp-")]
         has_comp = len(comp_cols) > 0
         use_comp = False
         
@@ -271,16 +300,16 @@ def render_analysis_tab():
             step1 = [c for c in all_numeric if c not in ignore_cols and c in user_selected]
             
             # --- Apply Compensation Logic ---
-            # If use_comp, we replace original channels with "comp_" versions IF available
+            # If use_comp, we replace original channels with "Comp-" versions IF available
             final_selection = []
             
             if use_comp:
                 for c in step1:
-                    comp_name = f"comp_{c}"
+                    comp_name = f"Comp-{c}"
                     if comp_name in all_numeric:
                         final_selection.append(comp_name)
                     else:
-                        # User request: if a channel does not have comp_xxx-A channel, just show that channel
+                        # User request: if a channel does not have Comp-xxx-A channel, just show that channel
                         final_selection.append(c)
             else:
                 final_selection = step1
@@ -297,11 +326,11 @@ def render_analysis_tab():
             # Also apply comp check here just in case
             source_cols = all_numeric
             if use_comp:
-                 comp_set = set(x for x in all_numeric if x.startswith("comp_"))
-                 shadowed = set(x.replace("comp_", "") for x in comp_set)
+                 comp_set = set(x for x in all_numeric if x.startswith("Comp-"))
+                 shadowed = set(x.replace("Comp-", "") for x in comp_set)
                  source_cols = []
                  for c in all_numeric:
-                     if c.startswith("comp_"):
+                     if c.startswith("Comp-"):
                          source_cols.append(c)
                      elif c in shadowed:
                          continue
@@ -318,6 +347,22 @@ def render_analysis_tab():
              # Just show whatever is numeric and not ignored
              valid_channels = sorted([c for c in experiment.data.columns if pd.api.types.is_numeric_dtype(experiment.data[c]) and c not in ignore_cols])
 
+        # --- Zipped CSV / Special Context Handling ---
+        if "Experiment_Name" in experiment.data.columns:
+             # Requirement: Only selectable channels are fluorophore-A channels and no Experiment_Name
+             strict_channels = []
+             for c in valid_channels:
+                 if c == "Experiment_Name":
+                     continue
+                 # Only allow channels ending in "-A" (Area) AND are fluorophores (excludes Scatter)
+                 if c.endswith("-A") and is_fluorophore(c):
+                     strict_channels.append(c)
+             
+             if strict_channels:
+                 valid_channels = strict_channels
+             else:
+                 # Fallback: at least remove Experiment_Name
+                 valid_channels = [vc for vc in valid_channels if vc != "Experiment_Name"]
 
         # Use columns for layout
         c1, c2 = st.columns([1, 2])
