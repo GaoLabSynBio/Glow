@@ -174,84 +174,100 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
                     extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path']]
 
-                    # 2. Add New Column Interface
-                    def add_dir_custom_column():
-                         new_col = st.session_state.get("dir_new_col_input", "").strip()
-                         if new_col:
-                              if new_col not in st.session_state.dir_custom_cols:
-                                   st.session_state.dir_custom_cols.append(new_col)
-                              
-                              current = st.session_state.get("dir_cols_selected", [])
-                              if new_col not in current:
-                                   st.session_state.dir_cols_selected = current + [new_col]
-                              st.session_state.dir_new_col_input = ""
+                    # 2. Configure View Options
+                    # Logic for default selections
+                    default_cols = ["Replicate", "Cell_Line", "Experiment_Name", "Timepoint", "Concentration"]
+                    preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
+                    extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path']]
 
-                    c1, c2 = st.columns([0.7, 0.3])
-                    with c1:
-                         st.text_input("Add Custom Column", key="dir_new_col_input", on_change=add_dir_custom_column, placeholder="Type column name and press Enter")
-                    with c2:
-                         st.write("")
-                         st.write("")
-                         st.button("Add", key="dir_add_btn", on_click=add_dir_custom_column)
-
-                    # 3. Available Options
+                    # Available options computation
                     all_selectable = default_cols + extra_opts + st.session_state.dir_custom_cols
                     seen = set()
                     all_selectable = [x for x in all_selectable if not (x in seen or seen.add(x))]
 
-                    # Sanitize
-                    if 'dir_cols_selected' in st.session_state:
-                         st.session_state.dir_cols_selected = [c for c in st.session_state.dir_cols_selected if c in all_selectable]
-
-                    # 4. Defaults
+                    # Initialize Default Selection (First Run Only)
                     if 'dir_cols_selected' not in st.session_state:
                          default_selection = ["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else [])
                          st.session_state.dir_cols_selected = [c for c in default_selection if c in all_selectable]
-
-                    cols_to_use = st.multiselect("Select columns to annotate:",
-                                                options=all_selectable,
-                                                key="dir_cols_selected")
-
+                    
                     # 5. Prepare DataFrame from Persistent State
-                    df_preview = st.session_state.working_df_dir
+                    # Ensure selected columns exist in the source of truth
+                    # (We use the LAST known selection to prep the view)
+                    current_view_cols = st.session_state.dir_cols_selected
+                    for col in current_view_cols:
+                        if col not in st.session_state.working_df_dir.columns:
+                            st.session_state.working_df_dir[col] = ""
 
-
-                    # Ensure selected columns exist
-                    for col in cols_to_use:
-                        if col not in df_preview.columns:
-                            df_preview[col] = "" # Default to empty string
-
-                    # Fix types for Editor (Streamlit is strict about types)
-                    # Force string type for TextColumn fields to avoid Arrow/Streamlit errors with NaN/Float
+                    # Ensure types are string for text columns to prevent Streamlit errors
                     for col in ["Experiment_Name", "Cell_Line", "Replicate", "condition", "display_name", "original_path"]:
-                        if col in df_preview.columns:
-                            df_preview[col] = df_preview[col].fillna("").astype(str)
+                        if col in st.session_state.working_df_dir.columns:
+                            st.session_state.working_df_dir[col] = st.session_state.working_df_dir[col].fillna("").astype(str)
 
                     # Reorder/Select columns for editor
-                    display_cols = ['display_name', 'condition'] + cols_to_use + ['original_path']
+                    display_cols = ['display_name', 'condition'] + current_view_cols + ['original_path']
+                    
+                    # Create a specific view for the editor
+                    df_view = st.session_state.working_df_dir[display_cols].copy()
 
-                    # 3. Enhanced Editor
-                    # Removed constrained SelectboxColumn for Cell_Line to allow new inputs.
-                    edited_df = st.data_editor(df_preview[display_cols],
-                                                column_config={
-                                                    "display_name": st.column_config.TextColumn("Sample Name", required=True),
-                                                    "condition": st.column_config.TextColumn("Folder (Auto)", disabled=True),
-                                                    "original_path": st.column_config.TextColumn("Original Path", disabled=True),
-                                                    "Replicate": st.column_config.TextColumn("Replicate #"),
-                                                    "Experiment_Name": st.column_config.TextColumn("Experiment Name"),
-                                                    "Cell_Line": st.column_config.TextColumn("Cell Line"),
-                                                    "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
-                                                },
-                                                width="stretch",
-                                                num_rows="fixed",
-                                                key="dir_editor")
+                    # 3. Enhanced Editor WRAPPED IN FORM
+                    # Moving "Add Custom Column" INSIDE the form ensures pending edits are submitted when you click "Add".
+                    with st.form("dir_metadata_form"):
+                        # A. Add Custom Column UI (Safety: Submitting valid form saves data)
+                        c1, c2 = st.columns([0.7, 0.3])
+                        new_col_name = c1.text_input("Add Custom Column (Clicking Add saves current table data)")
+                        add_col_btn = c2.form_submit_button("Add New Column")
+                        
+                        # B. Column Selector logic is tricky inside forms.
+                        # We display the multiselect, but changes only apply on SUBMIT (Add Column or Confirm).
+                        # This matches the user request for safety.
+                        cols_selected = st.multiselect("Select columns to annotate (Click 'Update View' or 'Load' to apply changes):",
+                                                    options=all_selectable,
+                                                    default=st.session_state.dir_cols_selected)
+                        
+                        update_view_btn = st.form_submit_button("Update View / Save Progress")
 
-                    # Persist edits
-                    if edited_df is not None:
-                         st.session_state.working_df_dir[edited_df.columns] = edited_df
+                        # C. The Editor
+                        edited_df = st.data_editor(df_view,
+                                                    column_config={
+                                                        "display_name": st.column_config.TextColumn("Sample Name", required=True),
+                                                        "condition": st.column_config.TextColumn("Folder (Auto)", disabled=True),
+                                                        "original_path": st.column_config.TextColumn("Original Path", disabled=True),
+                                                        "Replicate": st.column_config.TextColumn("Replicate #"),
+                                                        "Experiment_Name": st.column_config.TextColumn("Experiment Name"),
+                                                        "Cell_Line": st.column_config.TextColumn("Cell Line"),
+                                                        "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
+                                                    },
+                                                    width="stretch",
+                                                    num_rows="fixed",
+                                                    key="dir_editor")
+                        
+                        confirm_dir = st.form_submit_button("Confirm and Load Directory files")
 
-                    if st.button("Confirm and Load Directory files"):
-                        with st.spinner("Processing files..."):
+                    # --- LOGIC HANDLING ---
+                    # 1. First, SAVE ANY PENDING DATA if any button was clicked
+                    if add_col_btn or update_view_btn or confirm_dir:
+                         if edited_df is not None:
+                              st.session_state.working_df_dir.update(edited_df)
+                         
+                         # Save column selection
+                         st.session_state.dir_cols_selected = cols_selected
+
+                    # 2. Handle "Add Column" specifically
+                    if add_col_btn and new_col_name:
+                         cleaned_name = new_col_name.strip()
+                         if cleaned_name and cleaned_name not in st.session_state.dir_custom_cols:
+                              st.session_state.dir_custom_cols.append(cleaned_name)
+                              if cleaned_name not in st.session_state.dir_cols_selected:
+                                   st.session_state.dir_cols_selected.append(cleaned_name)
+                         st.rerun() # Rerun to update the Editor View with new column
+                    
+                    # 3. Handle "Update View"
+                    if update_view_btn:
+                         st.rerun()
+
+                    # 4. Handle "Confirm"
+                    if confirm_dir: # already saved data above
+
                             clear_experiment_state()
                             # Auto-Uppercase Manual Input for Cell_Line
                             if 'Cell_Line' in edited_df.columns:
@@ -305,6 +321,8 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
 
                 if st.button("Generate Preview from Uploads"):
                      meta = loader.generate_preview_metadata(st.session_state.uploaded_paths)
+                     for m in meta:
+                        m['Cell_Line'] = detect_cell_line_from_path(m.get('original_path'))
                      st.session_state.preview_meta = meta
                      st.session_state.working_df = pd.DataFrame(meta)
                      # Do NOT reset custom columns or selection to allow persistence
@@ -322,89 +340,92 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
 
                     render_metadata_upload_section(key_prefix="upload", reset_keys=['working_df'])
 
-                    # 1. Manage Custom Columns Persistence
-                    if 'user_custom_cols' not in st.session_state:
-                        st.session_state.user_custom_cols = []
-
+                    # 2. Configure View Options for Uploads
                     default_cols = ["Replicate", "Cell_Line", "Experiment_Name", "Timepoint", "Concentration"]
                     preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
                     extra_opts = [c for c in preview_df_cols if c not in default_cols and c not in ['display_name', 'condition', 'original_path']]
 
-                    # 2. Add New Column Interface
-                    def add_custom_column():
-                        new_col = st.session_state.get("new_col_input", "").strip()
-                        if new_col:
-                            # Add to custom columns list if not present
-                            if new_col not in st.session_state.user_custom_cols:
-                                st.session_state.user_custom_cols.append(new_col)
-                            
-                            # Add to selection list if not present
-                            current_selection = st.session_state.get("upload_cols_selected", [])
-                            if new_col not in current_selection:
-                                st.session_state.upload_cols_selected = current_selection + [new_col]
-                            
-                            # Clear input
-                            st.session_state.new_col_input = ""
-
-                    c1, c2 = st.columns([0.7, 0.3])
-                    with c1:
-                        st.text_input("Add Custom Column", key="new_col_input", on_change=add_custom_column, placeholder="Type column name and press Enter")
-                    with c2:
-                        st.write("") # Spacer
-                        st.write("")
-                        st.button("Add", on_click=add_custom_column)
-
                     # 3. Define Available Options
                     available_options = default_cols + extra_opts + st.session_state.user_custom_cols
-                    # Deduplicate while preserving order
                     seen = set()
                     available_options = [x for x in available_options if not (x in seen or seen.add(x))]
-
-                    # Sanitize existing selection to avoid errors if options changed
-                    if 'upload_cols_selected' in st.session_state:
-                         st.session_state.upload_cols_selected = [c for c in st.session_state.upload_cols_selected if c in available_options]
 
                     # 4. Initialize Selection Default (First Run Only)
                     if 'upload_cols_selected' not in st.session_state:
                         default_selection = ["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else [])
-                        # Ensure defaults are valid options
                         st.session_state.upload_cols_selected = [c for c in default_selection if c in available_options]
 
-                    # 5. Multiselect for Display/Removal
-                    cols_to_use = st.multiselect("Selected Metadata Columns:",
-                                                options=available_options,
-                                                key="upload_cols_selected")
+                    # 5. Prepare View
+                    current_view_cols = st.session_state.upload_cols_selected
+                    
+                    # Sync Columns
+                    for col in current_view_cols:
+                        if col not in st.session_state.working_df.columns:
+                            st.session_state.working_df[col] = ""
 
-                    df_preview = st.session_state.working_df
-                    for col in cols_to_use:
-                        if col not in df_preview.columns:
-                            df_preview[col] = ""
-
+                    # Sync Types
                     for col in ["Experiment_Name", "Cell_Line", "Replicate", "condition", "display_name", "original_path"]:
-                        if col in df_preview.columns:
-                            df_preview[col] = df_preview[col].fillna("").astype(str)
+                        if col in st.session_state.working_df.columns:
+                             st.session_state.working_df[col] = st.session_state.working_df[col].fillna("").astype(str)
 
-                    display_cols = ['display_name', 'condition'] + cols_to_use + ['original_path']
+                    # Slice for Editor
+                    display_cols = ['display_name', 'condition'] + current_view_cols + ['original_path']
+                    df_view = st.session_state.working_df[display_cols].copy()
 
-                    edited_df = st.data_editor(df_preview[display_cols],
-                                                column_config={
-                                                    "display_name": st.column_config.TextColumn("Sample Name", required=True),
-                                                    "condition": st.column_config.TextColumn("Folder (Auto)", disabled=True),
-                                                    "original_path": st.column_config.TextColumn("Original Path", disabled=True),
-                                                    "Replicate": st.column_config.TextColumn("Replicate #"),
-                                                    "Experiment_Name": st.column_config.TextColumn("Experiment Name"),
-                                                    "Cell_Line": st.column_config.TextColumn("Cell Line"),
-                                                    "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
-                                                },
-                                                width="stretch",
-                                                num_rows="fixed",
-                                                key="upload_editor")
+                    # WRAPPED IN FORM to prevent auto-refresh on every keystroke
+                    with st.form("upload_metadata_form"):
+                        # A. Add Custom Column UI (Safety: Submitting valid form saves data)
+                        c1, c2 = st.columns([0.7, 0.3])
+                        new_col_name = c1.text_input("Add Custom Column (Clicking Add saves current table data)")
+                        add_col_btn = c2.form_submit_button("Add New Column")
+                        
+                        # B. Column Selector logic
+                        cols_selected = st.multiselect("Select columns to annotate (Click 'Update View' or 'Load' to apply changes):",
+                                                    options=available_options,
+                                                    default=st.session_state.upload_cols_selected)
 
-                    # Persist edits to working_df so they survive column changes
-                    if edited_df is not None:
-                         st.session_state.working_df[edited_df.columns] = edited_df
+                        update_view_btn = st.form_submit_button("Update View / Save Progress")
 
-                    if st.button("Confirm and Load Uploaded files"):
+                        # C. Editor
+                        edited_df = st.data_editor(df_view,
+                                                    column_config={
+                                                        "display_name": st.column_config.TextColumn("Sample Name", required=True),
+                                                        "condition": st.column_config.TextColumn("Folder (Auto)", disabled=True),
+                                                        "original_path": st.column_config.TextColumn("Original Path", disabled=True),
+                                                        "Replicate": st.column_config.TextColumn("Replicate #"),
+                                                        "Experiment_Name": st.column_config.TextColumn("Experiment Name"),
+                                                        "Cell_Line": st.column_config.TextColumn("Cell Line"),
+                                                        "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
+                                                    },
+                                                    width="stretch",
+                                                    num_rows="fixed",
+                                                    key="upload_editor")
+                        
+                        confirm_upload = st.form_submit_button("Confirm and Load Uploaded files")
+
+                    # --- LOGIC HANDLING ---
+                    # 1. First, SAVE ANY PENDING DATA
+                    if add_col_btn or update_view_btn or confirm_upload:
+                         if edited_df is not None:
+                              st.session_state.working_df.update(edited_df)
+                         
+                         st.session_state.upload_cols_selected = cols_selected
+
+                    # 2. Handle "Add Column"
+                    if add_col_btn and new_col_name:
+                         cleaned_name = new_col_name.strip()
+                         if cleaned_name and cleaned_name not in st.session_state.user_custom_cols:
+                              st.session_state.user_custom_cols.append(cleaned_name)
+                              if cleaned_name not in st.session_state.upload_cols_selected:
+                                   st.session_state.upload_cols_selected.append(cleaned_name)
+                         st.rerun()
+                    
+                    # 3. Handle "Update View"
+                    if update_view_btn:
+                         st.rerun()
+
+                    if confirm_upload:
+                         # Data already saved above
                         with st.spinner("Processing files..."):
                             clear_experiment_state()
                             # Auto-Uppercase Manual Input for Cell_Line
