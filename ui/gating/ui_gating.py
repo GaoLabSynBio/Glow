@@ -1706,6 +1706,59 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             else:
                                 viz_df_full = df_gated
 
+                            # --- Determine Gated Status for UI Cleanup ---
+                            is_gated = False
+                            if active_line_singlets:
+                                is_gated = (active_line_singlets in st.session_state.get('cell_line_singlet_gates', {}))
+                            else:
+                                is_gated = st.session_state.get('doublets_removed', False)
+
+                            # If gated, only show the gated population for verification
+                            if is_gated:
+                                if active_line_singlets and 'cell_line_singlet_gates' in st.session_state:
+                                    gate = st.session_state.cell_line_singlet_gates[active_line_singlets]
+                                else:
+                                    gate = st.session_state.get('singlet_gate_params')
+
+                                if gate:
+                                    if gate['type'] == 'polygon':
+                                        from matplotlib.path import Path
+                                        path = Path(gate['vertices'])
+                                        is_in = path.contains_points(viz_df_full[[d_x, d_y]].values)
+                                        viz_df_full = viz_df_full[is_in].copy()
+                                    elif gate['type'] == 'gmm_mahalanobis':
+                                        d_m = gate['mean']
+                                        i_c = np.linalg.inv(gate['cov'])
+                                        thr = gate.get('threshold', 2.5)
+                                        X_v = viz_df_full[gate['channels']].values
+                                        df_v = X_v - d_m
+                                        d_sq = np.sum((df_v @ i_c) * df_v, axis=1)
+                                        viz_df_full = viz_df_full[np.sqrt(d_sq) <= thr].copy()
+                                    elif gate['type'] == 'mlp':
+                                        # Use stored labels or re-run if needed
+                                        # For simplicity, if we are in Verification mode, we assume df_gated is already filtered correctly
+                                        # (which it is for Global, but for Per-Line we use viz_df_full which we just filtered above if it was polygon/gmm)
+                                        # If MLP, we should probably just trust df_gated if it's already the subset
+                                        pass
+
+                            # --- Fast Density Calculation for Singlets ---
+                            try:
+                                x_d = np.log10(viz_df_full[d_x] + 1) if d_is_log else viz_df_full[d_x]
+                                y_d = np.log10(viz_df_full[d_y] + 1) if d_is_log else viz_df_full[d_y]
+                                mask_v = np.isfinite(x_d) & np.isfinite(y_d)
+                                x_c, y_c = x_d[mask_v], y_d[mask_v]
+
+                                if len(x_c) > 0:
+                                    H, xedges, yedges = np.histogram2d(x_c, y_c, bins=100)
+                                    x_bins = np.digitize(x_c, xedges) - 1
+                                    y_bins = np.digitize(y_c, yedges) - 1
+                                    x_bins = np.clip(x_bins, 0, H.shape[0]-1)
+                                    y_bins = np.clip(y_bins, 0, H.shape[1]-1)
+                                    viz_df_full['Density'] = 0.0
+                                    viz_df_full.loc[mask_v, 'Density'] = H[x_bins, y_bins]
+                            except Exception:
+                                pass
+
                             # --- Auto-Gate Calculation (Singlets - GMM on Linear Data) ---
                             # Resolved default vs session state for singlet method
                             # --- MANUAL MODE OVERRIDE ---
@@ -1734,8 +1787,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     apx_ = [v[0] for v in apv] + [apv[0][0]]
                                     apy_ = [v[1] for v in apv] + [apv[0][1]]
                                     
-                                    fig_m.add_trace(go.Scatter(x=apx_, y=apy_, mode="lines",
-                                                            line=dict(color="lime", width=3, dash="dash"), name="Applied Manual Gate"))
+                                    fig_m.add_trace(go.Scatter(x=apx_, y=apy_, mode="lines+markers",
+                                                            line=dict(color="lime", width=4), 
+                                                            marker=dict(size=6, color="lime"),
+                                                            name="Singlet Gate (Manual)"))
 
                                 # Visualise Pending Selection
                                 if st.session_state.get('pending_doublet_verts'):
@@ -1982,18 +2037,30 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             # Use categorical column for Plotly to ensure discrete colors
                                             viz_df["Singlet_Cat"] = viz_df["Singlet"].apply(lambda x: "Singlet" if x==1 else "Doublet")
 
-                                            # Plasma Colors: Doublet (0) -> Purple (#0d0887), Singlet (1) -> Yellow (#f0f921)
-                                            color_map_singlet = {"Doublet": "#0d0887", "Singlet": "#f0f921"}
+                                            # Color by Density if gated, else by Classification
+                                            color_col_mlp = "Singlet_Cat"
+                                            color_map_mlp = {"Doublet": "#0d0887", "Singlet": "#f0f921"}
+                                            colorscale_mlp = None
 
-                                            fig_mlp = px.scatter(viz_df, x=d_x, y=d_y, color="Singlet_Cat", title="Singlet Detection",
-                                                               color_discrete_map=color_map_singlet, opacity=0.6,
+                                            if is_gated:
+                                                color_col_mlp = "Density"
+                                                color_map_mlp = None
+                                                colorscale_mlp = "Viridis"
+
+                                            fig_mlp = px.scatter(viz_df, x=d_x, y=d_y, color=color_col_mlp, title="Singlet Detection",
+                                                               color_discrete_map=color_map_mlp,
+                                                               color_continuous_scale=colorscale_mlp,
+                                                               opacity=0.6,
                                                                log_x=d_is_log, log_y=d_is_log, render_mode="svg")
+                                            
+                                            # Legend Title logic
+                                            l_title = "Prediction" if not is_gated else "Density"
+
                                             fig_mlp.update_layout(
                                                 plot_bgcolor="white",
                                                 paper_bgcolor="white",
                                                 dragmode="pan",
                                                 clickmode="event+select",
-                                                legend_title_text="Prediction",
                                                 font=dict(color="black"),
                                                 xaxis=dict(
                                                     color="black",
@@ -2010,12 +2077,36 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     gridcolor="lightgray"
                                                 ),
                                                 legend=dict(
-                                                    title=dict(text="Prediction", font=dict(color="black")),
+                                                    title=dict(text=l_title if not is_gated else "", font=dict(color="black")),
                                                     font=dict(color="black")
                                                 )
                                             )
                                             unc_trace = get_uncertainty_trace(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y)
                                             if unc_trace: fig_mlp.add_trace(unc_trace)
+
+                                            # Draw Boundary for MLP Singlets for consistency
+                                            try:
+                                                from glow.gating.boundary import compute_density_boundary
+                                                s_subset = viz_df[viz_df["Singlet"] == 1]
+                                                if len(s_subset) > 10:
+                                                    s_hull_x, s_hull_y = None, None
+                                                    if d_is_log:
+                                                        pts = np.log10(s_subset[[d_x, d_y]].values + 1)
+                                                        bx, by = compute_density_boundary(pts, percentile=95)
+                                                        if bx is not None:
+                                                            s_hull_x, s_hull_y = 10**bx - 1, 10**by - 1
+                                                    else:
+                                                        pts = s_subset[[d_x, d_y]].values
+                                                        s_hull_x, s_hull_y = compute_density_boundary(pts, percentile=95)
+                                                    
+                                                    if s_hull_x is not None:
+                                                        # After gating, this line IS the selection boundary
+                                                        fig_mlp.add_trace(go.Scatter(x=s_hull_x, y=s_hull_y, mode='lines',
+                                                                                line=dict(color='black', width=4 if is_gated else 2, dash='solid' if is_gated else 'dash'),
+                                                                                name="Singlet Gate" if is_gated else "MLP Boundary"))
+                                            except Exception:
+                                                pass
+
                                             selection = st.plotly_chart(fig_mlp, width="stretch", on_select="rerun", selection_mode="box", key="mlp_singlet_plot")
 
                                             canvas_title_s = "Singlet Detection"
@@ -2037,14 +2128,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             def _reject_s_callback():
                                                 # st.session_state[f"s_method{ukey}"] = "GMM (Auto-Ellipse)"
                                                 st.session_state.doublet_manual_mode = True
-
-                                            # Determine Disable State
-                                            is_gated = False
-                                            if active_line_singlets:
-                                                if active_line_singlets in st.session_state.get('cell_line_singlet_gates', {}):
-                                                    is_gated = True
-                                            elif st.session_state.get('doublets_removed'):
-                                                is_gated = True
 
                                             col_mr.button("❌ Reject / Manual Gate", key=f"reject_mlp_{ukey}", on_click=_reject_s_callback, disabled=is_gated)
 
@@ -2159,33 +2242,23 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             ell_x_plot = ell_x
                                             ell_y_plot = ell_y
 
-                                        # USER REQ: "density should be each cell but colored with density it has"
-                                        # We use Gaussian KDE to estimate density for each point -> color by density
-
-                                        # Stack X and Y for KDE
-                                        # We use the PLOT coordinates (Linear or Log transformed) for visual density
-                                        # Fast density via histogram (Count)
-                                        xy = np.vstack([x_to_plot, y_to_plot])
-
-                                        try:
-                                            z_density = gaussian_kde(xy)(xy)
+                                        # User Request: Use Fast Density (Histogram) for consistency
+                                        color_vals = 'blue'
+                                        if 'Density' in viz_df.columns:
                                             # Sort to plot high density on top
-                                            idx_sort = z_density.argsort()
+                                            idx_sort = viz_df['Density'].argsort()
+                                            viz_df = viz_df.iloc[idx_sort]
                                             x_to_plot = x_to_plot.iloc[idx_sort] if hasattr(x_to_plot, 'iloc') else x_to_plot[idx_sort]
                                             y_to_plot = y_to_plot.iloc[idx_sort] if hasattr(y_to_plot, 'iloc') else y_to_plot[idx_sort]
-                                            z_density = z_density[idx_sort]
-                                        except Exception:
-                                            # Fallback if KDE fails (singular matrix)
-                                            z_density = 'blue'
+                                            color_vals = viz_df['Density']
 
                                         # Use Scatter (SVG) instead of Scattergl for reliable individual point selection
-                                        # Scattergl can have issues with hit-testing on some systems/browsers and resets context
                                         fig_d.add_trace(go.Scatter(
                                             x=x_to_plot, y=y_to_plot,
                                             mode='markers',
                                             marker=dict(
-                                                size=4, # Slightly larger for easier clicking
-                                                color=z_density,
+                                                size=4,
+                                                color=color_vals,
                                                 colorscale='Viridis',
                                                 showscale=True,
                                                 colorbar=dict(
@@ -2194,13 +2267,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 )
                                             ),
                                             name='Events',
-                                            # Ensure this trace handles selection
-                                            selected=dict(marker=dict(color='orange', size=6)), # Visual feedback on selection
+                                            selected=dict(marker=dict(color='orange', size=6)),
                                             unselected=dict(marker=dict(opacity=0.5))
                                         ))
 
                                         # Auto-Gate Ellipse -> Converted to 5-Point Polygon (Pentagon)
-                                        # User Req: "auto selection for singlets should be 5 points connected by lines"
                                         theta_poly = np.linspace(0, 2*np.pi, 6) # 6 points to close the loop (5 sides)
                                         ell_x_poly = d_mean[0] + 2.5 * lambda_d[0] * v_d[0, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[0, 1] * np.sin(theta_poly)
                                         ell_y_poly = d_mean[1] + 2.5 * lambda_d[0] * v_d[1, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[1, 1] * np.sin(theta_poly)
@@ -2208,11 +2279,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         ell_x_plot = np.log10(ell_x_poly + 1) if d_is_log else ell_x_poly
                                         ell_y_plot = np.log10(ell_y_poly + 1) if d_is_log else ell_y_poly
 
-                                        # Draw the Auto-Gate
+                                        # Draw the Singlet Gate (Auto/GMM)
+                                        # Use a slightly thicker line if it's the final choice
                                         fig_d.add_trace(go.Scatter(x=ell_x_plot, y=ell_y_plot, mode='lines+markers',
-                                                                line=dict(color='black', width=3), # User Request: Black full line
+                                                                line=dict(color='black', width=4 if is_gated else 3), 
                                                                 marker=dict(size=6, color='black'),
-                                                                name="Auto Singlets"))
+                                                                name="Singlet Gate" if is_gated else "Auto Singlets"))
 
                                         # Applied Manual Gate (Persistence)
                                         if "singlet_gate_params" in st.session_state and st.session_state.singlet_gate_params.get("type") == "polygon":
@@ -2223,7 +2295,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 apx_ = np.log10(np.array(apx_) + 1)
                                                 apy_ = np.log10(np.array(apy_) + 1)
                                             fig_d.add_trace(go.Scatter(x=apx_, y=apy_, mode="lines+markers",
-                                                                    line=dict(color="lime", width=3, dash="dash"), name="Applied Manual Gate"))
+                                                                    line=dict(color="lime", width=4), 
+                                                                    marker=dict(size=6, color="lime"),
+                                                                    name="Singlet Gate (Manual)"))
 
                                         # Manual Gate Pending
                                         if st.session_state.get('pending_doublet_verts'):
@@ -2334,14 +2408,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         # Actions
 
                                         # Accept Auto
-                                        # Determine Disable State (GMM)
-                                        is_gated = False
-                                        if active_line_singlets:
-                                            if active_line_singlets in st.session_state.get('cell_line_singlet_gates', {}):
-                                                is_gated = True
-                                        elif st.session_state.get('doublets_removed'):
-                                            is_gated = True
-
                                         btn_label_s = "✅ Accept Auto-Singlets"
                                         if active_line_singlets:
                                             btn_label_s = f"✅ Accept Singlets for {active_line_singlets}"
@@ -2779,6 +2845,25 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             do_compensation = st.checkbox("Run Compensation before Analysis (Optional)", key="enable_comp_step")
 
                             if st.button("✅ Finalize Gating & Proceed to Analysis", type="primary", key="proceed_analysis_main"):
+                                # --- Validation for Multi-Line Gating ---
+                                if is_multi_line_meta:
+                                    all_lines = set(unique_cell_lines)
+                                    live_done = set(st.session_state.get('cell_line_gates', {}).keys())
+                                    singlet_done = set(st.session_state.get('cell_line_singlet_gates', {}).keys())
+                                    
+                                    missing_live = all_lines - live_done
+                                    missing_singlet = all_lines - singlet_done
+                                    
+                                    if missing_live or missing_singlet:
+                                        err_msg = "### 🛑 Gating Incomplete\n\n"
+                                        err_msg += "You must finish gating all cell lines before proceeding to analysis.\n\n"
+                                        if missing_live:
+                                            err_msg += f"**Missing Live/Dead Gate:** {', '.join(missing_live)}\n\n"
+                                        if missing_singlet:
+                                            err_msg += f"**Missing Singlet Gate:** {', '.join(missing_singlet)}\n\n"
+                                        st.error(err_msg)
+                                        st.stop()
+
                                 with st.spinner("Finalizing analysis dataset..."):
                                     # --- Reconstruction Logic for Analysis (Ported from View.py) ---
                                     # Use GatingManager helper or raw modification?
