@@ -38,6 +38,20 @@ class DataLoader:
         """
         self.loaded_files_metadata = []
 
+    @staticmethod
+    def sanitize_key(name):
+        import re
+        import numpy as np
+        # Replace invalid chars with underscore
+        clean = re.sub(r'[^0-9a-zA-Z_]', '_', str(name))
+        # Cannot start with number
+        if clean and clean[0].isdigit():
+            clean = "_" + clean
+        # Ensure not empty
+        if not clean:
+            clean = "condition_" + str(np.random.randint(1000))
+        return clean
+
     def _natural_sort_key(self, text):
         return [int(c) if c.isdigit() else c.lower() for c in re.split('([0-9]+)', str(text))]
 
@@ -160,6 +174,8 @@ class DataLoader:
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+        internal_keys = ['original_path', 'current_path', 'path', 'display_name', 'condition']
+
         for meta in metadata_list:
             original = meta['original_path']
             new_name = meta['display_name']
@@ -174,10 +190,18 @@ class DataLoader:
                 except Exception as e:
                     print(f"Error copying {original}: {e}")
 
-            processed_meta = meta.copy()
-            processed_meta['current_path'] = final_path
-            self.loaded_files_metadata.append(processed_meta)
+            # Sanitize metadata keys immediately upon loading/processing
+            sanitized_meta = {}
+            for k, v in meta.items():
+                if k in internal_keys:
+                    sanitized_meta[k] = v
+                else:
+                    clean_k = self.sanitize_key(k)
+                    sanitized_meta[clean_k] = v
 
+            sanitized_meta['current_path'] = final_path
+            self.loaded_files_metadata.append(sanitized_meta)
+        
         return self.loaded_files_metadata
 
     def prepare_fcs_files(self, paths, rename_strategy='folder_name', output_dir=None):
@@ -192,15 +216,20 @@ class DataLoader:
             print("No files to load.")
             return None
 
+        internal_keys = ['original_path', 'current_path', 'path', 'display_name', 'condition']
+        
         all_condition_keys = set()
         all_condition_keys.add('Sample')
         all_condition_keys.add('Condition')
 
-        internal_keys = ['original_path', 'current_path', 'path', 'display_name', 'condition']
+        # Collect all unique keys (sanitized)
         for meta in metadata_list:
              for key in meta.keys():
                  if key not in internal_keys:
-                     all_condition_keys.add(key)
+                     clean_key = self.sanitize_key(key)
+                     all_condition_keys.add(clean_key)
+        
+        print(f"DEBUG: All Condition Keys: {all_condition_keys}")
 
         import_conditions_schema = {}
         for key in all_condition_keys:
@@ -209,20 +238,29 @@ class DataLoader:
         tubes = []
         for meta in metadata_list:
             tube_conditions = {}
+            # Always ensure Sample and Condition are present
             tube_conditions['Sample'] = str(meta.get('display_name', 'Unknown'))
-
+            
             if 'condition' in meta and meta['condition']:
                 tube_conditions['Condition'] = str(meta['condition'])
             else:
                  tube_conditions['Condition'] = "Unspecified"
 
-            for key in all_condition_keys:
-                if key in ['Sample', 'Condition']: continue
-                if key in meta and meta[key] is not None and str(meta[key]).strip() != "":
-                    tube_conditions[key] = str(meta[key])
-                else:
-                    tube_conditions[key] = "NA"
+            # Populate other conditions
+            for orig_key, val in meta.items():
+                if orig_key in internal_keys: continue
+                
+                clean_key = self.sanitize_key(orig_key)
+                if clean_key in ['Sample', 'Condition']: continue 
+                
+                if val is not None and str(val).strip() != "":
+                    tube_conditions[clean_key] = str(val)
 
+            # Fill missing keys with NA
+            for key in import_conditions_schema.keys():
+                if key not in tube_conditions:
+                    tube_conditions[key] = "NA"
+            
             try:
                 tube = cytoflow.Tube(file=meta['current_path'], conditions=tube_conditions)
                 tubes.append(tube)

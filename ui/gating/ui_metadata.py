@@ -3,10 +3,12 @@ import pandas as pd
 import numpy as np
 from glow.data_loading.metadata_parser import parse_metadata_file
 
-def render_metadata_upload_section(key_prefix=""):
+def render_metadata_upload_section(key_prefix="", reset_keys=None):
     """
     Helper to allow uploading a CSV/Excel and merging it into st.session_state.preview_meta
     """
+    if reset_keys is None:
+        reset_keys = []
     st.markdown("---")
     st.write("### Bulk Metadata Upload (CSV/Excel)")
     with st.expander("Upload Metadata File", expanded=True):
@@ -25,37 +27,21 @@ def render_metadata_upload_section(key_prefix=""):
 
                 # 2. Configuration for Parsing
                 st.write("#### 2. Parse Settings")
-                col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+                col_cfg1, col_cfg2 = st.columns(2)
 
                 header_row_idx = col_cfg1.number_input("Header Row Index (0-based)", min_value=0, value=0, key=f"{key_prefix}_header_idx")
                 data_start_idx = col_cfg2.number_input("Data Start Row Index", min_value=header_row_idx+1, value=header_row_idx+1, key=f"{key_prefix}_data_idx")
 
-                # Option to grab global experiment name
-                use_global_exp = col_cfg3.checkbox("Extract Experiment Name from Cell?", value=True, key=f"{key_prefix}_use_global")
-                global_exp_name = None
-
-                if use_global_exp:
-                    g_row = col_cfg3.number_input("Exp Name Row", min_value=0, value=0, key=f"{key_prefix}_g_row")
-                    g_col = col_cfg3.number_input("Exp Name Col", min_value=0, value=2, key=f"{key_prefix}_g_col")
-                    try:
-                        global_exp_name = str(df_raw.iloc[g_row, g_col])
-                        st.info(f"Detected Experiment Name: **{global_exp_name}**")
-                    except:
-                        st.warning("Invalid cell coordinates for Experiment Name")
-
-
                 # 3. Process DataFrame
                 # Set headers
                 if header_row_idx < len(df_raw):
-                    g_coords = (g_row, g_col) if use_global_exp else None
-
                     try:
                         df_parsed = parse_metadata_file(
                             uploaded_file=None,
                             df_raw=df_raw,
                             header_row_idx=header_row_idx,
                             data_start_idx=data_start_idx,
-                            global_exp_name_coords=g_coords
+                            global_exp_name_coords=None
                         )
                     except ValueError as ve:
                         st.error(f"Parsing error: {ve}")
@@ -108,84 +94,138 @@ def render_metadata_upload_section(key_prefix=""):
                             df_preview = pd.DataFrame(st.session_state.preview_meta)
 
                             st.write("#### 6. Merge Options")
-                            merge_type = st.radio("Merge Strategy", ["Merge by Order (Row 1 -> File 1)", "Merge by Column Key"], key=f"{key_prefix}_merge")
+                            # Removed "Merge by Order" option as per user request
+                            st.info("Select one or more columns from both datasets to join on. The order matters!")
+                            col1, col2 = st.columns(2)
 
-                            if merge_type == "Merge by Order":
-                                if st.button("Apply Merge by Order", key=f"{key_prefix}_btn_order"):
-                                    # reset index
-                                    df_preview = df_preview.reset_index(drop=True)
-                                    df_to_merge = df_to_merge.reset_index(drop=True)
+                            # Add option to use Row Index as a join key
+                            file_opts = ["<Row Index>"] + list(df_preview.columns)
+                            upload_opts = ["<Row Index>"] + list(df_to_merge.columns)
 
-                                    # Assign columns
-                                    for col in df_to_merge.columns:
-                                        df_preview[col] = df_to_merge[col]
+                            key_file = col1.multiselect("File Keys (in order)", file_opts, key=f"{key_prefix}_key_file")
+                            key_upload = col2.multiselect("Upload Keys (matching file keys)", upload_opts, key=f"{key_prefix}_key_upload")
 
-                                    # Update session state
-                                    st.session_state.preview_meta = df_preview.to_dict('records')
-                                    st.success(f"Merged {len(df_to_merge)} rows by order! Metadata updated.")
-                                    st.rerun()
+                            if st.button("Apply Merge by Key", key=f"{key_prefix}_btn_key"):
+                                if not key_file or not key_upload:
+                                    st.error("Please select at least one key column from both sides.")
+                                elif len(key_file) != len(key_upload):
+                                    st.error(f"Number of keys must match! File: {len(key_file)}, Upload: {len(key_upload)}")
+                                else:
+                                    try:
+                                        # Prepare datasets for index matching if needed
+                                        df_preview_merge = df_preview.copy()
+                                        df_upload_merge = df_to_merge.copy()
 
-                            else:
-                                st.info("Select one or more columns from both datasets to join on. The order matters!")
-                                col1, col2 = st.columns(2)
+                                        final_left_on = []
+                                        final_right_on = []
+                                        
+                                        # Create composite keys for validation
+                                        left_composite = pd.Series([""] * len(df_preview_merge))
+                                        right_composite = pd.Series([""] * len(df_upload_merge))
 
-                                # Add option to use Row Index as a join key
-                                file_opts = ["<Row Index>"] + list(df_preview.columns)
-                                upload_opts = ["<Row Index>"] + list(df_to_merge.columns)
+                                        # Process Left Keys
+                                        for k in key_file:
+                                            if k == "<Row Index>":
+                                                col_name = "__row_index_temp__"
+                                                df_preview_merge[col_name] = df_preview_merge.index
+                                                final_left_on.append(col_name)
+                                                val = df_preview_merge.index.astype(str)
+                                            else:
+                                                col_name = f"__norm_key_{k}__"
+                                                df_preview_merge[col_name] = df_preview_merge[k].astype(str).str.upper()
+                                                final_left_on.append(col_name)
+                                                val = df_preview_merge[col_name]
+                                            left_composite = left_composite + val + "|"
 
-                                key_file = col1.multiselect("File Keys (in order)", file_opts, key=f"{key_prefix}_key_file")
-                                key_upload = col2.multiselect("Upload Keys (matching file keys)", upload_opts, key=f"{key_prefix}_key_upload")
+                                        # Process Right Keys
+                                        for k in key_upload:
+                                            if k == "<Row Index>":
+                                                col_name = "__row_index_temp__"
+                                                df_upload_merge[col_name] = df_upload_merge.index
+                                                final_right_on.append(col_name)
+                                                val = df_upload_merge.index.astype(str)
+                                            else:
+                                                col_name = f"__norm_key_{k}__"
+                                                df_upload_merge[col_name] = df_upload_merge[k].astype(str).str.upper()
+                                                final_right_on.append(col_name)
+                                                val = df_upload_merge[col_name]
+                                            right_composite = right_composite + val + "|"
+                                            
+                                        # VALIDATION: Check coverage
+                                        left_set = set(left_composite)
+                                        right_set = set(right_composite)
+                                        
+                                        missing_in_upload = left_set - right_set
+                                        extra_in_upload = right_set - left_set
 
-                                if st.button("Apply Merge by Key", key=f"{key_prefix}_btn_key"):
-                                    if not key_file or not key_upload:
-                                        st.error("Please select at least one key column from both sides.")
-                                    elif len(key_file) != len(key_upload):
-                                        st.error(f"Number of keys must match! File: {len(key_file)}, Upload: {len(key_upload)}")
-                                    else:
-                                        try:
-                                            # Prepare datasets for index matching if needed
-                                            df_preview_merge = df_preview.copy()
-                                            df_upload_merge = df_to_merge.copy()
+                                        if missing_in_upload:
+                                            st.warning(f"{len(missing_in_upload)} files (Left) do not have matching metadata in the uploaded file (Right). They will have empty values for new columns.")
+                                            with st.expander("Show Missing Keys"):
+                                                st.write(list(missing_in_upload))
+                                        
+                                        if extra_in_upload:
+                                            st.info(f"{len(extra_in_upload)} metadata entries (Right) were not used (no matching file).")
 
-                                            final_left_on = []
-                                            final_right_on = []
+                                        merged = df_preview_merge.merge(df_upload_merge, left_on=final_left_on, right_on=final_right_on, how='left', suffixes=('', '_upload'))
 
-                                            # Process Left Keys
-                                            for k in key_file:
-                                                if k == "<Row Index>":
-                                                    # Create explicit column for index
-                                                    col_name = "__row_index_temp__"
-                                                    df_preview_merge[col_name] = df_preview_merge.index
-                                                    final_left_on.append(col_name)
-                                                else:
-                                                    final_left_on.append(k)
+                                        # Clean up temp keys
+                                        temp_cols = [c for c in merged.columns if c.startswith("__norm_key_") or c == "__row_index_temp__"]
+                                        if temp_cols:
+                                            merged.drop(columns=temp_cols, inplace=True)
 
-                                            # Process Right Keys
-                                            for k in key_upload:
-                                                if k == "<Row Index>":
-                                                    col_name = "__row_index_temp__"
-                                                    df_upload_merge[col_name] = df_upload_merge.index
-                                                    final_right_on.append(col_name)
-                                                else:
-                                                    final_right_on.append(k)
+                                        # Resolve suffixes
+                                        for col in df_to_merge.columns:
+                                            if f"{col}_upload" in merged.columns:
+                                                merged[col] = merged[f"{col}_upload"].combine_first(merged[col])
+                                                merged.drop(columns=[f"{col}_upload"], inplace=True)
 
-                                            merged = df_preview_merge.merge(df_upload_merge, left_on=final_left_on, right_on=final_right_on, how='left', suffixes=('', '_upload'))
+                                        # Post-merge cleanup: Unify common columns (Space vs Underscore)
+                                        # This prevents duplicate columns like "Experiment Name" and "Experiment_Name"
+                                        unify_pairs = [("Experiment Name", "Experiment_Name"), ("Cell Line", "Cell_Line")]
+                                        for source, target in unify_pairs:
+                                            if source in merged.columns and target in merged.columns:
+                                                # Treat empty strings as NaN for combination
+                                                merged[target] = merged[target].replace("", np.nan)
+                                                merged[source] = merged[source].replace("", np.nan)
+                                                
+                                                # Merge source into target (source values fill target gaps)
+                                                merged[target] = merged[target].combine_first(merged[source])
+                                                
+                                                # Fill NaN back to "" if that was the convention, or let downstream handle it
+                                                merged[target] = merged[target].fillna("")
+                                                
+                                                # Drop source column
+                                                merged.drop(columns=[source], inplace=True)
 
-                                            # Clean up temp index columns
-                                            if "__row_index_temp__" in merged.columns:
-                                                merged.drop(columns=["__row_index_temp__"], inplace=True)
+                                        st.session_state.preview_meta = merged.to_dict('records')
 
-                                            # Resolve suffixes
-                                            for col in df_to_merge.columns:
-                                                if f"{col}_upload" in merged.columns:
-                                                    merged[col] = merged[f"{col}_upload"].combine_first(merged[col])
-                                                    merged.drop(columns=[f"{col}_upload"], inplace=True)
+                                        # Auto-select merged columns in the UI
+                                        target_key = f"{key_prefix}_cols_selected"
+                                        # Ensure the key exists (it should if the UI was rendered)
+                                        if target_key in st.session_state:
+                                             current_selected = st.session_state[target_key]
+                                             # Add columns from the uploaded file to selection
+                                             for col in df_to_merge.columns:
+                                                  # Determine final column name in 'merged'
+                                                  final_col = col
+                                                  # Check unification overrides
+                                                  if col == "Experiment Name" and "Experiment_Name" in merged.columns:
+                                                       final_col = "Experiment_Name"
+                                                  elif col == "Cell Line" and "Cell_Line" in merged.columns:
+                                                       final_col = "Cell_Line"
+                                                  
+                                                  if final_col in merged.columns and final_col not in current_selected:
+                                                       current_selected.append(final_col)
+                                             
+                                             st.session_state[target_key] = current_selected
 
-                                            st.session_state.preview_meta = merged.to_dict('records')
-                                            st.success("Merged by key! Metadata updated.")
-                                            st.rerun()
-                                        except Exception as merge_err:
-                                            st.error(f"Merge failed: {merge_err}")
+                                        for k in reset_keys:
+                                            if k in st.session_state:
+                                                del st.session_state[k]
+                                        st.success("Merged by key! Metadata updated.")
+                                        st.rerun()
+                                    except Exception as merge_err:
+                                        st.error(f"Merge failed: {merge_err}")
                 else:
                     st.error("Header row index out of bounds.")
 
