@@ -2710,18 +2710,18 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                          thr = gate.get('threshold', 2.5)
                                                          df_s = X_s - d_m
                                                          d_sq = np.sum((df_s @ i_c) * df_s, axis=1)
-                                                         full_exp_an.data.loc[subset_idxs, 'singlets'] = (np.sqrt(d_sq) <= thr)
+                                                         full_exp.data.loc[subset_idxs, 'singlets'] = (np.sqrt(d_sq) <= thr)
                                                      elif gate['type'] == 'mlp':
                                                          try:
                                                              from glow.active_learning.models import SingletClassifier
                                                              clf = SingletClassifier.load("data/singlet_model_full.pkl")
-                                                             X_s = full_exp_an.data.loc[subset_idxs, gate['diff_channels']].values
+                                                             X_s = full_exp.data.loc[subset_idxs, gate['diff_channels']].values
                                                              if np.max(X_s) > 10: X_s = np.log10(X_s + 1)
                                                              c_type = gate.get('cell_type', 'colo')
                                                              ids = np.zeros(len(X_s), dtype=int)
                                                              cts = np.array([c_type] * len(X_s))
                                                              preds = clf.predict(X_s, dataset_ids=ids, cell_types=cts)
-                                                             full_exp_an.data.loc[subset_idxs, 'singlets'] = (preds == 1)
+                                                             full_exp.data.loc[subset_idxs, 'singlets'] = (preds == 1)
                                                          except Exception as e:
                                                              print(f"MLP Reconstruction Error: {e}")
                                                      elif gate['type'] == 'polygon':
