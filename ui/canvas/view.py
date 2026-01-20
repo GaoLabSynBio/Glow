@@ -1,7 +1,5 @@
 import streamlit as st
 import io
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
 import numpy as np
 from glow.canvas.functions import get_canvas_plots, remove_plot_from_canvas, move_plot_in_canvas
 

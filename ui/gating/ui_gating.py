@@ -2,14 +2,11 @@ import streamlit as st
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from scipy.spatial import ConvexHull
-from scipy.stats import gaussian_kde
 from sklearn.mixture import GaussianMixture
 from .ui_active_learning import render_uncertainty_controls, get_uncertainty_trace, render_labeling_controls, render_reset_controls, get_active_learner
 from glow.canvas.functions import add_plot_to_canvas
 from .ui_file_loader import reset_live_gating, reset_singlet_gating
 import matplotlib.pyplot as plt
-import numpy as np
 
 
 def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):

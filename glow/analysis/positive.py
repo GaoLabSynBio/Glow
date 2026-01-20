@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from glow.gating.geometry import points_in_polygon
-from glow.gating.geometry import points_in_polygon
 
 # Define internal gating columns to exclude from grouping (Shared with stats.py)
 EXCLUDE_CONDITIONS = [
@@ -175,9 +174,9 @@ def get_recursive_mask(df, parent_name, defined_gates):
         ch_y = target_gate['channel_y']
         th_x = float(target_gate['threshold_x'])
         th_y = float(target_gate['threshold_y'])
-        quads = target_gate['quadrant'] 
+        quads = target_gate['quadrant']
         if isinstance(quads, str): quads = [quads]
-        
+
         combined_mask = pd.Series([False] * len(df), index=df.index)
         for quad in quads:
             if quad[0] == '+': mx = (df[ch_x] > th_x)
@@ -291,12 +290,12 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
                  ch_y = gate['channel_y']
                  vals_x = parent_population[ch_x]
                  vals_y = parent_population[ch_y]
-                 
+
                  th_x = float(gate['threshold_x'])
                  th_y = float(gate['threshold_y'])
                  quads = gate['quadrant']
                  if isinstance(quads, str): quads = [quads]
-                 
+
                  combined_mask = pd.Series([False] * len(parent_population), index=parent_population.index)
                  for quad in quads:
                      if quad[0] == '+': mx = (vals_x > th_x)
@@ -310,10 +309,10 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
                  ch_x = gate['channel_x']
                  ch_y = gate['channel_y']
                  verts = gate['vertices']
-                 
+
                  # Prepare points for PARENT population
                  points = parent_population[[ch_x, ch_y]].values
-                 
+
                  mask = points_in_polygon(points, verts)
                  pos_count = mask.sum()
 
@@ -321,10 +320,10 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
                  ch_x = gate['channel_x']
                  ch_y = gate['channel_y']
                  verts = gate['vertices']
-                 
+
                  # Prepare points for PARENT population
                  points = parent_population[[ch_x, ch_y]].values
-                 
+
                  mask = points_in_polygon(points, verts)
                  pos_count = mask.sum()
 

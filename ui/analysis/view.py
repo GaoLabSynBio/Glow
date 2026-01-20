@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from scipy.stats import gaussian_kde
 from glow.analysis.stats import get_summary_statistics
-from glow.analysis.positive import calculate_positive_stats, get_channel_data_for_samples, calculate_positive_stats_recursive
+from glow.analysis.positive import get_channel_data_for_samples, calculate_positive_stats_recursive
 from glow.canvas.functions import add_plot_to_canvas
 
 def render_analysis_tab():
