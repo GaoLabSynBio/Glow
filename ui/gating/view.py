@@ -1,14 +1,27 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-from .ui_file_loader import render_file_loader
+from .ui_file_loader import render_file_loader, clear_experiment_state
 from .ui_active_learning import get_active_learner
 from .ui_gating import render_gating_section
+
+def clear_all_cache():
+    # Clear all session state
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    # Clear Streamlit caches
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    st.toast("Experiment State and Cache Cleared.", icon="🔄")
 
 def render_gating_tab(DataLoader, GatingManager, ActiveLearningLogger, CYTOFLOW_AVAILABLE):
     # -------------------------------------------------------------------------
     # 0. Header & Developer Mode
     # -------------------------------------------------------------------------
+    if st.button('🔄 Start New Experiment (Reset everything)', key='refresh_experiment', help='Clear all cache and start a new experiment.'):
+        clear_all_cache()
+        st.rerun()
+
     col_h1, col_h2 = st.columns([4, 1])
     with col_h1:
         st.header("Gating Workflow")
