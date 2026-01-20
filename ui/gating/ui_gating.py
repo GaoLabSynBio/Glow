@@ -136,10 +136,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
              if 'base_experiment' in st.session_state:
                  r_exp = st.session_state.base_experiment.clone()
                  r_gater = GatingManager()
-                 
+
                  # Reconstruct based on accepted params
                  l_params = st.session_state.get('live_gate_params')
-                 
+
                  if l_params:
                      if l_params['type'] == 'polygon':
                          r_exp = r_gater.apply_manual_gate(r_exp, "_temp_live_mask_rec", l_params['channels'][0], l_params['channels'][1], l_params['vertices'])
@@ -162,16 +162,16 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                          # Multi-Line Reconstruction
                          gates = l_params['gates']
                          col_name = l_params['col']
-                         
+
                          # We need to construct a mask
                          full_mask = np.zeros(len(r_exp.data), dtype=bool)
-                         
+
                          for line_val, gate_info in gates.items():
                              row_mask = (r_exp.data[col_name].astype(str) == str(line_val))
                              if not row_mask.any(): continue
-                             
+
                              subset_idxs = r_exp.data.index[row_mask]
-                             
+
                              if gate_info['type'] == 'polygon':
                                  from matplotlib.path import Path
                                  v = gate_info['vertices']
@@ -180,12 +180,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                  points = r_exp.data.loc[subset_idxs, ch].values
                                  is_in = path.contains_points(points)
                                  full_mask[subset_idxs] = is_in
-                                 
+
                          r_exp.data = r_exp.data[full_mask].copy()
-                 
+
                  st.session_state.gated_experiment = r_exp
                  del st.session_state['reconstruct_live_gate']
-                 
+
         except Exception as e:
             st.error(f"Reconstruction Error: {e}")
             del st.session_state['reconstruct_live_gate']
@@ -562,14 +562,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 # EXCEPTION: In Multi-Line mode, 'gate_accepted' indicates the ENTIRE set is done.
                 # Changing the view (cell_line param) triggers this block because params changed.
                 # We should NOT delete gate_accepted if it's already True and we are just switching views/previews.
-                
+
                 # Check if cell line changed explicitly to clear manual state
                 if current_gating_params.get('cell_line') != last_gating_params.get('cell_line'):
                      for k in ['manual_vertices', 'pending_manual_vertices', 'show_manual_gating', 'manual_live_verts_input']:
                          if k in st.session_state: del st.session_state[k]
 
                 is_multi_done = (is_multi_line_meta and st.session_state.get('gate_accepted', False))
-                
+
                 if not is_multi_done:
                     if 'gate_accepted' in st.session_state:
                         del st.session_state['gate_accepted']
@@ -1226,7 +1226,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     if active_cell_line in st.session_state.cell_line_gates:
                                         if st.button(f"🔄 Reset Gate for {active_cell_line}", key=f"reset{ukey}"):
                                             del st.session_state.cell_line_gates[active_cell_line]
-                                            
+
                                             # Also reset SINGLET gate for this cell line if it exists (Downstream dependency)
                                             if 'cell_line_singlet_gates' in st.session_state and active_cell_line in st.session_state.cell_line_singlet_gates:
                                                 del st.session_state.cell_line_singlet_gates[active_cell_line]
@@ -1245,7 +1245,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 if st.button("🗑️ Reset ALL Cell Line Gates", type="secondary"):
                                     reset_live_gating()
                                     st.rerun()
-                        
+
                         # Global Reset Logic (Mirroring Cell Line behavior)
                         elif st.session_state.get('gate_accepted'):
                              if st.button("🔄 Reset Live Gating", key=f"reset_live_global"):
@@ -1404,7 +1404,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         vertices_text = st.text_area("Polygon Vertices (x, y per line)", current_poly_str, height=150, key="manual_live_verts_input")
 
                         col_ma2, col_ma3 = st.columns(2)
-                        
+
                         if col_ma2.button("Undo Last Point", key="undo_live_pt"):
                             curr = st.session_state.get('pending_manual_vertices', [])
                             if curr:
@@ -1520,7 +1520,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     st.session_state.gated_experiment = base_exp
                                 else:
                                     st.session_state.gated_experiment = manual_exp
-                                
+
                                 st.session_state.manual_vertices = vertices # Save for visualization
 
                                 # Determine Cell Line for logging
@@ -1786,9 +1786,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     apv = st.session_state.singlet_gate_params["vertices"]
                                     apx_ = [v[0] for v in apv] + [apv[0][0]]
                                     apy_ = [v[1] for v in apv] + [apv[0][1]]
-                                    
+
                                     fig_m.add_trace(go.Scatter(x=apx_, y=apy_, mode="lines+markers",
-                                                            line=dict(color="lime", width=4), 
+                                                            line=dict(color="lime", width=4),
                                                             marker=dict(size=6, color="lime"),
                                                             name="Singlet Gate (Manual)"))
 
@@ -1967,7 +1967,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                               kept = sum(mask)
                                               total = len(mask)
-                                              
+
                                               # Update Stats
                                               if active_line_singlets:
                                                   # Aggregate stats if possible, otherwise show this line
@@ -1979,16 +1979,16 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                               # Initialize if needed
                                               if "_temp_singlet_mask_auto" not in exp.data.columns:
                                                   exp.data["_temp_singlet_mask_auto"] = False
-                                              
+
                                               # Reset ONLY for the current subset (indices) to avoid wiping other lines
                                               # Use intersection to avoid KeyError if indices were filtered out
                                               valid_indices = df_gated.index.intersection(exp.data.index)
                                               exp.data.loc[valid_indices, "_temp_singlet_mask_auto"] = False
-                                              
+
                                               # Apply new mask
                                               valid_mask_indices = df_gated.index[mask].intersection(exp.data.index)
                                               exp.data.loc[valid_mask_indices, "_temp_singlet_mask_auto"] = True
-                                              
+
                                               st.session_state.gated_experiment = exp
                                               st.session_state.doublets_removed = True
                                               # Exit manual mode on apply
@@ -2039,7 +2039,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                             # Color by Density if gated, else by Classification
                                             color_col_mlp = "Singlet_Cat"
-                                            color_map_mlp = {"Doublet": "#0d0887", "Singlet": "#f0f921"}
+                                            color_map_singlet = {"Doublet": "#0d0887", "Singlet": "#f0f921"}
+                                            color_map_mlp = color_map_singlet
                                             colorscale_mlp = None
 
                                             if is_gated:
@@ -2052,7 +2053,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                                color_continuous_scale=colorscale_mlp,
                                                                opacity=0.6,
                                                                log_x=d_is_log, log_y=d_is_log, render_mode="svg")
-                                            
+
                                             # Legend Title logic
                                             l_title = "Prediction" if not is_gated else "Density"
 
@@ -2098,7 +2099,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     else:
                                                         pts = s_subset[[d_x, d_y]].values
                                                         s_hull_x, s_hull_y = compute_density_boundary(pts, percentile=95)
-                                                    
+
                                                     if s_hull_x is not None:
                                                         # After gating, this line IS the selection boundary
                                                         fig_mlp.add_trace(go.Scatter(x=s_hull_x, y=s_hull_y, mode='lines',
@@ -2171,7 +2172,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                                     if "_temp_singlet_mask_auto" not in exp.data.columns:
                                                         exp.data["_temp_singlet_mask_auto"] = False
-                                                    
+
                                                     valid_indices = df_gated.index[mask_full].intersection(exp.data.index)
                                                     exp.data.loc[valid_indices, "_temp_singlet_mask_auto"] = True
 
@@ -2282,7 +2283,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         # Draw the Singlet Gate (Auto/GMM)
                                         # Use a slightly thicker line if it's the final choice
                                         fig_d.add_trace(go.Scatter(x=ell_x_plot, y=ell_y_plot, mode='lines+markers',
-                                                                line=dict(color='black', width=4 if is_gated else 3), 
+                                                                line=dict(color='black', width=4 if is_gated else 3),
                                                                 marker=dict(size=6, color='black'),
                                                                 name="Singlet Gate" if is_gated else "Auto Singlets"))
 
@@ -2295,7 +2296,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 apx_ = np.log10(np.array(apx_) + 1)
                                                 apy_ = np.log10(np.array(apy_) + 1)
                                             fig_d.add_trace(go.Scatter(x=apx_, y=apy_, mode="lines+markers",
-                                                                    line=dict(color="lime", width=4), 
+                                                                    line=dict(color="lime", width=4),
                                                                     marker=dict(size=6, color="lime"),
                                                                     name="Singlet Gate (Manual)"))
 
@@ -2850,10 +2851,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     all_lines = set(unique_cell_lines)
                                     live_done = set(st.session_state.get('cell_line_gates', {}).keys())
                                     singlet_done = set(st.session_state.get('cell_line_singlet_gates', {}).keys())
-                                    
+
                                     missing_live = all_lines - live_done
                                     missing_singlet = all_lines - singlet_done
-                                    
+
                                     if missing_live or missing_singlet:
                                         err_msg = "### 🛑 Gating Incomplete\n\n"
                                         err_msg += "You must finish gating all cell lines before proceeding to analysis.\n\n"
@@ -3031,7 +3032,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         # Optimize Cache: Clear raw files now that we have analysis_experiment
                                         if DataLoader:
                                             DataLoader.clear_upload_cache()
-                                            
+
                                         st.rerun()
 
                                     except Exception as e:

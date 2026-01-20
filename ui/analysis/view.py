@@ -31,7 +31,7 @@ def render_analysis_tab():
     # Working on a clone/copy to avoid modifying shared session state used by Gating
     if hasattr(experiment, 'clone'):
         experiment = experiment.clone()
-    
+
     rename_map = {}
     for col in experiment.data.columns:
         # Check for comp_ or Comp_ prefix (but not Comp-)
@@ -41,7 +41,7 @@ def render_analysis_tab():
                  suffix = parts[1]
                  new_name = f"Comp-{suffix}"
                  rename_map[col] = new_name
-    
+
     if rename_map:
         experiment.data = experiment.data.rename(columns=rename_map)
         # Update session state gates if they reference old names
@@ -402,7 +402,7 @@ def render_analysis_tab():
                  # Only allow channels ending in "-A" (Area) AND are fluorophores (excludes Scatter)
                  if c.endswith("-A") and is_fluorophore(c):
                      strict_channels.append(c)
-             
+
              if strict_channels:
                  valid_channels = strict_channels
              else:
@@ -910,6 +910,7 @@ def render_analysis_tab():
                     st.warning("No data.")
                 else:
                     use_log = st.checkbox("Log Scale", value=True, key="quad_log")
+                    show_density = st.checkbox("Show Density", value=False, key="quad_density")
                     if use_log:
                         pos_mask = (arr_x > 0) & (arr_y > 0)
                         arr_x_p = arr_x[pos_mask]; arr_y_p = arr_y[pos_mask]
@@ -942,14 +943,41 @@ def render_analysis_tab():
                     with col_ty: curr_ty = st.number_input(f"{sel_y} Threshold", key=qk_y, format="%.4f")
 
                     # Scatter Plot
+                    density_vals = None
+                    if show_density and len(arr_x) > 0:
+                        try:
+                            # Histogram-based density
+                            H, xedges, yedges = np.histogram2d(arr_x, arr_y, bins=100)
+                            x_bins = np.digitize(arr_x, xedges) - 1
+                            y_bins = np.digitize(arr_y, yedges) - 1
+                            x_bins = np.clip(x_bins, 0, H.shape[0]-1)
+                            y_bins = np.clip(y_bins, 0, H.shape[1]-1)
+                            density_vals = H[x_bins, y_bins]
+                        except Exception as e:
+                            print(f"Density Error: {e}")
+
                     # Downsample for speed
                     if len(arr_x) > 5000:
                          # Use fixed seed for consistent visualization
                          rng = np.random.RandomState(42)
                          indices = rng.choice(len(arr_x), 5000, replace=False)
                          plot_x, plot_y = arr_x[indices], arr_y[indices]
+                         plot_density = density_vals[indices] if density_vals is not None else None
                     else:
                          plot_x, plot_y = arr_x, arr_y
+                         plot_density = density_vals
+
+                    if show_density and plot_density is not None:
+                        marker_dict = dict(
+                            size=3,
+                            opacity=0.5,
+                            color=plot_density,
+                            colorscale='Viridis',
+                            showscale=True,
+                            colorbar=dict(title='Density')
+                        )
+                    else:
+                        marker_dict = dict(size=4, opacity=0.5, color='slateblue')
 
                     fig = go.Figure()
 
@@ -987,9 +1015,15 @@ def render_analysis_tab():
 
                     fig.add_trace(go.Scattergl(
                         x=plot_x, y=plot_y, mode='markers',
-                        marker=dict(size=3, color='blue', opacity=0.5),
+                        marker=marker_dict,
                         name='Events'
                     ))
+
+                    # Add Quadrant Labels
+                    fig.add_annotation(x=0.02, y=0.98, xref="paper", yref="paper", text="Q1", showarrow=False, font=dict(size=20, color="black"), xanchor="left", yanchor="top")
+                    fig.add_annotation(x=0.98, y=0.98, xref="paper", yref="paper", text="Q2", showarrow=False, font=dict(size=20, color="black"), xanchor="right", yanchor="top")
+                    fig.add_annotation(x=0.98, y=0.02, xref="paper", yref="paper", text="Q3", showarrow=False, font=dict(size=20, color="black"), xanchor="right", yanchor="bottom")
+                    fig.add_annotation(x=0.02, y=0.02, xref="paper", yref="paper", text="Q4", showarrow=False, font=dict(size=20, color="black"), xanchor="left", yanchor="bottom")
 
                     # Add Lines (Crosshair)
                     fig.add_vline(x=curr_tx, line_color="black", line_width=1, line_dash="dash")
@@ -1014,28 +1048,39 @@ def render_analysis_tab():
                     if st.button("Add This Scatter Plot to Canvas", key=f"add_analysis_quad_{sel_x}_{sel_y}_{parent_gate}"):
                         import matplotlib.pyplot as plt
                         mpl_fig, mpl_ax = plt.subplots(figsize=(6, 6))
-                        colors_c = px.colors.qualitative.Plotly
-                        for i, s in enumerate(sel_samps):
-                             if s in d_x and s in d_y:
-                                  vx, vy = d_x[s], d_y[s]
-                                  l_min = min(len(vx), len(vy))
-                                  vx = vx[:l_min]; vy = vy[:l_min]
-                                  mask = (~np.isnan(vx)) & (~np.isnan(vy))
-                                  if use_log: mask = mask & (vx > 0) & (vy > 0)
-                                  vx = vx[mask]; vy = vy[mask]
-                                  if len(vx) > 0:
-                                       if len(vx) > 2000:
-                                            rng = np.random.RandomState(42)
-                                            idx = rng.choice(len(vx), 2000, replace=False)
-                                            vx = vx[idx]; vy = vy[idx]
-                                       c = colors_c[i%len(colors_c)]
-                                       mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+
+                        if show_density and density_vals is not None:
+                             # Combine all for density plot to match Plotly view
+                             # We have plot_x and plot_y and plot_density already prepared (downsampled) or full
+                             # But plot_density is downsampled or full from 'arr_x'.
+                             # For consistency, let's use the same 'plot_x', 'plot_y', 'plot_density' used in Plotly
+                             sc = mpl_ax.scatter(plot_x, plot_y, c=plot_density, cmap='viridis', s=10, alpha=0.6, edgecolors="none")
+                             plt.colorbar(sc, ax=mpl_ax, label='Density')
+                        else:
+                            colors_c = px.colors.qualitative.Plotly
+                            for i, s in enumerate(sel_samps):
+                                 if s in d_x and s in d_y:
+                                      vx, vy = d_x[s], d_y[s]
+                                      l_min = min(len(vx), len(vy))
+                                      vx = vx[:l_min]; vy = vy[:l_min]
+                                      mask = (~np.isnan(vx)) & (~np.isnan(vy))
+                                      if use_log: mask = mask & (vx > 0) & (vy > 0)
+                                      vx = vx[mask]; vy = vy[mask]
+                                      if len(vx) > 0:
+                                           if len(vx) > 2000:
+                                                rng = np.random.RandomState(42)
+                                                idx = rng.choice(len(vx), 2000, replace=False)
+                                                vx = vx[idx]; vy = vy[idx]
+                                           c = colors_c[i%len(colors_c)]
+                                           mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+                            mpl_ax.legend()
+
                         if use_log: mpl_ax.set_xscale("log"); mpl_ax.set_yscale("log")
                         mpl_ax.set_title(f"{sel_x} vs {sel_y}")
                         mpl_ax.set_xlabel(sel_x); mpl_ax.set_ylabel(sel_y)
                         mpl_ax.axvline(x=curr_tx, color="black", linestyle="--")
                         mpl_ax.axhline(y=curr_ty, color="black", linestyle="--")
-                        mpl_ax.legend()
+
                         mpl_fig.tight_layout()
                         add_plot_to_canvas(mpl_fig, f"Scatter: {sel_x} vs {sel_y}")
                         st.success("Added to Canvas!")
@@ -1130,6 +1175,7 @@ def render_analysis_tab():
                     st.warning("No data.")
                 else:
                     use_log = st.checkbox("Log Scale", value=True, key="poly_log")
+                    show_density = st.checkbox("Show Density", value=False, key="poly_density")
                     if use_log:
                         pos_mask = (arr_x > 0) & (arr_y > 0)
                         arr_x_p = arr_x[pos_mask]; arr_y_p = arr_y[pos_mask]
@@ -1177,19 +1223,46 @@ def render_analysis_tab():
                          st.info(f"Points Selected: {len(st.session_state[poly_key])}")
 
                     # Scatter Plot with Polygon Overlay
+                    density_vals = None
+                    if show_density and len(arr_x) > 0:
+                        try:
+                            # Histogram-based density
+                            H, xedges, yedges = np.histogram2d(arr_x, arr_y, bins=100)
+                            x_bins = np.digitize(arr_x, xedges) - 1
+                            y_bins = np.digitize(arr_y, yedges) - 1
+                            x_bins = np.clip(x_bins, 0, H.shape[0]-1)
+                            y_bins = np.clip(y_bins, 0, H.shape[1]-1)
+                            density_vals = H[x_bins, y_bins]
+                        except Exception as e:
+                            print(f"Density Error: {e}")
+
                     if len(arr_x) > 5000:
                          rng = np.random.RandomState(42)
                          indices = rng.choice(len(arr_x), 5000, replace=False)
                          plot_x, plot_y = arr_x[indices], arr_y[indices]
+                         plot_density = density_vals[indices] if density_vals is not None else None
                     else:
                          plot_x, plot_y = arr_x, arr_y
+                         plot_density = density_vals
+
+                    if show_density and plot_density is not None:
+                        marker_dict = dict(
+                            size=3,
+                            opacity=0.5,
+                            color=plot_density,
+                            colorscale='Viridis',
+                            showscale=True,
+                            colorbar=dict(title='Density')
+                        )
+                    else:
+                        marker_dict = dict(size=4, opacity=0.5, color='slateblue')
 
                     fig = go.Figure()
 
                     # 1. Data Trace
                     fig.add_trace(go.Scattergl(
                         x=plot_x, y=plot_y, mode='markers',
-                        marker=dict(size=3, color='blue', opacity=0.5),
+                        marker=marker_dict,
                         name='Events',
                         hoverinfo='none'
                     ))
@@ -1204,7 +1277,7 @@ def render_analysis_tab():
                               vx = [v[0] for v in verts]
                               vy = [v[1] for v in verts]
 
-                         fig.add_trace(go.Scatter(
+                         fig.add_trace(go.Scattergl(
                               x=vx, y=vy, mode='lines+markers',
                               line=dict(color='orange', width=2),
                               marker=dict(size=6, color='orange'),
@@ -1222,7 +1295,8 @@ def render_analysis_tab():
                         clickmode="event+select",
                         font=dict(color="black"),
                         xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                        yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey')
+                        yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
 
                     st.plotly_chart(fig, width="stretch", on_select="rerun", key=plot_key, selection_mode="points")
@@ -1231,22 +1305,29 @@ def render_analysis_tab():
                     if st.button("Add This Scatter Plot to Canvas", key=f"add_analysis_poly_{sel_x}_{sel_y}_{parent_gate}"):
                         import matplotlib.pyplot as plt
                         mpl_fig, mpl_ax = plt.subplots(figsize=(6, 6))
-                        colors_c = px.colors.qualitative.Plotly
-                        for i, s in enumerate(sel_samps):
-                             if s in d_x and s in d_y:
-                                  vx, vy = d_x[s], d_y[s]
-                                  l_min = min(len(vx), len(vy))
-                                  vx = vx[:l_min]; vy = vy[:l_min]
-                                  mask = (~np.isnan(vx)) & (~np.isnan(vy))
-                                  if use_log: mask = mask & (vx > 0) & (vy > 0)
-                                  vx = vx[mask]; vy = vy[mask]
-                                  if len(vx) > 0:
-                                       if len(vx) > 2000:
-                                            rng = np.random.RandomState(42)
-                                            idx = rng.choice(len(vx), 2000, replace=False)
-                                            vx = vx[idx]; vy = vy[idx]
-                                       c = colors_c[i%len(colors_c)]
-                                       mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+
+                        if show_density and density_vals is not None:
+                             # Use pre-calculated density points
+                             sc = mpl_ax.scatter(plot_x, plot_y, c=plot_density, cmap='viridis', s=10, alpha=0.6, edgecolors="none")
+                             plt.colorbar(sc, ax=mpl_ax, label='Density')
+                        else:
+                            colors_c = px.colors.qualitative.Plotly
+                            for i, s in enumerate(sel_samps):
+                                 if s in d_x and s in d_y:
+                                      vx, vy = d_x[s], d_y[s]
+                                      l_min = min(len(vx), len(vy))
+                                      vx = vx[:l_min]; vy = vy[:l_min]
+                                      mask = (~np.isnan(vx)) & (~np.isnan(vy))
+                                      if use_log: mask = mask & (vx > 0) & (vy > 0)
+                                      vx = vx[mask]; vy = vy[mask]
+                                      if len(vx) > 0:
+                                           if len(vx) > 2000:
+                                                rng = np.random.RandomState(42)
+                                                idx = rng.choice(len(vx), 2000, replace=False)
+                                                vx = vx[idx]; vy = vy[idx]
+                                           c = colors_c[i%len(colors_c)]
+                                           mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+                            mpl_ax.legend()
 
                         if use_log:
                              mpl_ax.set_xscale("log")
@@ -1266,7 +1347,6 @@ def render_analysis_tab():
                                   vy_poly = [v[1] for v in verts]
                              mpl_ax.plot(vx_poly, vy_poly, color='orange', linewidth=2, marker='o', markersize=4)
 
-                        mpl_ax.legend()
                         mpl_fig.tight_layout()
                         add_plot_to_canvas(mpl_fig, f"Polygon Scatter: {sel_x} vs {sel_y}")
                         st.success("Added to Canvas!")
