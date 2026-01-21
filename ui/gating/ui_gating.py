@@ -23,10 +23,12 @@ def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
         kept_mask = np.zeros(total_input, dtype=bool)
 
         for line_val, gate in gates.items():
-            if str(line_val) == 'None': continue
+            if str(line_val) == 'None':
+                continue
 
             line_mask = (df[cell_line_col].astype(str) == str(line_val))
-            if not line_mask.any(): continue
+            if not line_mask.any():
+                continue
 
             subset_idxs = df.index[line_mask]
 
@@ -34,10 +36,12 @@ def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
                 try:
                     clf = SingletClassifier.load("data/singlet_model_full.pkl")
                     channels = gate.get('diff_channels', gate.get('channels', []))
-                    if not channels: continue
+                    if not channels:
+                        continue
 
                     X_s = df.loc[subset_idxs, channels].values
-                    if np.max(X_s) > 10: X_s = np.log10(X_s + 1)
+                    if np.max(X_s) > 10:
+                        X_s = np.log10(X_s + 1)
 
                     ids = np.zeros(len(X_s), dtype=int)
                     cts = np.array([gate.get('cell_type', 'colo')] * len(X_s))
@@ -98,7 +102,8 @@ def create_canvas_figure(df, x_col, y_col, title, is_log=False, color_col=None, 
         if boundaries:
             for b in boundaries:
                 verts = b.get('vertices')
-                if not verts: continue
+                if not verts:
+                    continue
 
                 bx = [v[0] for v in verts]
                 by = [v[1] for v in verts]
@@ -165,7 +170,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                          for line_val, gate_info in gates.items():
                              row_mask = (r_exp.data[col_name].astype(str) == str(line_val))
-                             if not row_mask.any(): continue
+                             if not row_mask.any():
+                                 continue
 
                              subset_idxs = r_exp.data.index[row_mask]
 
@@ -280,8 +286,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                              yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
                              font=dict(color="black"), legend=dict(font=dict(color="black"))
                         )
-                        if x_range: layout_args['xaxis']['range'] = x_range
-                        if y_range: layout_args['yaxis']['range'] = y_range
+                        if x_range:
+                            layout_args['xaxis']['range'] = x_range
+                        if y_range:
+                            layout_args['yaxis']['range'] = y_range
 
                         f.update_layout(**layout_args)
                         return f, df_p
@@ -323,7 +331,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 pad_y = (y_max - y_min) * 0.05 if y_max != y_min else 1.0
                                 range_x = [x_min - pad_x, x_max + pad_x]
                                 range_y = [y_min - pad_y, y_max + pad_y]
-                        except Exception as e:
+                        except Exception:
                             # Fallback to autoscaling if range calc fails
                             pass
 
@@ -332,13 +340,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         with col1:
                             st.write("#### Full Population")
                             fig1, df1 = make_density_plot(exp.data, x_axis, y_axis, is_log, cmap_selected, "Full Population", range_x, range_y)
-                            if fig1: st.plotly_chart(fig1, width="stretch")
+                            if fig1:
+                                st.plotly_chart(fig1, width="stretch")
 
                         with col2:
                             st.write("#### Gated Population")
                             df_gated = exp.data[exp.data['cells'] & exp.data['singlets']]
                             fig2, df2 = make_density_plot(df_gated, x_axis, y_axis, is_log, cmap_selected, "Gated Population (Live+Singlets)", range_x, range_y)
-                            if fig2: st.plotly_chart(fig2, width="stretch")
+                            if fig2:
+                                st.plotly_chart(fig2, width="stretch")
 
                         if st.button("Save Plots to Canvas", key="btn_save_csv_density_dual"):
                             if df1 is not None:
@@ -351,7 +361,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     else:
                         st.write("#### Population Density (Singlets)")
                         fig, df_p = make_density_plot(exp.data, x_axis, y_axis, is_log, cmap_selected, "Population Density")
-                        if fig: st.plotly_chart(fig, width="stretch")
+                        if fig:
+                            st.plotly_chart(fig, width="stretch")
 
                         if st.button("Save Pop Density to Canvas", key="btn_save_csv_density"):
                             mpl_fig = create_canvas_figure(df_p, x_axis, y_axis, "Processed Population Density",
@@ -387,8 +398,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
         if base_exp:
             # --- Step 1 & 2: Live/Dead Gating ---
-            is_live_gate_ready = st.session_state.get('gate_accepted', False)
-
             with st.expander("Live/Dead Gating Parameters", expanded=True):
                 # Channel Selection
                 st.write("Select Channels for Live/Dead Gating:")
@@ -505,7 +514,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         eps = st.number_input("Epsilon (Radius)", 0.01, 1.0, 0.05, 0.01, format="%.2f", key=f"eps{ukey}")
                         min_samples = st.number_input("Min Samples", 5, 200, 50, 5, key=f"min_samples{ukey}")
                         # Defaults for others
-                        num_comp = 2; keep_percent = 0.9; sigma_val = 2.0
+                        num_comp = 2
+                        keep_percent = 0.9
+                        sigma_val = 2.0
                     elif gating_method == "Density":
                         keep_percent = st.slider("Keep Fraction", 0.1, 1.0, 0.9, 0.05, key=f"keep{ukey}")
                         sigma_val = 2.0
@@ -563,7 +574,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 # Check if cell line changed explicitly to clear manual state
                 if current_gating_params.get('cell_line') != last_gating_params.get('cell_line'):
                      for k in ['manual_vertices', 'pending_manual_vertices', 'show_manual_gating', 'manual_live_verts_input']:
-                         if k in st.session_state: del st.session_state[k]
+                         if k in st.session_state:
+                             del st.session_state[k]
 
                 is_multi_done = (is_multi_line_meta and st.session_state.get('gate_accepted', False))
 
@@ -667,7 +679,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                             color_col = 'Density'
                             continuous_color = True
-                        except Exception as e:
+                        except Exception:
                             # st.warning(f"Density calculation failed: {e}. Falling back to solid color.") # suppress warning for cleanliness
                             color_col = None
 
@@ -1066,7 +1078,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     angles = np.arctan2(arr[:,1] - cy, arr[:,0] - cx)
                                     indices = np.argsort(angles)
                                     final_pending = [updated_pending[i] for i in indices]
-                                except:
+                                except Exception:
                                     pass
 
                             if has_changes:
@@ -1079,7 +1091,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     if ActiveLearningLogger:
                         try:
                             logger = ActiveLearningLogger()
-                        except:
+                        except Exception:
                             logger = None
                     else:
                         logger = None
@@ -1200,8 +1212,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     st.session_state.gate_accepted = True
                                     st.rerun()
                                 else:
-                                    # Logic to auto-switch to next missing
-                                    next_line = list(missing)[0]
                                     # Store a temporary success message in session state to show AFTER rerun
                                     st.session_state[f"success_msg_{active_cell_line}"] = f"✅ Gate saved for {active_cell_line}."
                                     st.rerun()
@@ -1245,7 +1255,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                         # Global Reset Logic (Mirroring Cell Line behavior)
                         elif st.session_state.get('gate_accepted'):
-                             if st.button("🔄 Reset Live Gating", key=f"reset_live_global"):
+                             if st.button("🔄 Reset Live Gating", key="reset_live_global"):
                                  reset_live_gating()
                                  st.rerun()
 
@@ -1356,7 +1366,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                         # Persistent Add to Canvas Button
                         ctitle = "Live/Dead Gating"
-                        if active_cell_line: ctitle += f" ({active_cell_line})"
+                        if active_cell_line:
+                            ctitle += f" ({active_cell_line})"
 
                         if col3.button("Add Plot to Canvas", key=f"add_canvas_persist_{ukey}"):
                             # Re-use canvas logic
@@ -1422,7 +1433,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 else:
                                     vertices = []
                                     for line in vertices_text.strip().split('\n'):
-                                        if not line.strip(): continue
+                                        if not line.strip():
+                                            continue
                                         p = line.split(',')
                                         if len(p) >= 2:
                                             vertices.append((float(p[0].strip()), float(p[1].strip())))
@@ -1679,8 +1691,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             # Auto-guess channels
                             idx_a, idx_h = 0, 0
                             for i, c in enumerate(d_channels):
-                                if "FSC" in c and ("-A" in c or "Area" in c): idx_a = i
-                                if "FSC" in c and ("-H" in c or "Height" in c): idx_h = i
+                                if "FSC" in c and ("-A" in c or "Area" in c):
+                                    idx_a = i
+                                if "FSC" in c and ("-H" in c or "Height" in c):
+                                    idx_h = i
 
                             # Unique key for singlet controls
                             sukey = f"_singlet_{active_line_singlets}" if active_line_singlets else "_singlet_global"
@@ -2080,7 +2094,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 )
                                             )
                                             unc_trace = get_uncertainty_trace(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y)
-                                            if unc_trace: fig_mlp.add_trace(unc_trace)
+                                            if unc_trace:
+                                                fig_mlp.add_trace(unc_trace)
 
                                             # Draw Boundary for MLP Singlets for consistency
                                             try:
@@ -2319,30 +2334,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 fig_d.add_trace(go.Scatter(x=px_, y=py_, mode='lines+markers',
                                                                         line=dict(color='#f0f921', width=3), name="Manual Selection"))
 
-                                        # Interaction Mode State
-                                        is_manual_active = st.session_state.get('doublet_manual_mode', False)
-
-                                        # --- Calculate Auto-Zoom Range ---
-                                        # Focus on the GMM cluster to avoid manual zooming (User Req for start zoom)
-                                        zoom_margin = 4 # sigmas
-                                        x_min_lin = d_mean[0] - zoom_margin * np.sqrt(d_cov[0,0])
-                                        x_max_lin = d_mean[0] + zoom_margin * np.sqrt(d_cov[0,0])
-                                        y_min_lin = d_mean[1] - zoom_margin * np.sqrt(d_cov[1,1])
-                                        y_max_lin = d_mean[1] + zoom_margin * np.sqrt(d_cov[1,1])
-
-                                        start_range_x = None
-                                        start_range_y = None
-
-                                        if d_is_log:
-                                            # Avoid log of negative/zero
-                                            x_min_lin = max(0, x_min_lin)
-                                            y_min_lin = max(0, y_min_lin)
-                                            start_range_x = [np.log10(x_min_lin + 1), np.log10(x_max_lin + 1)]
-                                            start_range_y = [np.log10(y_min_lin + 1), np.log10(y_max_lin + 1)]
-                                        else:
-                                            start_range_x = [x_min_lin, x_max_lin]
-                                            start_range_y = [y_min_lin, y_max_lin]
-
                                         # Axes
                                         # User Req: "when i zoom in i want to keep the visual the same"
                                         # USER REQ: "background to be transparent"
@@ -2372,11 +2363,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         )
                                         # fig_d.update_xaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
                                         # fig_d.update_yaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
-
-                                        # Selection Interaction
-                                        # User req for Shift selection is handled by Plotly standard behavior with clickmode
-
-                                        sel_d = st.plotly_chart(fig_d, width="stretch", on_select="rerun", selection_mode="points", key="doublet_chart")
 
                                         canvas_title_gmm = "Singlet Gating (GMM)"
                                         if active_line_singlets:
@@ -2441,7 +2427,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     st.session_state.doublets_removed = True
                                                     st.rerun()
                                                 else:
-                                                    next_line = list(missing)[0]
                                                     st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"✅ Singlet gate saved for {active_line_singlets}."
                                                     st.rerun()
                                                 return
@@ -2564,7 +2549,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     else:
                                         any_fluor_area = [c for c in all_channels if ("-A" in c or "Area" in c) and not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])]
                                         defaults = any_fluor_area if any_fluor_area else [c for c in all_channels if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])]
-                                    if not defaults: defaults = all_channels
+                                    if not defaults:
+                                        defaults = all_channels
                                     st.session_state.persistent_selected_channels = defaults
                                     # Init checkbox keys
                                     for ch in all_channels:
@@ -2580,11 +2566,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 b1, b2, _ = st.columns([1, 1, 2])
                                 if b1.button("Select All", key="gating_sel_all"):
                                     st.session_state.persistent_selected_channels = list(all_channels)
-                                    for ch in selectable_channels: st.session_state[f"checkbox_ch_{ch}"] = True
+                                    for ch in selectable_channels:
+                                        st.session_state[f"checkbox_ch_{ch}"] = True
                                     st.rerun()
                                 if b2.button("Clear All", key="gating_clear_all"):
                                     st.session_state.persistent_selected_channels = list(mandatory_channels)
-                                    for ch in selectable_channels: st.session_state[f"checkbox_ch_{ch}"] = False
+                                    for ch in selectable_channels:
+                                        st.session_state[f"checkbox_ch_{ch}"] = False
                                     st.rerun()
 
                                 # --- Checkbox Grid ---
@@ -2592,7 +2580,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 current_selected = set(st.session_state.get('persistent_selected_channels', []))
                                 for ch in selectable_channels:
                                     k = f"checkbox_ch_{ch}"
-                                    if k not in st.session_state: st.session_state[k] = (ch in current_selected)
+                                    if k not in st.session_state:
+                                        st.session_state[k] = (ch in current_selected)
 
                                 new_selection = list(mandatory_channels)
 
@@ -2633,10 +2622,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 if 'loaded_files' in st.session_state and st.session_state.loaded_files:
                                     try:
                                         experiment_name = os.path.basename(os.path.dirname(st.session_state.loaded_files[0]))
-                                    except:
+                                    except Exception:
                                         pass
 
-                                final_csv = None
                                 file_name = "processed_data.csv.gz"
 
                                 # User-specified filename
@@ -2675,7 +2663,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 col_name = l_params['col']
                                                 for line_val, gate_info in gates.items():
                                                     row_mask = (full_exp.data[col_name].astype(str) == str(line_val))
-                                                    if not row_mask.any(): continue
+                                                    if not row_mask.any():
+                                                        continue
 
                                                     subset_idxs = full_exp.data.index[row_mask]
                                                     if gate_info['type'] == 'polygon':
@@ -2714,7 +2703,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     from glow.active_learning.models import SingletClassifier
                                                     clf = SingletClassifier.load("data/singlet_model_full.pkl")
                                                     X = df_export[s_params["diff_channels"]].values
-                                                    if np.max(X) > 10: X = np.log10(X + 1)
+                                                    if np.max(X) > 10:
+                                                        X = np.log10(X + 1)
                                                     c_type = s_params.get("cell_type", "colo")
                                                     ids = np.zeros(len(X), dtype=int)
                                                     cts = np.array([c_type] * len(X))
@@ -2741,7 +2731,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 col_name = s_params['col']
                                                 for line_val, gate in gates.items():
                                                     row_mask = (df_export[col_name].astype(str) == str(line_val))
-                                                    if not row_mask.any(): continue
+                                                    if not row_mask.any():
+                                                        continue
                                                     subset_idxs = df_export.index[row_mask]
                                                     if gate['type'] == 'gmm_mahalanobis':
                                                         ch = gate['channels']
@@ -2757,7 +2748,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                             from glow.active_learning.models import SingletClassifier
                                                             clf = SingletClassifier.load("data/singlet_model_full.pkl")
                                                             X_s = df_export.loc[subset_idxs, gate['diff_channels']].values
-                                                            if np.max(X_s) > 10: X_s = np.log10(X_s + 1)
+                                                            if np.max(X_s) > 10:
+                                                                X_s = np.log10(X_s + 1)
                                                             c_type = gate.get('cell_type', 'colo')
                                                             ids = np.zeros(len(X_s), dtype=int)
                                                             cts = np.array([c_type] * len(X_s))
@@ -2796,9 +2788,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             if custom_export_name and custom_export_name.strip():
                                                 base_name = custom_export_name.strip()
                                                 # Strip extension if user typed it
-                                                if base_name.lower().endswith(".zip"): base_name = base_name[:-4]
-                                                if base_name.lower().endswith(".csv.gz"): base_name = base_name[:-7]
-                                                if base_name.lower().endswith(".csv"): base_name = base_name[:-4]
+                                                if base_name.lower().endswith(".zip"):
+                                                    base_name = base_name[:-4]
+                                                if base_name.lower().endswith(".csv.gz"):
+                                                    base_name = base_name[:-7]
+                                                if base_name.lower().endswith(".csv"):
+                                                    base_name = base_name[:-4]
 
                                                 file_name = f"{base_name}.csv.gz"
                                             else:
@@ -2817,7 +2812,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                             # Cleanup temps
                                             temp_cols = [c for c in df_export.columns if str(c).startswith('_temp_')]
-                                            if temp_cols: df_export.drop(columns=temp_cols, inplace=True)
+                                            if temp_cols:
+                                                df_export.drop(columns=temp_cols, inplace=True)
 
                                             # Compress using ZIP (More robust than single GZIP file)
                                             import zipfile
@@ -2900,7 +2896,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 col_name = l_params['col']
                                                 for line_val, gate_info in gates.items():
                                                     row_mask = (full_exp.data[col_name].astype(str) == str(line_val))
-                                                    if not row_mask.any(): continue
+                                                    if not row_mask.any():
+                                                        continue
 
                                                     subset_idxs = full_exp.data.index[row_mask]
                                                     if gate_info['type'] == 'polygon':
@@ -2935,7 +2932,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     from glow.active_learning.models import SingletClassifier
                                                     clf = SingletClassifier.load("data/singlet_model_full.pkl")
                                                     X = full_exp.data[s_params["diff_channels"]].values
-                                                    if np.max(X) > 10: X = np.log10(X + 1)
+                                                    if np.max(X) > 10:
+                                                        X = np.log10(X + 1)
                                                     c_type = s_params.get("cell_type", "colo")
                                                     ids = np.zeros(len(X), dtype=int)
                                                     cts = np.array([c_type] * len(X))
@@ -2950,7 +2948,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                  col_name = s_params['col']
                                                  for line_val, gate in gates.items():
                                                      row_mask = (full_exp.data[col_name].astype(str) == str(line_val))
-                                                     if not row_mask.any(): continue
+                                                     if not row_mask.any():
+                                                         continue
                                                      subset_idxs = full_exp.data.index[row_mask]
                                                      if gate['type'] == 'gmm_mahalanobis':
                                                          ch = gate['channels']
@@ -2966,7 +2965,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                              from glow.active_learning.models import SingletClassifier
                                                              clf = SingletClassifier.load("data/singlet_model_full.pkl")
                                                              X_s = full_exp.data.loc[subset_idxs, gate['diff_channels']].values
-                                                             if np.max(X_s) > 10: X_s = np.log10(X_s + 1)
+                                                             if np.max(X_s) > 10:
+                                                                 X_s = np.log10(X_s + 1)
                                                              c_type = gate.get('cell_type', 'colo')
                                                              ids = np.zeros(len(X_s), dtype=int)
                                                              cts = np.array([c_type] * len(X_s))
@@ -2988,7 +2988,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                         # Cleanup temps
                                         temp_c = [c for c in full_exp.data.columns if str(c).startswith('_temp_')]
-                                        if temp_c: full_exp.data.drop(columns=temp_c, inplace=True)
+                                        if temp_c:
+                                            full_exp.data.drop(columns=temp_c, inplace=True)
 
                                         # --- Drop Unselected Channels for Analysis ---
                                         if export_only_selected_channels and st.session_state.get('selected_channels'):

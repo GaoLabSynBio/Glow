@@ -138,15 +138,16 @@ def render_analysis_tab():
                 is_1d = False
 
                 if gate_type == 'quadrant':
-                     st.write(f"**Type:** 2D Quadrant")
+                     st.write("**Type:** 2D Quadrant")
                      st.write(f"**Channels:** {g.get('channel_x')} vs {g.get('channel_y')}")
                      q_val = g.get('quadrant')
-                     if isinstance(q_val, list): q_val = "/".join(q_val)
+                     if isinstance(q_val, list):
+                         q_val = "/".join(q_val)
                      st.write(f"**Quadrant:** {q_val} (Thresholds: {g.get('threshold_x'):.2f}, {g.get('threshold_y'):.2f})")
                      st.info("Visualization not available for 2D gates in this summary view.")
 
                 elif gate_type == 'polygon':
-                     st.write(f"**Type:** 2D Polygon")
+                     st.write("**Type:** 2D Polygon")
                      st.write(f"**Channels:** {g.get('channel_x')} vs {g.get('channel_y')}")
                      st.write(f"**Vertices:** {len(g.get('vertices', []))} points")
                      st.info("Visualization not available for 2D gates in this summary view.")
@@ -221,12 +222,14 @@ def render_analysis_tab():
                                 if s in data_map_v:
                                     v = data_map_v[s]
                                     v = v[~np.isnan(v)]
-                                    if len(v) < 10: continue # Skip empty
+                                    if len(v) < 10:
+                                        continue # Skip empty
 
                                     try:
                                         if use_log_v:
                                             v_p = v[v > 0]
-                                            if len(v_p) < 10: continue
+                                            if len(v_p) < 10:
+                                                continue
                                             kde = gaussian_kde(np.log10(v_p))
                                             y_dom = kde(np.log10(d_dom))
                                         else:
@@ -235,7 +238,7 @@ def render_analysis_tab():
 
                                         c = colors_v[idx % len(colors_v)]
                                         fig_g.add_trace(go.Scatter(x=d_dom, y=y_dom, mode='lines', line=dict(color=c), name=s, fill='tozeroy', opacity=0.3))
-                                    except:
+                                    except Exception:
                                         pass
 
                             # Add Threshold/Range Line
@@ -302,8 +305,6 @@ def render_analysis_tab():
         mode_c1, mode_c2 = st.columns([1, 3])
         with mode_c1:
             analysis_mode = st.radio("Mode", ["1D Histogram", "2D Quadrant", "2D Polygon"], horizontal=True, label_visibility="collapsed")
-        is_quadrant = (analysis_mode == "2D Quadrant")
-
 
         # --- CHANNEL SELECTION ---
         # Identify all numeric channels in the dataset
@@ -334,7 +335,8 @@ def render_analysis_tab():
         ]
         def is_fluorophore(ch_name):
             # Must NOT be Scatter or Time
-            if any(x in ch_name.upper() for x in ["FSC", "SSC", "TIME"]): return False
+            if any(x in ch_name.upper() for x in ["FSC", "SSC", "TIME"]):
+                return False
             # Must match common list OR contain "-A"/"Area" but passed scatter check
             # Actually, user requested "common fluorophores" filter specifically.
             return any(f.upper() in ch_name.upper() for f in COMMON_FLUORS)
@@ -473,7 +475,8 @@ def render_analysis_tab():
                             plot_min = 0.0
                             # Max 99.9th percentile to catch main pop
                             plot_max = float(np.percentile(valid_data_for_range, 99.9))
-                            if plot_max <= 0: plot_max = 1.0
+                            if plot_max <= 0:
+                                plot_max = 1.0
 
                         # Ensure non-singular
                         if plot_min >= plot_max:
@@ -511,8 +514,10 @@ def render_analysis_tab():
                              st.session_state[max_key] = plot_max - (plot_max - plot_min) * 0.2
 
                         # Checkbounds for single threshold
-                        if st.session_state[thr_key] < plot_min: st.session_state[thr_key] = plot_min
-                        if st.session_state[thr_key] > plot_max: st.session_state[thr_key] = plot_max
+                        if st.session_state[thr_key] < plot_min:
+                            st.session_state[thr_key] = plot_min
+                        if st.session_state[thr_key] > plot_max:
+                            st.session_state[thr_key] = plot_max
 
                         # Create placeholder for input widget to be rendered AFTER chart interaction logic
                         # input_placeholder = st.empty() # REMOVED: Render directly to avoid flickering
@@ -607,7 +612,8 @@ def render_analysis_tab():
                         # If Log: generate in log space then transform back
                         if use_log:
                             # Log filtering ensures plot_min > 0
-                            if plot_min <= 0: plot_min = np.min(valid_data_for_range[valid_data_for_range > 0])
+                            if plot_min <= 0:
+                                plot_min = np.min(valid_data_for_range[valid_data_for_range > 0])
 
                             x_log_min = np.log10(plot_min)
                             x_log_max = np.log10(plot_max)
@@ -651,7 +657,8 @@ def render_analysis_tab():
                                 if use_log:
                                     # Filter positive
                                     qt_vals = vals[vals > 0]
-                                    if len(qt_vals) < 2: continue
+                                    if len(qt_vals) < 2:
+                                        continue
                                     dataset = np.log10(qt_vals)
                                     # Eval on log domain
                                     try:
@@ -710,7 +717,6 @@ def render_analysis_tab():
                              fig.add_vline(x=rmax, line_width=2, line_dash="dash", line_color="green",
                                           annotation_text=f"Max: {rmax:.1f}", annotation_position="top right")
                         else:
-                             fill_color = "red" if is_negative else "blue" # Use red for neg? Or vice versa. Let's use standard convention.
                              # Usually Positive = Green/Blue, Negative = Red/Gray.
                              # Let's use Green for Positive, Red for Negative shading.
                              shade_color = "red" if is_negative else "green"
@@ -719,7 +725,8 @@ def render_analysis_tab():
                                  # Shade from Min to Threshold
                                  # Use plot_min, but ensure it covers the view
                                  range_min = plot_min if plot_min > 0 else (x_domain[0] if len(x_domain)>0 else 0)
-                                 if use_log and range_min <= 0: range_min = 1e-1 # Safety
+                                 if use_log and range_min <= 0:
+                                     range_min = 1e-1 # Safety
 
                                  fig.add_vrect(x0=range_min/10, x1=curr_val_for_line, fillcolor=shade_color, opacity=0.1, layer="below", line_width=0)
                                  annot_pos = "top left"
@@ -755,7 +762,7 @@ def render_analysis_tab():
                         # on_select="rerun" ensures app updates when a point is selected (clicked)
                         # Enable box selection
                         # Add unique KEY to prevent state leakage
-                        selection = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
+                        st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
 
                         if st.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
                             # Create Matplotlib Figure for Canvas
@@ -766,12 +773,14 @@ def render_analysis_tab():
                                 if s in data_map:
                                     vals = data_map[s]
                                     vals = vals[~np.isnan(vals)]
-                                    if len(vals) < 2: continue
+                                    if len(vals) < 2:
+                                        continue
 
                                     try:
                                         if use_log:
                                             qt_vals = vals[vals > 0]
-                                            if len(qt_vals) < 2: continue
+                                            if len(qt_vals) < 2:
+                                                continue
                                             dataset = np.log10(qt_vals)
                                             kde = gaussian_kde(dataset)
                                             y_vals = kde(np.log10(x_domain))
@@ -829,8 +838,10 @@ def render_analysis_tab():
                         if ac1.button("Save & Apply Gate"):
                             # Logic to save the gate
                             suffix = "+"
-                            if is_range: suffix = "_rng"
-                            elif is_negative: suffix = "-"
+                            if is_range:
+                                suffix = "_rng"
+                            elif is_negative:
+                                suffix = "-"
 
                             gate_label = f"{selected_channel}{suffix}"
                             if parent_gate != "Singlets":
@@ -846,7 +857,7 @@ def render_analysis_tab():
                                 'samples': selected_samples # Persist the samples used for visualization
                             }
 
-                            if is_range:
+                            if is_range and isinstance(curr_threshold, (list, tuple, np.ndarray)) and len(curr_threshold) >= 2:
                                  new_gate['min'] = curr_threshold[0]
                                  new_gate['max'] = curr_threshold[1]
                                  # For backward compat or display, we can store threshold as tuple or string representation
@@ -898,13 +909,15 @@ def render_analysis_tab():
                     if s in d_x and s in d_y:
                         vx, vy = d_x[s], d_y[s]
                         # Trim to min length if mismatch (unlikely if same dataframe)
-                        l = min(len(vx), len(vy))
-                        arr_x.extend(vx[:l])
-                        arr_y.extend(vy[:l])
+                        length = min(len(vx), len(vy))
+                        arr_x.extend(vx[:length])
+                        arr_y.extend(vy[:length])
 
-                arr_x = np.array(arr_x); arr_y = np.array(arr_y)
+                arr_x = np.array(arr_x)
+                arr_y = np.array(arr_y)
                 valid_mask = (~np.isnan(arr_x)) & (~np.isnan(arr_y))
-                arr_x = arr_x[valid_mask]; arr_y = arr_y[valid_mask]
+                arr_x = arr_x[valid_mask]
+                arr_y = arr_y[valid_mask]
 
                 if len(arr_x) == 0:
                     st.warning("No data.")
@@ -913,8 +926,10 @@ def render_analysis_tab():
                     show_density = st.checkbox("Show Density", value=False, key="quad_density")
                     if use_log:
                         pos_mask = (arr_x > 0) & (arr_y > 0)
-                        arr_x_p = arr_x[pos_mask]; arr_y_p = arr_y[pos_mask]
-                        if len(arr_x_p) == 0: use_log = False
+                        arr_x_p = arr_x[pos_mask]
+                        arr_y_p = arr_y[pos_mask]
+                        if len(arr_x_p) == 0:
+                            use_log = False
                         else:
                              arr_x, arr_y = arr_x_p, arr_y_p
 
@@ -925,8 +940,10 @@ def render_analysis_tab():
                     min_x, max_x = np.min(arr_x), np.max(arr_x)
                     min_y, max_y = np.min(arr_y), np.max(arr_y)
 
-                    if qk_x not in st.session_state: st.session_state[qk_x] = (min_x + max_x)/2
-                    if qk_y not in st.session_state: st.session_state[qk_y] = (min_y + max_y)/2
+                    if qk_x not in st.session_state:
+                        st.session_state[qk_x] = (min_x + max_x)/2
+                    if qk_y not in st.session_state:
+                        st.session_state[qk_y] = (min_y + max_y)/2
 
                     # Interaction
                     q_plot_key = f"plot_quad_{sel_x}_{sel_y}"
@@ -939,17 +956,21 @@ def render_analysis_tab():
 
                     # Inputs
                     col_tx, col_ty = st.columns(2)
-                    with col_tx: curr_tx = st.number_input(f"{sel_x} Threshold", key=qk_x, format="%.4f")
-                    with col_ty: curr_ty = st.number_input(f"{sel_y} Threshold", key=qk_y, format="%.4f")
+                    with col_tx:
+                        curr_tx = st.number_input(f"{sel_x} Threshold", key=qk_x, format="%.4f")
+                    with col_ty:
+                        curr_ty = st.number_input(f"{sel_y} Threshold", key=qk_y, format="%.4f")
 
                     # Scatter Plot
                     density_vals = None
                     if show_density and len(arr_x) > 0:
                         try:
                             # Histogram-based density
-                            H, xedges, yedges = np.histogram2d(arr_x, arr_y, bins=100)
-                            x_bins = np.digitize(arr_x, xedges) - 1
-                            y_bins = np.digitize(arr_y, yedges) - 1
+                            dx_calc = np.log10(arr_x) if use_log else arr_x
+                            dy_calc = np.log10(arr_y) if use_log else arr_y
+                            H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
+                            x_bins = np.digitize(dx_calc, xedges) - 1
+                            y_bins = np.digitize(dy_calc, yedges) - 1
                             x_bins = np.clip(x_bins, 0, H.shape[0]-1)
                             y_bins = np.clip(y_bins, 0, H.shape[1]-1)
                             density_vals = H[x_bins, y_bins]
@@ -982,15 +1003,20 @@ def render_analysis_tab():
                     fig = go.Figure()
 
                     # Define Quadrant Shapes (Colored Backgrounds)
-                    x_span = max_x - min_x; y_span = max_y - min_y
+                    x_span = max_x - min_x
+                    y_span = max_y - min_y
                     if use_log:
-                        b_xmin = min_x / 5; b_xmax = max_x * 5
-                        b_ymin = min_y / 5; b_ymax = max_y * 5
+                        b_xmin = min_x / 5
+                        b_xmax = max_x * 5
+                        b_ymin = min_y / 5
+                        b_ymax = max_y * 5
                     else:
                         pad_x = x_span * 0.1 if x_span > 0 else 1.0
                         pad_y = y_span * 0.1 if y_span > 0 else 1.0
-                        b_xmin = min_x - pad_x; b_xmax = max_x + pad_x
-                        b_ymin = min_y - pad_y; b_ymax = max_y + pad_y
+                        b_xmin = min_x - pad_x
+                        b_xmax = max_x + pad_x
+                        b_ymin = min_y - pad_y
+                        b_ymax = max_y + pad_y
 
                     # Q1: UL (X-, Y+) - Top Left
                     fig.add_shape(type="rect",
@@ -1062,22 +1088,29 @@ def render_analysis_tab():
                                  if s in d_x and s in d_y:
                                       vx, vy = d_x[s], d_y[s]
                                       l_min = min(len(vx), len(vy))
-                                      vx = vx[:l_min]; vy = vy[:l_min]
+                                      vx = vx[:l_min]
+                                      vy = vy[:l_min]
                                       mask = (~np.isnan(vx)) & (~np.isnan(vy))
-                                      if use_log: mask = mask & (vx > 0) & (vy > 0)
-                                      vx = vx[mask]; vy = vy[mask]
+                                      if use_log:
+                                          mask = mask & (vx > 0) & (vy > 0)
+                                      vx = vx[mask]
+                                      vy = vy[mask]
                                       if len(vx) > 0:
                                            if len(vx) > 2000:
                                                 rng = np.random.RandomState(42)
                                                 idx = rng.choice(len(vx), 2000, replace=False)
-                                                vx = vx[idx]; vy = vy[idx]
+                                                vx = vx[idx]
+                                                vy = vy[idx]
                                            c = colors_c[i%len(colors_c)]
                                            mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
                             mpl_ax.legend()
 
-                        if use_log: mpl_ax.set_xscale("log"); mpl_ax.set_yscale("log")
+                        if use_log:
+                            mpl_ax.set_xscale("log")
+                            mpl_ax.set_yscale("log")
                         mpl_ax.set_title(f"{sel_x} vs {sel_y}")
-                        mpl_ax.set_xlabel(sel_x); mpl_ax.set_ylabel(sel_y)
+                        mpl_ax.set_xlabel(sel_x)
+                        mpl_ax.set_ylabel(sel_y)
                         mpl_ax.axvline(x=curr_tx, color="black", linestyle="--")
                         mpl_ax.axhline(y=curr_ty, color="black", linestyle="--")
 
@@ -1163,13 +1196,15 @@ def render_analysis_tab():
                 for s in sel_samps:
                     if s in d_x and s in d_y:
                         vx, vy = d_x[s], d_y[s]
-                        l = min(len(vx), len(vy))
-                        arr_x.extend(vx[:l])
-                        arr_y.extend(vy[:l])
+                        length = min(len(vx), len(vy))
+                        arr_x.extend(vx[:length])
+                        arr_y.extend(vy[:length])
 
-                arr_x = np.array(arr_x); arr_y = np.array(arr_y)
+                arr_x = np.array(arr_x)
+                arr_y = np.array(arr_y)
                 valid_mask = (~np.isnan(arr_x)) & (~np.isnan(arr_y))
-                arr_x = arr_x[valid_mask]; arr_y = arr_y[valid_mask]
+                arr_x = arr_x[valid_mask]
+                arr_y = arr_y[valid_mask]
 
                 if len(arr_x) == 0:
                     st.warning("No data.")
@@ -1178,14 +1213,17 @@ def render_analysis_tab():
                     show_density = st.checkbox("Show Density", value=False, key="poly_density")
                     if use_log:
                         pos_mask = (arr_x > 0) & (arr_y > 0)
-                        arr_x_p = arr_x[pos_mask]; arr_y_p = arr_y[pos_mask]
-                        if len(arr_x_p) == 0: use_log = False
+                        arr_x_p = arr_x[pos_mask]
+                        arr_y_p = arr_y[pos_mask]
+                        if len(arr_x_p) == 0:
+                            use_log = False
                         else:
                              arr_x, arr_y = arr_x_p, arr_y_p
 
                     # Manage Vertices
                     poly_key = f"poly_verts_{sel_x}_{sel_y}_{parent_gate}"
-                    if poly_key not in st.session_state: st.session_state[poly_key] = []
+                    if poly_key not in st.session_state:
+                        st.session_state[poly_key] = []
 
                     # Graph Interaction
                     plot_key = f"plot_poly_{sel_x}_{sel_y}"
@@ -1202,7 +1240,8 @@ def render_analysis_tab():
                                    is_new = True
                                    for existing in current_verts:
                                         if abs(existing[0]-px_v) < 1e-5 and abs(existing[1]-py_v) < 1e-5:
-                                             is_new = False; break
+                                             is_new = False
+                                             break
                                    if is_new:
                                         new_pts_list.append((px_v, py_v))
                               if new_pts_list:
@@ -1227,9 +1266,11 @@ def render_analysis_tab():
                     if show_density and len(arr_x) > 0:
                         try:
                             # Histogram-based density
-                            H, xedges, yedges = np.histogram2d(arr_x, arr_y, bins=100)
-                            x_bins = np.digitize(arr_x, xedges) - 1
-                            y_bins = np.digitize(arr_y, yedges) - 1
+                            dx_calc = np.log10(arr_x) if use_log else arr_x
+                            dy_calc = np.log10(arr_y) if use_log else arr_y
+                            H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
+                            x_bins = np.digitize(dx_calc, xedges) - 1
+                            y_bins = np.digitize(dy_calc, yedges) - 1
                             x_bins = np.clip(x_bins, 0, H.shape[0]-1)
                             y_bins = np.clip(y_bins, 0, H.shape[1]-1)
                             density_vals = H[x_bins, y_bins]
@@ -1285,7 +1326,7 @@ def render_analysis_tab():
                          ))
 
                     fig.update_layout(
-                        title=f"Polygon: {sel_x} vs {sel_y} (Click points to define)",
+                        title=f"Polygon: {sel_x} vs {sel_y} (Click on points to define vertices)",
                         plot_bgcolor="white",
                         paper_bgcolor="white",
                         xaxis_title=sel_x, yaxis_title=sel_y,
@@ -1316,15 +1357,19 @@ def render_analysis_tab():
                                  if s in d_x and s in d_y:
                                       vx, vy = d_x[s], d_y[s]
                                       l_min = min(len(vx), len(vy))
-                                      vx = vx[:l_min]; vy = vy[:l_min]
+                                      vx = vx[:l_min]
+                                      vy = vy[:l_min]
                                       mask = (~np.isnan(vx)) & (~np.isnan(vy))
-                                      if use_log: mask = mask & (vx > 0) & (vy > 0)
-                                      vx = vx[mask]; vy = vy[mask]
+                                      if use_log:
+                                          mask = mask & (vx > 0) & (vy > 0)
+                                      vx = vx[mask]
+                                      vy = vy[mask]
                                       if len(vx) > 0:
                                            if len(vx) > 2000:
                                                 rng = np.random.RandomState(42)
                                                 idx = rng.choice(len(vx), 2000, replace=False)
-                                                vx = vx[idx]; vy = vy[idx]
+                                                vx = vx[idx]
+                                                vy = vy[idx]
                                            c = colors_c[i%len(colors_c)]
                                            mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
                             mpl_ax.legend()

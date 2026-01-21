@@ -12,7 +12,6 @@ from sklearn.preprocessing import StandardScaler
 sys.path.append(os.getcwd())
 
 from glow.gating.strategies import DensityGating, OutlierDetector
-from glow.gating.boundary import compute_density_boundary
 
 def analyze_data_for_gating(data_df, channels):
     """
@@ -35,19 +34,20 @@ def analyze_data_for_gating(data_df, channels):
     labels = db.labels_
 
     unique_labels = set(labels)
-    if -1 in unique_labels: unique_labels.remove(-1)
+    if -1 in unique_labels:
+        unique_labels.remove(-1)
 
     clusters = []
     noise_mask = (labels == -1)
 
     # Collect Cluster Stats
-    for l in unique_labels:
-        mask = (labels == l)
+    for label in unique_labels:
+        mask = (labels == label)
         count = np.sum(mask)
         mean_brightness = np.mean(brightness_scores[mask])
 
         clusters.append({
-            "id": l,
+            "id": label,
             "count": count,
             "brightness": mean_brightness,
             "mask": mask
@@ -77,17 +77,18 @@ def analyze_data_for_gating(data_df, channels):
         gmm.fit(X_cluster)
 
         # Analyze components
-        means = gmm.means_ # Shape (2, 2)
-        comp_brightness = means.sum(axis=1) # Projected means
+        means = np.asarray(gmm.means_) # Shape (2, 2)
+        comp_brightness = np.sum(means, axis=1) # Projected means
 
         idx_sorted = np.argsort(comp_brightness)
-        low_idx = idx_sorted[0]
-        high_idx = idx_sorted[1]
+        low_idx = int(idx_sorted[0])
+        high_idx = int(idx_sorted[1])
 
-        mu_debris = comp_brightness[low_idx]
-        mu_live = comp_brightness[high_idx]
+        mu_debris = float(comp_brightness[low_idx])
+        mu_live = float(comp_brightness[high_idx])
 
-        weight_debris = gmm.weights_[low_idx]
+        weights = np.asarray(gmm.weights_)
+        weight_debris = float(weights[low_idx])
 
         print(f"      Debris Mode: {mu_debris:.2f} (Weight={weight_debris:.1%})")
         print(f"      Live Mode:   {mu_live:.2f}")
@@ -240,7 +241,7 @@ def run_simulation():
     recall = (is_live & true_live).sum() / true_live.sum()
     precision = (is_live & true_live).sum() / is_live.sum()
 
-    print(f"Evaluation:")
+    print("Evaluation:")
     print(f"  Yield (Predicted Live): {is_live.sum()} / {len(df)} ({is_live.mean():.1%})")
     print(f"  Recall (True Live Recovered): {recall:.1%}")
     print(f"  Precision (True Live / Predicted Live): {precision:.1%}")
@@ -251,8 +252,10 @@ def run_simulation():
     # Plot 1: Gating
     ax1 = axes[0]
     ax1.scatter(df["FSC-A"], df["SSC-A"], c=np.where(is_live, "blue", "red"), s=5, alpha=0.5)
-    ax1.set_xscale("log"); ax1.set_yscale("log")
-    ax1.set_xlabel("FSC-A"); ax1.set_ylabel("SSC-A")
+    ax1.set_xscale("log")
+    ax1.set_yscale("log")
+    ax1.set_xlabel("FSC-A")
+    ax1.set_ylabel("SSC-A")
     ax1.set_title(f"Gating Prediction\nRecall={recall:.2f}, Precision={precision:.2f}")
 
     # Plot 2: Ground Truth
@@ -261,8 +264,10 @@ def run_simulation():
     for lbl, col in colors.items():
         subset = df[df["TrueLabel"] == lbl]
         ax2.scatter(subset["FSC-A"], subset["SSC-A"], c=col, s=5, alpha=0.5, label=lbl)
-    ax2.set_xscale("log"); ax2.set_yscale("log")
-    ax2.set_xlabel("FSC-A"); ax2.set_ylabel("SSC-A")
+    ax2.set_xscale("log")
+    ax2.set_yscale("log")
+    ax2.set_xlabel("FSC-A")
+    ax2.set_ylabel("SSC-A")
     ax2.legend()
     ax2.set_title("Ground Truth")
 

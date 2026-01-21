@@ -4,7 +4,7 @@ import pandas as pd
 import importlib
 import io
 import warnings
-from glow.plotting import plots, utils, categorical
+from glow.plotting import utils, categorical
 from glow.canvas.functions import add_plot_to_canvas
 
 def download_btn(fig, key):
@@ -84,7 +84,8 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     # --- Channel & Statistics ---
     st.markdown("#### 2. Plot Settings")
     col1, col2 = st.columns(2)
-    with col1: selected_channel = st.selectbox("Output Channel (Y-axis)", channels)
+    with col1:
+        selected_channel = st.selectbox("Output Channel (Y-axis)", channels)
     with col2:
         correction_method = st.selectbox(
             "Visual Significance Method",
@@ -113,8 +114,10 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
             # 1. Fundamental Gates (if present)
             built_in_options = []
-            if 'cells' in filtered_experiment.data.columns: built_in_options.append("Pre-Gate: Live Cells")
-            if 'singlets' in filtered_experiment.data.columns: built_in_options.append("Pre-Gate: Singlets")
+            if 'cells' in filtered_experiment.data.columns:
+                built_in_options.append("Pre-Gate: Live Cells")
+            if 'singlets' in filtered_experiment.data.columns:
+                built_in_options.append("Pre-Gate: Singlets")
 
             # 2. Positive Gates from Analysis
             pos_gate_labels = [g['label'] for g in st.session_state.get('positive_gates', [])]
@@ -131,7 +134,8 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 remaining = list(labels_to_res)
                 while remaining:
                     lbl = remaining.pop(0)
-                    if lbl in seen_labels: continue
+                    if lbl in seen_labels:
+                        continue
 
                     found = False
                     # 1. Check Built-ins
@@ -209,7 +213,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 v_max = utils.get_percentile_threshold(filtered_experiment.data, new_gate_channel, p_max)
                 st.session_state['new_gate_raw_min'] = float(v_min)
                 st.session_state['new_gate_raw_max'] = float(v_max)
-            except:
+            except Exception:
                 pass
 
         def on_new_raw_change():
@@ -220,9 +224,10 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 p_max = utils.get_percentile_of_value(filtered_experiment.data, new_gate_channel, v_max)
                 p_min = max(0.0, min(100.0, p_min))
                 p_max = max(0.0, min(100.0, p_max))
-                if p_min > p_max: p_min, p_max = p_max, p_min
+                if p_min > p_max:
+                    p_min, p_max = p_max, p_min
                 st.session_state['new_gate_range_p'] = (p_min, p_max)
-            except:
+            except Exception:
                 pass
 
         # Handle Channel Change
@@ -236,13 +241,15 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         if 'new_gate_raw_min' not in st.session_state:
             on_new_slider_change()
 
-        st.markdown(f"**Percentile Range**")
+        st.markdown("**Percentile Range**")
         st.slider("Percentile", 0.0, 100.0, key='new_gate_range_p', on_change=on_new_slider_change, step=0.1)
 
         st.markdown(f"**Value Range** ({new_gate_channel})")
         rc1, rc2 = st.columns(2)
-        with rc1: st.number_input("Min", key='new_gate_raw_min', on_change=on_new_raw_change)
-        with rc2: st.number_input("Max", key='new_gate_raw_max', on_change=on_new_raw_change)
+        with rc1:
+            st.number_input("Min", key='new_gate_raw_min', on_change=on_new_raw_change)
+        with rc2:
+            st.number_input("Max", key='new_gate_raw_max', on_change=on_new_raw_change)
 
         if st.button("Add This Gate", type="secondary"):
             st.session_state.bar_gates.append({
@@ -265,8 +272,10 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
             # Only allow comparisons between visible groups
             vis_groups = sorted(selected_groups)
             if len(vis_groups) >= 2:
-                with c1: g1 = st.selectbox("Group 1", vis_groups, key="g1")
-                with c2: g2 = st.selectbox("Group 2", vis_groups, key="g2")
+                with c1:
+                    g1 = st.selectbox("Group 1", vis_groups, key="g1")
+                with c2:
+                    g2 = st.selectbox("Group 2", vis_groups, key="g2")
                 with c3:
                     st.write("") # Spacer
                     st.write("")
@@ -289,7 +298,8 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 comp_df = pd.DataFrame(st.session_state.bar_comparisons, columns=["Group 1", "Group 2"])
                 st.dataframe(comp_df, hide_index=True, width="stretch")
 
-                if st.button("Clear Comparisons"): st.session_state.bar_comparisons = []
+                if st.button("Clear Comparisons"):
+                    st.session_state.bar_comparisons = []
 
             comparisons = st.session_state.bar_comparisons
 
@@ -365,7 +375,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     font_size=font_size,
                     bracket_spacing=step_fraction,
                     gates=all_applied_gates,
-                    error_bar=error_bar_val
+                    error_bar=error_bar_val if error_bar_val else "ci" # Default if None
                 )
                 st.pyplot(fig)
                 download_btn(fig, "bar_plot")

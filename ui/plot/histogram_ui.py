@@ -79,9 +79,12 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
         )[1]
 
     c1, c2, c3 = st.columns(3)
-    with c1: show_merged = st.checkbox("Show Merged/Main Plot", value=True)
-    with c2: show_individual = st.checkbox("Show Individual Groups (below)", value=False)
-    with c3: show_yaxis = st.checkbox("Show Y-Axis", value=False, help="Display frequency/count axis for subplots.")
+    with c1:
+        show_merged = st.checkbox("Show Merged/Main Plot", value=True)
+    with c2:
+        show_individual = st.checkbox("Show Individual Groups (below)", value=False)
+    with c3:
+        show_yaxis = st.checkbox("Show Y-Axis", value=False, help="Display frequency/count axis for subplots.")
 
     if hue_var:
          # Legend Column Customization
@@ -164,7 +167,7 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                             if st.button(f"Add \"{group}\" Histogram to Canvas", key=f"add_hist_ind_{i}_to_canvas"):
                                 if add_plot_to_canvas(fig, f"Histogram: {selected_channel} ({group})"):
                                     st.success("Plot added to canvas!")
-                            
+
                             if not getattr(fig, '_glow_is_direct_ref', False):
                                 plt.close(fig)
             except Exception as e:

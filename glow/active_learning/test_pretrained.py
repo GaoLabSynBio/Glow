@@ -34,7 +34,7 @@ def plot_classification_result(dataset_id, data_path="data/synthetic_training_da
         # Check for DatasetID, if likely to exist
         try:
              df = pd.read_parquet(data_path, filters=[('DatasetID', '=', dataset_id)])
-        except:
+        except Exception:
              # If filters fail (e.g. column missing in schema causing error before fallback), just load all
              df = pd.read_parquet(data_path)
              if 'DatasetID' in df.columns:
@@ -126,9 +126,10 @@ def plot_classification_result(dataset_id, data_path="data/synthetic_training_da
     ax1.set_ylabel("SSC-A (Linear)", fontsize=fs)
     ax1.grid(True, alpha=0.3)
 
+    from matplotlib.lines import Line2D
     legend_1 = [
-        plt.Line2D([0],[0], marker="o", color="w", markerfacecolor="blue", label="Pred: In-Gate (Live)"),
-        plt.Line2D([0],[0], marker="o", color="w", markerfacecolor="red", label="Pred: Out-Gate")
+        Line2D([0],[0], marker="o", color="w", markerfacecolor="blue", label="Pred: In-Gate (Live)"),
+        Line2D([0],[0], marker="o", color="w", markerfacecolor="red", label="Pred: Out-Gate")
     ]
     ax1.legend(handles=legend_1, loc='upper left')
 

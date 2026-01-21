@@ -1,8 +1,5 @@
 import streamlit as st
-import numpy as np
-import pandas as pd
-from .ui_file_loader import render_file_loader, clear_experiment_state
-from .ui_active_learning import get_active_learner
+from .ui_file_loader import render_file_loader
 from .ui_gating import render_gating_section
 
 def clear_all_cache():

@@ -50,10 +50,13 @@ def render_reset_controls(model_type='gating'):
                 # Clear UI state - slightly drastic but safe
                 # We should only clear relevant state
                 if model_type == 'gating':
-                    if 'uncertain_indices' in st.session_state: del st.session_state.uncertain_indices
-                    if 'gated_experiment' in st.session_state: del st.session_state.gated_experiment
+                    if 'uncertain_indices' in st.session_state:
+                        del st.session_state.uncertain_indices
+                    if 'gated_experiment' in st.session_state:
+                        del st.session_state.gated_experiment
                 elif model_type == 'singlet':
-                    if 'doublets_removed' in st.session_state: del st.session_state.doublets_removed
+                    if 'doublets_removed' in st.session_state:
+                        del st.session_state.doublets_removed
 
                 # Force refresh
                 st.session_state.plot_id = st.session_state.get('plot_id', 0) + 1
@@ -74,7 +77,8 @@ def render_uncertainty_controls(experiment, x_col, y_col, model_type='gating'):
         if st.button("🔍 Find Confusion", key=f"find_conf_{model_type}"):
             with st.spinner("Querying model..."):
                 learner = get_active_learner(model_type)
-                if not learner: return
+                if not learner:
+                    return
 
                 df = experiment.data
 
@@ -145,7 +149,7 @@ def get_uncertainty_trace(experiment, x_col, y_col):
             hoverlabel=dict(bgcolor='red', font_size=14)
         )
         return trace
-    except Exception as e:
+    except Exception:
         return None
 
 def render_labeling_controls(experiment, x_col, y_col, selection, plot_df=None, model_type='gating'):
@@ -267,7 +271,7 @@ def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None,
                 # Handle downsampled plot_df
                 real_indices = plot_df.iloc[plot_indices].index
                 subset = experiment.data.loc[real_indices]
-            except:
+            except Exception:
                 # Fallback: Maybe plot_df IS the subset
                 subset = plot_df.iloc[plot_indices]
         else:
@@ -312,12 +316,15 @@ def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None,
     learner.teach(X_train, y_train)
 
     # Clear generic state that might impact viz
-    if 'uncertain_indices' in st.session_state: st.session_state.uncertain_indices = []
+    if 'uncertain_indices' in st.session_state:
+        st.session_state.uncertain_indices = []
 
     # Reset specific state to force re-render with new model
     if model_type == 'gating':
-        if 'gated_experiment' in st.session_state: del st.session_state.gated_experiment
-        if 'current_auto_boundary' in st.session_state: del st.session_state.current_auto_boundary
+        if 'gated_experiment' in st.session_state:
+            del st.session_state.gated_experiment
+        if 'current_auto_boundary' in st.session_state:
+            del st.session_state.current_auto_boundary
     elif model_type == 'singlet':
         # Don't delete 'doublets_removed' or we lose the page state completely?
         # Maybe we want to just invalidate the viz cache.

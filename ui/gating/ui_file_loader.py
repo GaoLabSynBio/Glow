@@ -6,15 +6,18 @@ from .ui_metadata import render_metadata_upload_section
 
 # Helper for Cell Line Detection
 def detect_cell_line_from_path(path):
-    if not path: return "HEK"
+    if not path:
+        return "HEK"
     filename = os.path.basename(path)
     dirname = os.path.basename(os.path.dirname(path))
     full_str = f"{dirname}_{filename}"
     match = re.search(r'(?:cell[_\-]?line|cl)[_\-]?([a-zA-Z0-9]+)', full_str, re.IGNORECASE)
-    if match: return match.group(1).upper()
+    if match:
+        return match.group(1).upper()
     known_lines = ["colo", "hek", "hug1n", "snu", "b16", "cho", "hela", "jurkat"]
     for line in known_lines:
-        if line.lower() in full_str.lower(): return line.upper().upper()
+        if line.lower() in full_str.lower():
+            return line.upper().upper()
     return "HEK"
 
 # Mock Experiment Class to emulate Cytoflow structure for downstream compatibility
@@ -42,7 +45,7 @@ def reset_singlet_gating(keep_live_gate=True):
     for k in keys:
         if k in st.session_state:
             del st.session_state[k]
-    
+
     # If keeping live gate, signal that we need to reconstruct the live-only experiment
     # to "undo" any singlet filtering that happened to gated_experiment
     if keep_live_gate and st.session_state.get('gate_accepted'):
@@ -51,7 +54,7 @@ def reset_singlet_gating(keep_live_gate=True):
 def reset_live_gating():
     """Clears live gating state and singlet state."""
     reset_singlet_gating(keep_live_gate=False)
-    
+
     keys = [
         'live_gate_params', 'live_gate_stats', 'gate_accepted',
         'cell_line_gates', 'last_gating_params', 'current_auto_boundary',
@@ -67,7 +70,7 @@ def clear_experiment_state():
     """Clears all experiment-related data from session state to ensure fresh loading."""
     # Full wipe
     reset_live_gating()
-    
+
     for key in ['base_experiment', 'analysis_experiment',
                 'fixed_gate_params', 'positive_gates', 'threshold_gate',
                 'selected_channels', 'persistent_selected_channels']:
@@ -117,7 +120,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                              if df.shape[1] < 2:
                                  st.error("Uploaded CSV appears to have insufficient columns/data.")
                                  return
-                             
+
                              # Check for empty dataframe
                              if df.empty:
                                  st.error("Uploaded CSV is empty.")
@@ -221,7 +224,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     if 'dir_cols_selected' not in st.session_state:
                          default_selection = ["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else [])
                          st.session_state.dir_cols_selected = [c for c in default_selection if c in all_selectable]
-                    
+
                     # 5. Prepare DataFrame from Persistent State
                     # Ensure selected columns exist in the source of truth
                     # (We use the LAST known selection to prep the view)
@@ -237,7 +240,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
 
                     # Reorder/Select columns for editor
                     display_cols = ['display_name', 'condition'] + current_view_cols + ['original_path']
-                    
+
                     # Create a specific view for the editor
                     df_view = st.session_state.working_df_dir[display_cols].copy()
 
@@ -248,14 +251,14 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         c1, c2 = st.columns([0.7, 0.3])
                         new_col_name = c1.text_input("Add Custom Column (Clicking Add saves current table data)")
                         add_col_btn = c2.form_submit_button("Add New Column")
-                        
+
                         # B. Column Selector logic is tricky inside forms.
                         # We display the multiselect, but changes only apply on SUBMIT (Add Column or Confirm).
                         # This matches the user request for safety.
                         cols_selected = st.multiselect("Select columns to annotate (Click 'Update View' or 'Load' to apply changes):",
                                                     options=all_selectable,
                                                     default=st.session_state.dir_cols_selected)
-                        
+
                         update_view_btn = st.form_submit_button("Update View / Save Progress")
 
                         # C. The Editor
@@ -272,7 +275,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                                     width="stretch",
                                                     num_rows="fixed",
                                                     key="dir_editor")
-                        
+
                         confirm_dir = st.form_submit_button("Confirm and Load Directory files")
 
                     # --- LOGIC HANDLING ---
@@ -280,7 +283,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     if add_col_btn or update_view_btn or confirm_dir:
                          if edited_df is not None:
                               st.session_state.working_df_dir.update(edited_df)
-                         
+
                          # Save column selection
                          st.session_state.dir_cols_selected = cols_selected
 
@@ -292,7 +295,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                               if cleaned_name not in st.session_state.dir_cols_selected:
                                    st.session_state.dir_cols_selected.append(cleaned_name)
                          st.rerun() # Rerun to update the Editor View with new column
-                    
+
                     # 3. Handle "Update View"
                     if update_view_btn:
                          st.rerun()
@@ -314,7 +317,8 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                     clean_k = re.sub(r'[^0-9a-zA-Z_]', '_', str(k))
                                     if clean_k and clean_k[0].isdigit():
                                          clean_k = "_" + clean_k
-                                    if not clean_k: clean_k = "col_" + str(hash(k))
+                                    if not clean_k:
+                                        clean_k = "col_" + str(hash(k))
                                     clean_m[clean_k] = v
                                 sanitized_meta_list.append(clean_m)
 
@@ -389,7 +393,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
 
                     # 5. Prepare View
                     current_view_cols = st.session_state.upload_cols_selected
-                    
+
                     # Sync Columns
                     for col in current_view_cols:
                         if col not in st.session_state.working_df.columns:
@@ -410,7 +414,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         c1, c2 = st.columns([0.7, 0.3])
                         new_col_name = c1.text_input("Add Custom Column (Clicking Add saves current table data)")
                         add_col_btn = c2.form_submit_button("Add New Column")
-                        
+
                         # B. Column Selector logic
                         cols_selected = st.multiselect("Select columns to annotate (Click 'Update View' or 'Load' to apply changes):",
                                                     options=available_options,
@@ -432,7 +436,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                                     width="stretch",
                                                     num_rows="fixed",
                                                     key="upload_editor")
-                        
+
                         confirm_upload = st.form_submit_button("Confirm and Load Uploaded files")
 
                     # --- LOGIC HANDLING ---
@@ -440,7 +444,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     if add_col_btn or update_view_btn or confirm_upload:
                          if edited_df is not None:
                               st.session_state.working_df.update(edited_df)
-                         
+
                          st.session_state.upload_cols_selected = cols_selected
 
                     # 2. Handle "Add Column"
@@ -451,7 +455,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                               if cleaned_name not in st.session_state.upload_cols_selected:
                                    st.session_state.upload_cols_selected.append(cleaned_name)
                          st.rerun()
-                    
+
                     # 3. Handle "Update View"
                     if update_view_btn:
                          st.rerun()
@@ -473,7 +477,8 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                     clean_k = re.sub(r'[^0-9a-zA-Z_]', '_', str(k))
                                     if clean_k and clean_k[0].isdigit():
                                          clean_k = "_" + clean_k
-                                    if not clean_k: clean_k = "col_" + str(hash(k))
+                                    if not clean_k:
+                                        clean_k = "col_" + str(hash(k))
                                     clean_m[clean_k] = v
                                 sanitized_meta_list.append(clean_m)
 

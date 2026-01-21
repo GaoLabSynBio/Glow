@@ -21,7 +21,8 @@ def render_plot_tab():
 
     # 1. Common Data Selection
     filtered_experiment, conditions = render_data_selection(experiment)
-    if filtered_experiment is None: return # Selection failed
+    if filtered_experiment is None:
+        return # Selection failed
 
     # 2. Main Plot Type Selection
     all_available_channels = plots.get_channels(filtered_experiment)
@@ -29,13 +30,13 @@ def render_plot_tab():
     # Filter channels based on selection in Gating tab if available
     # Use persistent state to survive tab switch
     user_selected = st.session_state.get('persistent_selected_channels')
-    
+
     # --- Compensation Logic (Plot Tab) ---
     all_cols = filtered_experiment.data.columns
     comp_cols = [c for c in all_cols if c.startswith("comp_")]
     has_comp = len(comp_cols) > 0
     use_comp = False
-    
+
     if has_comp:
         use_comp = st.checkbox("Use Compensated Data", value=True, key="use_comp_plot")
 
@@ -43,7 +44,7 @@ def render_plot_tab():
         raw_channels = [c for c in all_available_channels if c in user_selected]
     else:
         raw_channels = all_available_channels
-        
+
     # Apply Substitution
     channels = []
     if use_comp:

@@ -248,9 +248,10 @@ class GatingClassifier:
             instance = cls()
             instance.mlp = loaded # Assume loaded is the pipeline (or wrap it)
             # Disable our manual scaling/centering
-            instance.centerer.transform = lambda x, **k: x
-            instance.scaler.transform = lambda x: x
-            instance.scaler.fit = lambda x: x
+            # Use compatible signature for DensityCenteringTransformer.transform(X, dataset_ids=None)
+            instance.centerer.transform = lambda X, dataset_ids=None: X
+            instance.scaler.transform = lambda X, copy=None: X
+            instance.scaler.fit = lambda X, y=None, sample_weight=None: instance.scaler
             # Mark as fitted
             instance.is_fitted = True
             return instance

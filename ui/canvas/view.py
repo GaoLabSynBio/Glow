@@ -73,7 +73,8 @@ def render_canvas_tab():
                                  if arr is not None and len(arr) > 1: # Must have data to map
                                      has_mappable = True
                                      break
-                         if has_mappable: break
+                         if has_mappable:
+                             break
 
                 elif plot_data.get("type") == "plotly":
                     f = plot_data["data"]
@@ -99,7 +100,8 @@ def render_canvas_tab():
 
                     cmaps = ["viridis", "plasma", "inferno", "magma", "cividis", "Greys", "Purples", "Blues", "Greens", "Oranges", "Reds", "YlOrBr", "YlOrRd", "OrRd", "PuRd", "RdPu", "BuPu", "GnBu", "PuBu", "YlGnBu", "PuBuGn", "BuGn", "YlGn", "jet", "rainbow", "Spectral"]
                     current_cmap = settings.get("main_cmap", "viridis")
-                    if current_cmap not in cmaps: current_cmap = "viridis"
+                    if current_cmap not in cmaps:
+                        current_cmap = "viridis"
 
                     main_cmap = st.selectbox("Select Colormap", cmaps, index=cmaps.index(current_cmap), key=f"mc_{plot_id}")
 
@@ -111,8 +113,10 @@ def render_canvas_tab():
                 plot_data["settings"]["font_family"] = font_family
                 plot_data["settings"]["main_cmap"] = main_cmap
                 # Force cleanup of old keys if present
-                if "override_color_en" in plot_data["settings"]: del plot_data["settings"]["override_color_en"]
-                if "override_line_color_en" in plot_data["settings"]: del plot_data["settings"]["override_line_color_en"]
+                if "override_color_en" in plot_data["settings"]:
+                    del plot_data["settings"]["override_color_en"]
+                if "override_line_color_en" in plot_data["settings"]:
+                    del plot_data["settings"]["override_line_color_en"]
 
             with c4:
                 if st.button("🗑", key=f"rm_{plot_id}", help="Remove Plot"):
@@ -124,7 +128,6 @@ def render_canvas_tab():
             try:
                 if ptype == "matplotlib":
                     fig = plot_data["fig"]
-                    import matplotlib
 
                     # Logic to simulate "Font Scaling" by resizing the figure in inches
                     # while maintaining pixel density.
@@ -144,7 +147,10 @@ def render_canvas_tab():
                     # Update Font Family
                     # Changing global params often tricky, let's iterate text objects
                     if font_family != "default":
-                        for txt in fig.findobj(match=matplotlib.text.Text):
+                        # Use introspection or a more robust find method if matplotlib.text is not directly exposed
+                        # usually available as matplotlib.text.Text
+                        import matplotlib.text as mpl_text
+                        for txt in fig.findobj(match=mpl_text.Text):
                              txt.set_fontfamily(font_family)
 
                     # Apply Dot Scaling & Color Override for Matplotlib
@@ -190,21 +196,21 @@ def render_canvas_tab():
                     try:
                         fig.savefig(buf_svg, format="svg", bbox_inches="tight")
                         st.download_button("Download SVG", buf_svg.getvalue(), f"{title}.svg", "image/svg+xml", key=f"dl_svg_{plot_id}")
-                    except:
+                    except Exception:
                         pass
 
                     buf_png = io.BytesIO()
                     try:
                         fig.savefig(buf_png, format="png", bbox_inches="tight", dpi=300)
                         st.download_button("Download PNG", buf_png.getvalue(), f"{title}.png", "image/png", key=f"dl_png_{plot_id}")
-                    except:
+                    except Exception:
                         pass
 
                     buf_pdf = io.BytesIO()
                     try:
                         fig.savefig(buf_pdf, format="pdf", bbox_inches="tight")
                         st.download_button("Download PDF", buf_pdf.getvalue(), f"{title}.pdf", "application/pdf", key=f"dl_pdf_{plot_id}")
-                    except:
+                    except Exception:
                         pass
 
                 elif ptype == "plotly":
@@ -258,14 +264,14 @@ def render_canvas_tab():
                         # Requires kaleido
                         img_bytes = fig.to_image(format="png", scale=2)
                         st.download_button("Download PNG", img_bytes, f"{title}.png", "image/png", key=f"dl_p_png_{plot_id}")
-                    except Exception as e:
+                    except Exception:
                         pass
                         # st.caption("PNG export needs 'kaleido'")
 
                     try:
                         img_bytes = fig.to_image(format="pdf")
                         st.download_button("Download PDF", img_bytes, f"{title}.pdf", "application/pdf", key=f"dl_p_pdf_{plot_id}")
-                    except Exception as e:
+                    except Exception:
                         pass
                         # st.caption("PDF export needs 'kaleido'")
 

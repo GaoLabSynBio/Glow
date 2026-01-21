@@ -118,10 +118,10 @@ def render_metadata_upload_section(key_prefix="", reset_keys=None):
 
                                         final_left_on = []
                                         final_right_on = []
-                                        
+
                                         # Create composite keys for validation
-                                        left_composite = pd.Series([""] * len(df_preview_merge))
-                                        right_composite = pd.Series([""] * len(df_upload_merge))
+                                        left_composite = None
+                                        right_composite = None
 
                                         # Process Left Keys
                                         for k in key_file:
@@ -135,7 +135,10 @@ def render_metadata_upload_section(key_prefix="", reset_keys=None):
                                                 df_preview_merge[col_name] = df_preview_merge[k].astype(str).str.upper()
                                                 final_left_on.append(col_name)
                                                 val = df_preview_merge[col_name]
-                                            left_composite = left_composite + val + "|"
+                                            if left_composite is None:
+                                                left_composite = val
+                                            else:
+                                                left_composite = left_composite.astype(str) + "|" + val.astype(str)
 
                                         # Process Right Keys
                                         for k in key_upload:
@@ -149,12 +152,22 @@ def render_metadata_upload_section(key_prefix="", reset_keys=None):
                                                 df_upload_merge[col_name] = df_upload_merge[k].astype(str).str.upper()
                                                 final_right_on.append(col_name)
                                                 val = df_upload_merge[col_name]
-                                            right_composite = right_composite + val + "|"
-                                            
+                                            if right_composite is None:
+                                                right_composite = val
+                                            else:
+                                                right_composite = right_composite.astype(str) + "|" + val.astype(str)
+
                                         # VALIDATION: Check coverage
-                                        left_set = set(left_composite)
-                                        right_set = set(right_composite)
-                                        
+                                        if left_composite is not None:
+                                            left_set = set(left_composite)
+                                        else:
+                                            left_set = set()
+
+                                        if right_composite is not None:
+                                            right_set = set(right_composite)
+                                        else:
+                                            right_set = set()
+
                                         missing_in_upload = left_set - right_set
                                         extra_in_upload = right_set - left_set
 
@@ -162,7 +175,7 @@ def render_metadata_upload_section(key_prefix="", reset_keys=None):
                                             st.warning(f"{len(missing_in_upload)} files (Left) do not have matching metadata in the uploaded file (Right). They will have empty values for new columns.")
                                             with st.expander("Show Missing Keys"):
                                                 st.write(list(missing_in_upload))
-                                        
+
                                         if extra_in_upload:
                                             st.info(f"{len(extra_in_upload)} metadata entries (Right) were not used (no matching file).")
 
@@ -187,13 +200,13 @@ def render_metadata_upload_section(key_prefix="", reset_keys=None):
                                                 # Treat empty strings as NaN for combination
                                                 merged[target] = merged[target].replace("", np.nan)
                                                 merged[source] = merged[source].replace("", np.nan)
-                                                
+
                                                 # Merge source into target (source values fill target gaps)
                                                 merged[target] = merged[target].combine_first(merged[source])
-                                                
+
                                                 # Fill NaN back to "" if that was the convention, or let downstream handle it
                                                 merged[target] = merged[target].fillna("")
-                                                
+
                                                 # Drop source column
                                                 merged.drop(columns=[source], inplace=True)
 
@@ -213,10 +226,10 @@ def render_metadata_upload_section(key_prefix="", reset_keys=None):
                                                        final_col = "Experiment_Name"
                                                   elif col == "Cell Line" and "Cell_Line" in merged.columns:
                                                        final_col = "Cell_Line"
-                                                  
+
                                                   if final_col in merged.columns and final_col not in current_selected:
                                                        current_selected.append(final_col)
-                                             
+
                                              st.session_state[target_key] = current_selected
 
                                         for k in reset_keys:
