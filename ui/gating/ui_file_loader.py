@@ -248,8 +248,9 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     # Moving "Add Custom Column" INSIDE the form ensures pending edits are submitted when you click "Add".
                     with st.form("dir_metadata_form"):
                         # A. Add Custom Column UI (Safety: Submitting valid form saves data)
+                        st.write("Add Custom Column (Clicking Add saves current table data)")
                         c1, c2 = st.columns([0.7, 0.3])
-                        new_col_name = c1.text_input("Add Custom Column (Clicking Add saves current table data)")
+                        new_col_name = c1.text_input("Add Custom Column", label_visibility="collapsed")
                         add_col_btn = c2.form_submit_button("Add New Column")
 
                         # B. Column Selector logic is tricky inside forms.
@@ -411,8 +412,9 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     # WRAPPED IN FORM to prevent auto-refresh on every keystroke
                     with st.form("upload_metadata_form"):
                         # A. Add Custom Column UI (Safety: Submitting valid form saves data)
+                        st.write("Add Custom Column (Clicking Add saves current table data)")
                         c1, c2 = st.columns([0.7, 0.3])
-                        new_col_name = c1.text_input("Add Custom Column (Clicking Add saves current table data)")
+                        new_col_name = c1.text_input("Add Custom Column", label_visibility="collapsed")
                         add_col_btn = c2.form_submit_button("Add New Column")
 
                         # B. Column Selector logic

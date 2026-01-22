@@ -440,6 +440,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     gating_mode = "Per Cell Line"
 
                     # Selector for current cell line
+                    if 'pending_cell_line_update' in st.session_state:
+                        st.session_state['cell_line_sel_top'] = st.session_state.pop('pending_cell_line_update')
                     active_cell_line = st.selectbox("Select Cell Line to Gate", unique_cell_lines, key="cell_line_sel_top")
 
                     # Filter Experiment for this cell line
@@ -1215,6 +1217,16 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 else:
                                     # Store a temporary success message in session state to show AFTER rerun
                                     st.session_state[f"success_msg_{active_cell_line}"] = f"✅ Gate saved for {active_cell_line}."
+
+                                    # Auto-Advance
+                                    if unique_cell_lines:
+                                        curr_idx = unique_cell_lines.index(active_cell_line)
+                                        for i in range(1, len(unique_cell_lines)):
+                                            c_idx = (curr_idx + i) % len(unique_cell_lines)
+                                            if unique_cell_lines[c_idx] not in st.session_state.cell_line_gates:
+                                                st.session_state["pending_cell_line_update"] = unique_cell_lines[c_idx]
+                                                break
+
                                     st.rerun()
                                 return
 
@@ -1599,6 +1611,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.info("Processing singlets for detected cell line.")
 
                             # Selector for current cell line (independent from Step 1)
+                            if 'pending_singlet_update' in st.session_state:
+                                st.session_state['singlet_cell_line_sel'] = st.session_state.pop('pending_singlet_update')
                             active_line_singlets = st.selectbox("Select Cell Line for Singlet Gating", unique_cell_lines, key="singlet_cell_line_sel")
 
                             # Detect change in singlet cell line to reset manual mode
@@ -2177,7 +2191,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                         st.session_state.doublets_removed = True
                                                         st.rerun()
                                                     else:
-                                                        st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"✅ Singlet gate saved for {active_line_singlets}."
+                                                        st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"✅ Singlet saved for {active_line_singlets}."
+                                                        # Auto-Advance
+                                                        if unique_cell_lines:
+                                                            curr_idx = unique_cell_lines.index(active_line_singlets)
+                                                            for i in range(1, len(unique_cell_lines)):
+                                                                c_idx = (curr_idx + i) % len(unique_cell_lines)
+                                                                if unique_cell_lines[c_idx] not in st.session_state.cell_line_singlet_gates:
+                                                                    st.session_state["pending_singlet_update"] = unique_cell_lines[c_idx]
+                                                                    break
                                                         st.rerun()
                                                     # return # Implicit exit
 
