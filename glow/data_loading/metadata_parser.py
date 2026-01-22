@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 
 def parse_metadata_file(uploaded_file, header_row_idx, data_start_idx, global_exp_name_coords=None, df_raw=None):
     """

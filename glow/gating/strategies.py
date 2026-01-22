@@ -1,13 +1,13 @@
 import numpy as np
 import pandas as pd
+import cytoflow
+from abc import ABC, abstractmethod
+from typing import List, Optional, Tuple, cast
 import warnings
 
 # Suppress Cytoflow PnR vs PnB warning (common in commercial FCS)
 warnings.filterwarnings("ignore", message="The data range .* doesn't match the data bits")
 
-import cytoflow
-from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
 
 try:
     from sklearn.ensemble import IsolationForest
@@ -90,7 +90,7 @@ class OutlierDetector:
             contam_est = 1.0 - (self.outlier_high - self.outlier_low)
             contam_est = max(0.001, min(0.4, contam_est))
 
-            X_iso = data[[x, y]].values
+            X_iso = data.loc[:, [x, y]].values
 
             if len(X_iso) > 20000:
                 idx = np.random.choice(len(X_iso), 20000, replace=False)
@@ -241,10 +241,10 @@ class DBSCANGating(AutomaticGating):
         estimation_data = self.get_estimation_data(experiment)
 
         # Get full data for prediction later
-        full_data = experiment.data[self.channels].values
+        full_data = experiment.data.loc[:, self.channels].values
 
         # Determine if we need to downsample for the clustering step
-        X = estimation_data.data[self.channels].values
+        X = cast(pd.DataFrame, estimation_data.data).loc[:, self.channels].values
         n_samples = len(X)
 
         scaler = MinMaxScaler()

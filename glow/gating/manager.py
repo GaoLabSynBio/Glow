@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 from .strategies import (
     CompensationManager,
     GatingStrategy,
@@ -8,7 +8,6 @@ from .strategies import (
     MLPGating,
     MLPSingletGating,
     PolygonGating,
-    RangeGating,
     OutlierDetector
 )
 

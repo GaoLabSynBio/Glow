@@ -1,5 +1,4 @@
 from matplotlib.path import Path
-import numpy as np
 
 def is_point_in_polygon(point, polygon):
     """

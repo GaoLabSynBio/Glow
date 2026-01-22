@@ -102,6 +102,25 @@ class ActiveLearner:
         # 3. Log/Save this training batch
         self.logger.save_labeled_batch(X_new, y_new, source=f"active_learning_feedback_{self.model_type}")
 
+    def get_learned_gate(self, cell_line, gate_type):
+        """
+        Retrieves the most recent manual gate vertices for a specific cell line and gate type
+        from the feedback logs.
+        """
+        feedback = self.logger.load_feedback()
+        # Filter for cell_line and gate_type
+        relevant = [
+            f for f in feedback
+            if f.get('cell_line') == cell_line and f.get('gate_type') == gate_type and f.get('gate_params')
+        ]
+
+        if not relevant:
+            return None
+
+        # Return the most recent one
+        latest = relevant[-1]
+        return latest['gate_params']
+
     def _extract_features(self, df):
         """Helper to safely get Features based on model type"""
         if self.model_type == 'singlet':

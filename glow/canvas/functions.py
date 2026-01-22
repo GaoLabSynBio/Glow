@@ -1,9 +1,5 @@
-import io
 import streamlit as st
-import warnings
 import pickle
-import copy
-
 import uuid
 
 def add_plot_to_canvas(fig, title: str):
@@ -17,20 +13,20 @@ def add_plot_to_canvas(fig, title: str):
         st.session_state.canvas_plots = {}
 
     try:
-        import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
 
         # Check for Matplotlib Figure
-        if isinstance(fig, plt.Figure):
+        if isinstance(fig, Figure):
             # Create a deep copy to ensure the figure persists even if the original is closed
             try:
                 # Force draw to ensure artists are initialized
                 fig.canvas.draw()
                 fig_copy = pickle.loads(pickle.dumps(fig))
-            except Exception as e:
+            except Exception:
                 # Fallback if pickling fails (e.g. complex backends), though less safe vs plt.close()
                 fig_copy = fig
                 # Tag as direct reference to prevent closing
-                fig_copy._glow_is_direct_ref = True
+                setattr(fig_copy, "_glow_is_direct_ref", True)
 
             # Store Matplotlib Figure
             # Use UUID as key to allow multiple plots with same title/content
@@ -38,7 +34,7 @@ def add_plot_to_canvas(fig, title: str):
             st.session_state.canvas_plots[plot_id] = {
                 "type": "matplotlib",
                 "title": title,
-                "fig": fig_copy, 
+                "fig": fig_copy,
                 "settings": {"width_cols": 1, "font_scale": 1.0, "dot_scale": 1.0}
             }
             return True
@@ -73,7 +69,7 @@ def add_asperatio_to_canvas(data, title: str):
     """Store asperatio data in Streamlit session state for display in the Canvas tab."""
     if "canvas_plots" not in st.session_state:
         st.session_state.canvas_plots = {}
-    
+
     plot_id = str(uuid.uuid4())
     st.session_state.canvas_plots[plot_id] = {
         "type": "asperatio",

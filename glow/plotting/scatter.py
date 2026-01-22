@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
-import pandas as pd
 import numpy as np
 from .utils import get_point_density
 import plotly.express as px
@@ -60,7 +59,8 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
         else:
             facet_df = df[df[facet_col] == facet]
 
-        if len(facet_df) == 0: continue
+        if len(facet_df) == 0:
+            continue
 
         # Group by Experiment Name (the requested individual curve)
         if exp_col:
@@ -69,7 +69,8 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
             groups = [(None, facet_df)]
 
         for group_name, subset_df in groups:
-            if len(subset_df) < (batch_size // 5): continue
+            if len(subset_df) < (batch_size // 5):
+                continue
 
             # Determine color and label based on hue_col
             if hue_col and hue_col in df.columns:
@@ -166,8 +167,10 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
         #         ax.legend(by_label.values(), by_label.keys(), loc='best', fontsize='small')
 
         # Axis scales/labels
-        if xscale == 'log': ax.set_xscale('log')
-        if yscale == 'log': ax.set_yscale('log')
+        if xscale == 'log':
+            ax.set_xscale('log')
+        if yscale == 'log':
+            ax.set_yscale('log')
         ax.set_xlabel(x_channel)
 
 
@@ -216,9 +219,9 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
         clean_labels = []
         clean_handles = []
         seen = set()
-        for h, l in zip(handles, labels):
+        for h, lab in zip(handles, labels):
              # Extract the hue part from "Hue (Experiment)"
-             base_l = l.split(" (")[0]
+             base_l = lab.split(" (")[0]
              if base_l not in seen:
                   clean_labels.append(base_l)
                   clean_handles.append(h)
@@ -229,8 +232,10 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
         if by_label:
             ax_sum.legend(by_label.values(), by_label.keys(), loc='best', fontsize='small')
 
-    if xscale == 'log': ax_sum.set_xscale('log')
-    if yscale == 'log': ax_sum.set_yscale('log')
+    if xscale == 'log':
+        ax_sum.set_xscale('log')
+    if yscale == 'log':
+        ax_sum.set_yscale('log')
     ax_sum.set_xlabel(x_channel)
     ax_sum.set_ylabel(y_channel)
 
@@ -268,8 +273,10 @@ def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xsca
         s=10, alpha=0.6, ax=ax
     )
 
-    if log_x: ax.set_xscale('log')
-    if log_y: ax.set_yscale('log')
+    if log_x:
+        ax.set_xscale('log')
+    if log_y:
+        ax.set_yscale('log')
 
     if title:
         ax.set_title(title)
@@ -282,32 +289,32 @@ def plot_2d_scatter_plotly(experiment, x_channel, y_channel, hue=None, facet=Non
     Plotly version of 2D Scatter.
     """
     df = experiment.data.copy()
-    
+
     # Ensure numerical consistency if Scale is log
     log_x = (scale == 'log')
     log_y = (scale == 'log')
-    
+
     # Plotly handles log scaling in update_layout
-    
+
     # Construct title
     full_title = title if title else f"{x_channel} vs {y_channel}"
-    
+
     # Basic Scatter
     # We use plotly express for easy facet/hue handling
-    
+
     # Subsample if too large for interactivity? Plotly WebGL can handle ~100k reasonably well.
-    # Let's cap at 50k for safety for now or let it ride. 
+    # Let's cap at 50k for safety for now or let it ride.
     if len(df) > 50000:
         df = df.sample(50000, random_state=42)
         full_title += " (Subsampled 50k)"
 
     fig = px.scatter(
-        df, 
-        x=x_channel, 
-        y=y_channel, 
+        df,
+        x=x_channel,
+        y=y_channel,
         color=hue if hue in df.columns else None,
         facet_col=facet if facet in df.columns else None,
-        facet_col_wrap=3 if facet else None,
+        facet_col_wrap=3 if facet else 0,
         title=full_title,
         opacity=0.6,
         render_mode='webgl' # Faster rendering
@@ -321,7 +328,7 @@ def plot_2d_scatter_plotly(experiment, x_channel, y_channel, hue=None, facet=Non
         fig.update_xaxes(type="log")
     if log_y:
         fig.update_yaxes(type="log")
-        
+
     # Layout Tweaks
     fig.update_layout(
         template="plotly_white",
@@ -334,5 +341,5 @@ def plot_2d_scatter_plotly(experiment, x_channel, y_channel, hue=None, facet=Non
             x=1
         )
     )
-    
+
     return fig

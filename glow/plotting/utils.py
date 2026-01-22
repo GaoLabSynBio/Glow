@@ -1,16 +1,17 @@
 import pandas as pd
 import numpy as np
 from scipy import stats
+from typing import Any, cast
+import importlib.util
 try:
     import statsmodels.stats.multitest as mt
 except ImportError:
     mt = None
 
 # Try to import cytoflow, but don't fail if not present
-try:
-    import cytoflow
+if importlib.util.find_spec("cytoflow") is not None:
     CYTOFLOW_AVAILABLE = True
-except ImportError:
+else:
     CYTOFLOW_AVAILABLE = False
 
 def get_channels(experiment):
@@ -62,7 +63,7 @@ def filter_experiment(experiment, condition, values):
     try:
         # Check if constructor accepts just data, or try to mimic
         return cls(subset_df)
-    except:
+    except Exception:
         # Fallback to a simple container
         class SimpleExp:
             def __init__(self, d): self.data = d
@@ -78,8 +79,10 @@ def get_point_density(x, y, bins=100, log_x=False, log_y=False):
     """
     # Filter NaNs
     mask = np.isfinite(x) & np.isfinite(y)
-    if log_x: mask &= (x > 0)
-    if log_y: mask &= (y > 0)
+    if log_x:
+        mask &= (x > 0)
+    if log_y:
+        mask &= (y > 0)
 
     x = x[mask]
     y = y[mask]
@@ -147,7 +150,8 @@ def calculate_gated_mean(df, gate_channel, value_channel, threshold, statistic='
     elif statistic == 'geom_mean':
         # Geometric mean (ignore <= 0)
         pos_vals = vals[vals > 0]
-        if len(pos_vals) == 0: return np.nan
+        if len(pos_vals) == 0:
+            return np.nan
         return np.exp(np.log(pos_vals).mean())
 
     return np.nan
@@ -174,7 +178,7 @@ def get_percentile_of_value(df, channel, value):
     # percentileofscore returns 0-100
     try:
         return stats.percentileofscore(vals, value)
-    except:
+    except Exception:
         return 0
 
 def calculate_significance(data1, data2):
@@ -198,7 +202,8 @@ def calculate_significance(data1, data2):
     fc = m2 / m1 if m1 != 0 else 0
 
     try:
-        stat, p = stats.ttest_ind(d1, d2, equal_var=False)
+        res = stats.ttest_ind(d1, d2, equal_var=False)
+        p = float(cast(Any, res)[1])
         if p < 0.001:
             sig = "***"
         elif p < 0.01:
@@ -208,14 +213,18 @@ def calculate_significance(data1, data2):
         else:
             sig = "ns"
         return p, sig, fc
-    except:
+    except Exception:
         return 1.0, "ns", fc
 
 def get_significance_label(p):
-    if p < 0.001: return "***"
-    elif p < 0.01: return "**"
-    elif p < 0.05: return "*"
-    else: return "ns"
+    if p < 0.001:
+        return "***"
+    elif p < 0.01:
+        return "**"
+    elif p < 0.05:
+        return "*"
+    else:
+        return "ns"
 
 def adjust_pvalues(p_values, method='t-test'):
     """
@@ -223,7 +232,8 @@ def adjust_pvalues(p_values, method='t-test'):
     Methods: 't-test' (none), 'bonferroni', 'fdr'
     Returns adjusted p-values.
     """
-    if not p_values: return []
+    if not p_values:
+        return []
 
     if method in ['t-test', 'none'] or mt is None:
         return p_values
@@ -237,7 +247,7 @@ def adjust_pvalues(p_values, method='t-test'):
     m = method_map.get(method.lower(), 'fdr_bh')
 
     try:
-        reject, pvals_corrected, _, _ = mt.multipletests(p_values, method=m)
+        _, pvals_corrected, _, _ = mt.multipletests(p_values, method=m)
         return pvals_corrected
     except Exception as e:
         print(f"Error in p-value adjustment: {e}")

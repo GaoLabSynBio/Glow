@@ -2,8 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
-from scipy.stats import gmean
-from .utils import calculate_significance, adjust_pvalues, get_significance_label
+from .utils import adjust_pvalues, get_significance_label
 
 def plot_means_with_significance(experiment, channel, group_by, comparisons=[], statistic='mean',
                                hue_order=None, show_distribution=True, replicate_col=None,
@@ -51,7 +50,7 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
     # Combined Filter Check
     if len(plot_df) == 0:
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.text(0.5, 0.5, f"No events remaining\nafter applying gates",
+        ax.text(0.5, 0.5, "No events remaining\nafter applying gates",
                 ha='center', va='center', color='red', fontsize=14)
         ax.set_axis_off()
         return fig
@@ -119,7 +118,7 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
         )
 
         # Set facecolor to none to make it hollow
-        import matplotlib
+        import matplotlib.collections
         for collection in ax.collections:
             if isinstance(collection, matplotlib.collections.PolyCollection):
                 original_face = collection.get_facecolor()
@@ -193,19 +192,20 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
 
              if dot_data:
                  d_df = pd.DataFrame(dot_data)
-                 y_vals = d_df['y_val'].values
+                 # Force conversion to list to satisfy type checker for ax.scatter
+                 y_vals = d_df['y_val'].values.astype(float)
                  n_dots = len(y_vals)
-                 
+
                  # Calculate symmetric x-offsets around x_idx
                  if n_dots > 1:
                      # spread=0.1 means dots will be within +/- 0.05 of the center
-                     spread = 0.1 
+                     spread = 0.1
                      x_offsets = np.linspace(-spread/2, spread/2, n_dots)
                      x_positions = x_idx + x_offsets
                  else:
                      x_positions = [x_idx]
-                 
-                 ax.scatter(x_positions, y_vals, color='black', s=25, edgecolor='white', linewidth=0.5, zorder=25)
+
+                 ax.scatter(x_positions, y_vals.tolist(), color='black', s=25, edgecolor='white', linewidth=0.5, zorder=25)
 
         # 3.3 Drawing Mean Line (or Bar)
         # We plot the specific Y value corresponding to the "Mean of Means"
@@ -219,7 +219,7 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
                 err_val = np.std(linear_reps)
             elif error_bar.lower() == 'sem':
                 err_val = np.std(linear_reps) / np.sqrt(len(linear_reps))
-        
+
         # Determine Error Bar Y-offsets (asymmetric if log scale)
         yerr = None
         if err_val > 0:
@@ -228,10 +228,10 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
                 # We use max(1e-10, ...) to avoid log(<=0)
                 lower_linear = max(1e-10, linear_grand_mean - err_val)
                 upper_linear = linear_grand_mean + err_val
-                
+
                 lower_log = np.log10(lower_linear)
                 upper_log = np.log10(upper_linear)
-                
+
                 # yerr for errorbar needs (lower_offset, upper_offset)
                 yerr = [[plot_mean_val - lower_log], [upper_log - plot_mean_val]]
             else:
@@ -278,7 +278,7 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
                         e = np.std(reps)
                     else: # sem
                         e = np.std(reps) / np.sqrt(len(reps))
-                    
+
                     top = val + e
                     y_top = np.log10(top) if log_scale and top > 0 else top
                     all_ymax.append(y_top)
@@ -306,8 +306,10 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
             else:
                  continue
 
-            if g1 not in group_stats_info or g2 not in group_stats_info: continue
-            if g1 == g2: continue
+            if g1 not in group_stats_info or g2 not in group_stats_info:
+                continue
+            if g1 == g2:
+                continue
 
             # Use stored Linear Replicate Means for Statistics
             info1 = group_stats_info[g1]
@@ -328,7 +330,7 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
                 try:
                     from scipy import stats
                     _, p = stats.ttest_ind(d1, d2, equal_var=False)
-                except:
+                except Exception:
                     p = 1.0
 
             comparison_results.append({
@@ -372,7 +374,8 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
                      y_range = max_data - y_min
 
             step = y_range * step_fraction
-            if step == 0: step = 0.5
+            if step == 0:
+                step = 0.5
 
             current_y += step
             h = step * 0.2
@@ -447,7 +450,7 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
     # Use layout engine to spacing (only if compatible, otherwise tight_layout with padding)
     try:
         fig.tight_layout()
-    except:
+    except Exception:
         pass
 
     return fig

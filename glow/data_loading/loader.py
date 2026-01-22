@@ -214,7 +214,7 @@ class DataLoader:
 
             sanitized_meta['current_path'] = final_path
             self.loaded_files_metadata.append(sanitized_meta)
-        
+
         return self.loaded_files_metadata
 
     def prepare_fcs_files(self, paths, rename_strategy='folder_name', output_dir=None):
@@ -230,7 +230,7 @@ class DataLoader:
             return None
 
         internal_keys = ['original_path', 'current_path', 'path', 'display_name', 'condition']
-        
+
         all_condition_keys = set()
         all_condition_keys.add('Sample')
         all_condition_keys.add('Condition')
@@ -241,7 +241,7 @@ class DataLoader:
                  if key not in internal_keys:
                      clean_key = self.sanitize_key(key)
                      all_condition_keys.add(clean_key)
-        
+
         print(f"DEBUG: All Condition Keys: {all_condition_keys}")
 
         import_conditions_schema = {}
@@ -253,7 +253,7 @@ class DataLoader:
             tube_conditions = {}
             # Always ensure Sample and Condition are present
             tube_conditions['Sample'] = str(meta.get('display_name', 'Unknown'))
-            
+
             if 'condition' in meta and meta['condition']:
                 tube_conditions['Condition'] = str(meta['condition'])
             else:
@@ -261,11 +261,13 @@ class DataLoader:
 
             # Populate other conditions
             for orig_key, val in meta.items():
-                if orig_key in internal_keys: continue
-                
+                if orig_key in internal_keys:
+                    continue
+
                 clean_key = self.sanitize_key(orig_key)
-                if clean_key in ['Sample', 'Condition']: continue 
-                
+                if clean_key in ['Sample', 'Condition']:
+                    continue
+
                 if val is not None and str(val).strip() != "":
                     tube_conditions[clean_key] = str(val)
 
@@ -273,7 +275,7 @@ class DataLoader:
             for key in import_conditions_schema.keys():
                 if key not in tube_conditions:
                     tube_conditions[key] = "NA"
-            
+
             try:
                 tube = cytoflow.Tube(file=meta['current_path'], conditions=tube_conditions)
                 tubes.append(tube)
@@ -292,18 +294,18 @@ class DataLoader:
                 msg = str(e)
                 if "doesn't have the same channels" in msg or "CytoflowOpError" in str(type(e)):
                     print(f"Standard import failed ({msg}). Attempting manual channel union...")
-                    
+
                     # Manual Union Strategy
                     loaded_dfs = []
                     combined_metadata = {}
-                    
+
                     for tube in tubes:
                         try:
                             # Import single tube
                             op = cytoflow.ImportOp(tubes=[tube], conditions=import_conditions_schema)
                             ex = op.apply()
                             loaded_dfs.append(ex.data)
-                            
+
                             # Merge Metadata
                             # Cytoflow requires metadata for all columns (channels & conditions)
                             # We accumulate unique metadata entries.
@@ -322,20 +324,20 @@ class DataLoader:
                                         updated_vals.sort()
                                         existing['values'] = updated_vals
                                     # For channels, we assume metadata (voltage etc) is acceptable from the first source
-                                    
+
                         except Exception as e_inner:
                             print(f"Error loading individual tube {tube.file}: {e_inner}")
-                    
+
                     if not loaded_dfs:
                         return None
-                        
+
                     # Concatenate all (Columns will be unioned, missing values -> NaN)
                     combined_df = pd.concat(loaded_dfs, axis=0, ignore_index=True, sort=False)
-                    
+
                     # Fill missing numeric channels with 0.0
                     numeric_cols = combined_df.select_dtypes(include=[np.number]).columns
                     combined_df[numeric_cols] = combined_df[numeric_cols].fillna(0.0)
-                    
+
                     # Create unified experiment manually
                     try:
                         unified_experiment = cytoflow.Experiment()

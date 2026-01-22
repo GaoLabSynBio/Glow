@@ -175,14 +175,19 @@ def get_recursive_mask(df, parent_name, defined_gates):
         th_x = float(target_gate['threshold_x'])
         th_y = float(target_gate['threshold_y'])
         quads = target_gate['quadrant']
-        if isinstance(quads, str): quads = [quads]
+        if isinstance(quads, str):
+            quads = [quads]
 
         combined_mask = pd.Series([False] * len(df), index=df.index)
         for quad in quads:
-            if quad[0] == '+': mx = (df[ch_x] > th_x)
-            else: mx = (df[ch_x] <= th_x)
-            if quad[1] == '+': my = (df[ch_y] > th_y)
-            else: my = (df[ch_y] <= th_y)
+            if quad[0] == '+':
+                mx = (df[ch_x] > th_x)
+            else:
+                mx = (df[ch_x] <= th_x)
+            if quad[1] == '+':
+                my = (df[ch_y] > th_y)
+            else:
+                my = (df[ch_y] <= th_y)
             combined_mask |= (mx & my)
         current_gate_mask = combined_mask
 
@@ -248,12 +253,15 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
         if hasattr(experiment, 'conditions'):
              all_conditions = list(experiment.conditions.keys())
              group_cols = [c for c in all_conditions if c not in EXCLUDE_CONDITIONS and not c.startswith('__')]
-    except: group_cols = []
+    except Exception:
+        group_cols = []
 
     if not group_cols:
         possible_cols = ['Sample', 'sample', 'Name', 'name']
         for c in possible_cols:
-            if c in df.columns: group_cols = [c]; break
+            if c in df.columns:
+                group_cols = [c]
+                break
 
     if group_cols:
         valid_cols = [c for c in group_cols if c in df.columns]
@@ -261,14 +269,17 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
              grouped = df.groupby(valid_cols, observed=True)
         else:
              grouped = [('All', df)]
-    else: grouped = [('All', df)]
+    else:
+        grouped = [('All', df)]
 
     col_name = f"{label} %"
     count_col_name = f"{label} Count"
 
     for name, group in grouped:
-        if isinstance(name, tuple): sample_name = "_".join(map(str, name))
-        else: sample_name = str(name)
+        if isinstance(name, tuple):
+            sample_name = "_".join(map(str, name))
+        else:
+            sample_name = str(name)
 
         # 1. Get the Parent Population Mask for this specific group chunk
         # Note: recursion usually runs on full DF, here we run on group.
@@ -294,14 +305,19 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
                  th_x = float(gate['threshold_x'])
                  th_y = float(gate['threshold_y'])
                  quads = gate['quadrant']
-                 if isinstance(quads, str): quads = [quads]
+                 if isinstance(quads, str):
+                     quads = [quads]
 
                  combined_mask = pd.Series([False] * len(parent_population), index=parent_population.index)
                  for quad in quads:
-                     if quad[0] == '+': mx = (vals_x > th_x)
-                     else: mx = (vals_x <= th_x)
-                     if quad[1] == '+': my = (vals_y > th_y)
-                     else: my = (vals_y <= th_y)
+                     if quad[0] == '+':
+                         mx = (vals_x > th_x)
+                     else:
+                         mx = (vals_x <= th_x)
+                     if quad[1] == '+':
+                         my = (vals_y > th_y)
+                     else:
+                         my = (vals_y <= th_y)
                      combined_mask |= (mx & my)
                  pos_count = combined_mask.sum()
 
@@ -369,7 +385,8 @@ def get_channel_data_for_samples(experiment, channel, sample_names, parent_gate_
 
     full_mask = pd.Series([True] * len(df), index=df.index)
     if parent_gate_name and parent_gate_name != 'Singlets':
-        if defined_gates is None: defined_gates = []
+        if defined_gates is None:
+            defined_gates = []
         full_mask = get_recursive_mask(df, parent_gate_name, defined_gates)
     else:
         # Default match logic for Singlets
@@ -383,10 +400,13 @@ def get_channel_data_for_samples(experiment, channel, sample_names, parent_gate_
         if hasattr(experiment, 'conditions'):
              all_conditions = list(experiment.conditions.keys())
              group_cols = [c for c in all_conditions if c not in EXCLUDE_CONDITIONS and not c.startswith('__')]
-    except: pass
+    except Exception:
+        pass
     if not group_cols:
         for c in ['Sample', 'sample', 'Name', 'name']:
-            if c in df.columns: group_cols = [c]; break
+            if c in df.columns:
+                group_cols = [c]
+                break
 
     if group_cols:
         valid_cols = [c for c in group_cols if c in df.columns]
@@ -394,11 +414,14 @@ def get_channel_data_for_samples(experiment, channel, sample_names, parent_gate_
              grouped = filtered_df.groupby(valid_cols, observed=True)
         else:
              grouped = [('All', filtered_df)]
-    else: grouped = [('All', filtered_df)]
+    else:
+        grouped = [('All', filtered_df)]
 
     for name, group in grouped:
-        if isinstance(name, tuple): s_name = "_".join(map(str, name))
-        else: s_name = str(name)
+        if isinstance(name, tuple):
+            s_name = "_".join(map(str, name))
+        else:
+            s_name = str(name)
 
         if s_name in sample_names:
             data_map[s_name] = group[channel].values

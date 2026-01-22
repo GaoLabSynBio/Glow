@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
-import pandas as pd
 import numpy as np
 from matplotlib import gridspec
+from matplotlib.ticker import ScalarFormatter, NullFormatter, MaxNLocator
 
 def _gaussian_kernel1d(sigma: float, radius: int | None = None) -> np.ndarray:
     if sigma is None or sigma <= 0:
@@ -243,19 +243,18 @@ def plot_1d_histogram(
         if show_yaxis:
             # Show actual y-axis values
             ax.spines['left'].set_visible(True)
-            from matplotlib.ticker import MaxNLocator
             # Prune upper label to prevent overlap with plot above
             ax.yaxis.set_major_locator(MaxNLocator(nbins=3, prune='upper'))
-            ax.yaxis.set_major_formatter(plt.ScalarFormatter(useOffset=False))
+            ax.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
             ax.yaxis.get_offset_text().set_visible(False)
             ax.tick_params(axis='y', which='both', left=True, labelleft=True, labelsize=8)
         else:
             ax.set_yticks([])
-            ax.yaxis.set_major_formatter(plt.NullFormatter())
-            ax.yaxis.set_minor_formatter(plt.NullFormatter())
+            ax.yaxis.set_major_formatter(NullFormatter())
+            ax.yaxis.set_minor_formatter(NullFormatter())
             ax.yaxis.get_offset_text().set_visible(False)
             ax.spines['left'].set_visible(False)
-        
+
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.grid(False)
@@ -270,8 +269,8 @@ def plot_1d_histogram(
         if i < n_groups - 1:
             ax.set_xlabel("")
             ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
-            ax.xaxis.set_major_formatter(plt.NullFormatter())
-            ax.xaxis.set_minor_formatter(plt.NullFormatter())
+            ax.xaxis.set_major_formatter(NullFormatter())
+            ax.xaxis.set_minor_formatter(NullFormatter())
             ax.xaxis.get_offset_text().set_visible(False)
             ax.spines['bottom'].set_visible(False)
             # Add a faint baseline for each plot

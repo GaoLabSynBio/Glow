@@ -1,6 +1,4 @@
 import argparse
-import os
-import sys
 
 # Ensure we can import modules from the current package context if run directly
 # Logic: If this script is run, add parent dir to sys.path or use relative imports if run as module
@@ -50,7 +48,7 @@ def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rena
         print(f"Checking for learned gates for cell line: {cell_line}...")
 
         # Singlet Gate (Learned)
-        singlet_vertices = learner.predict(cell_line, "Singlet")
+        singlet_vertices = learner.get_learned_gate(cell_line, "Singlet")
         if singlet_vertices:
             print("Applying learned Singlet gate...")
             # Note: channel names here are hardcoded for now, but should ideally come from learned metadata too or user config
@@ -62,7 +60,7 @@ def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rena
              pass
 
         # Live Gate (Learned)
-        live_vertices = learner.predict(cell_line, "Live")
+        live_vertices = learner.get_learned_gate(cell_line, "Live")
         if live_vertices:
             print("Applying learned Live gate...")
             experiment = gater.apply_manual_gate(experiment, "_temp_live_mask_learned", "FSC-A", "SSC-A", live_vertices)
