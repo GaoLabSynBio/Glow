@@ -300,11 +300,12 @@ def render_analysis_tab():
         # Options: Singlets + any defined gates
         parent_options = ['Singlets'] + [g['label'] for g in st.session_state.positive_gates]
         parent_gate = st.selectbox("Select Parent Population", parent_options, index=0)
-        # --- MODE SELECTION ---
-        st.write("### Analysis Mode")
-        mode_c1, mode_c2 = st.columns([1, 3])
-        with mode_c1:
-            analysis_mode = st.radio("Mode", ["1D Histogram", "2D Quadrant", "2D Polygon"], horizontal=True, label_visibility="collapsed")
+
+        # --- MODE SELECTION (Sidebar) ---
+        with st.sidebar:
+            st.divider()
+            st.subheader("Analysis Settings")
+            analysis_mode = st.selectbox("Analysis Mode", ["1D Histogram", "2D Quadrant", "2D Polygon"], index=0)
 
         # --- CHANNEL SELECTION ---
         # Identify all numeric channels in the dataset
