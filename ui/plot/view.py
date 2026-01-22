@@ -4,6 +4,7 @@ from .base import render_data_selection
 from .histogram_ui import render_histogram_ui
 from .scatter_ui import render_scatter_ui
 from .bar_ui import render_bar_ui
+from .pairwise_ui import render_pairwise_ui
 
 def render_plot_tab():
     st.header("Plotting")
@@ -63,12 +64,12 @@ def render_plot_tab():
         st.subheader("Plot Settings")
         plot_type = st.selectbox(
             "Select Plot Type",
-            ["1D Histogram", "2D Scatter", "Bar Plot"]
+            ["1D Histogram", "2D Scatter", "Bar Plot", "Pairwise Plot"]
         )
         st.divider()
 
     # Exclude FSC/FC and SSC channels for 1D, 2D, and Bar Plot
-    if plot_type in ["1D Histogram", "2D Scatter", "Bar Plot"]:
+    if plot_type in ["1D Histogram", "2D Scatter", "Bar Plot", "Pairwise Plot"]:
         # User requested excluding fc and ssc channels. 'fc' likely implies FSC.
         channels = [c for c in channels if not any(x in c.lower() for x in ['fsc', 'fc', 'ssc'])]
 
@@ -78,7 +79,7 @@ def render_plot_tab():
 
     # 3. Global Scale Selector (Except for Bar Plot usually, but let's keep it common or pass it down)
     scale = 'log'
-    if plot_type in ["1D Histogram", "2D Scatter"]:
+    if plot_type in ["1D Histogram", "2D Scatter", "Pairwise Plot"]:
         st.subheader("2. Plot Configuration")
         scale_opts = ["log", "linear", "logicle"]
         col_s, _ = st.columns([1,2])
@@ -92,4 +93,6 @@ def render_plot_tab():
         render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditions, scale)
     elif plot_type == "Bar Plot":
         render_bar_ui(filtered_experiment, channels, hue_var, conditions)
+    elif plot_type == "Pairwise Plot":
+        render_pairwise_ui(filtered_experiment, channels, conditions, scale)
 

@@ -923,7 +923,7 @@ def render_analysis_tab():
                     st.warning("No data.")
                 else:
                     use_log = st.checkbox("Log Scale", value=True, key="quad_log")
-                    show_density = st.checkbox("Show Density", value=False, key="quad_density")
+                    show_density = st.checkbox("Show Density", value=True, key="quad_density")
                     if use_log:
                         pos_mask = (arr_x > 0) & (arr_y > 0)
                         arr_x_p = arr_x[pos_mask]
@@ -990,7 +990,7 @@ def render_analysis_tab():
 
                     if show_density and plot_density is not None:
                         marker_dict = dict(
-                            size=3,
+                            size=4,
                             opacity=0.5,
                             color=plot_density,
                             colorscale='Viridis',
@@ -1210,7 +1210,7 @@ def render_analysis_tab():
                     st.warning("No data.")
                 else:
                     use_log = st.checkbox("Log Scale", value=True, key="poly_log")
-                    show_density = st.checkbox("Show Density", value=False, key="poly_density")
+                    show_density = st.checkbox("Show Density", value=True, key="poly_density")
                     if use_log:
                         pos_mask = (arr_x > 0) & (arr_y > 0)
                         arr_x_p = arr_x[pos_mask]
@@ -1288,7 +1288,7 @@ def render_analysis_tab():
 
                     if show_density and plot_density is not None:
                         marker_dict = dict(
-                            size=3,
+                            size=4,
                             opacity=0.5,
                             color=plot_density,
                             colorscale='Viridis',
