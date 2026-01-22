@@ -51,7 +51,7 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
             )
 
         with s_col2:
-            kind = st.selectbox("Plot Kind", ["kde", "scatter", "hist", "reg"], index=0, help="Type of plot for the off-diagonal subplots.")
+            kind = st.selectbox("Plot Kind", ["scatter", "kde", "hist", "reg"], index=0, help="Type of plot for the off-diagonal subplots.")
             corner = st.checkbox("Corner Plot", value=False, help="Hide the upper triangle of the plot to save space.")
 
     # 3. Generate Button
@@ -105,14 +105,14 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
                     # Define plot keywords to reduce dot size
                     plot_kws = {}
                     if kind == "scatter":
-                        plot_kws = {'s': 10} # Reduced by half (assuming default ~20)
+                        plot_kws = {'s': 6, 'alpha': 0.6} # Reduced size and increased transparency
                     elif kind == "reg":
-                        plot_kws = {'scatter_kws': {'s': 6}} # Reduced to a third (assuming default ~20)
+                        plot_kws = {'scatter_kws': {'s': 3, 'alpha': 0.4}} # Reduced size and increased transparency
 
                     grid = sns.pairplot(
                         plot_df,
                         hue=hue,
-                        kind=cast(Literal["kde", "scatter", "hist", "reg"], kind),
+                        kind=cast(Literal["scatter", "kde", "hist", "reg"], kind),
                         corner=corner,
                         diag_kind="kde" if kind=="kde" else "auto",
                         plot_kws=plot_kws

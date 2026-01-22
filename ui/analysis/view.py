@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from typing import Any
 import plotly.graph_objects as go
 import plotly.express as px
 from scipy.stats import gaussian_kde
@@ -451,8 +452,14 @@ def render_analysis_tab():
                     if len(all_values) == 0:
                         st.warning("No valid data found for selected samples.")
                     else:
+                        c_log, c_ridge = st.columns([1, 1])
                         # Checkbox for log scale
-                        use_log = st.checkbox("Log Scale Plot", value=True)
+                        use_log = c_log.checkbox("Log Scale Plot", value=True)
+
+                        use_ridgeline = c_ridge.checkbox("Ridgeline Mode", value=False)
+                        ridgeline_offset = 0.6
+                        if use_ridgeline:
+                             ridgeline_offset = c_ridge.slider("Offset", 0.1, 2.0, 0.6, 0.1)
 
                         # Check validity for log
                         if use_log and np.max(all_values) <= 0:
@@ -496,8 +503,8 @@ def render_analysis_tab():
                         is_negative = False
                         if not is_range:
                             with col_dir:
-                                gate_direction = st.radio("Population", ["Positive (>)", "Negative (<)"], horizontal=True)
-                                is_negative = (gate_direction == "Negative (<)")
+                                gate_direction = st.radio("Population Direction", ["Positive (-->)", "Negative (<--)"], horizontal=True)
+                                is_negative = (gate_direction == "Negative (<--)")
 
                         st.info("Tip: Select a point on the plot to automatically set the threshold.")
 
@@ -519,21 +526,6 @@ def render_analysis_tab():
                             st.session_state[thr_key] = plot_min
                         if st.session_state[thr_key] > plot_max:
                             st.session_state[thr_key] = plot_max
-
-                        # Create placeholder for input widget to be rendered AFTER chart interaction logic
-                        # input_placeholder = st.empty() # REMOVED: Render directly to avoid flickering
-
-                        # REMOVED: Render Inputs Immediately (using current Session State)
-                        # if is_range:
-                        #      col_min, col_max = st.columns(2)
-                        #      with col_min:
-                        #           curr_min = st.number_input("Min Threshold", key=min_key, min_value=float(plot_min), max_value=float(plot_max))
-                        #      with col_max:
-                        #           curr_max = st.number_input("Max Threshold", key=max_key, min_value=float(plot_min), max_value=float(plot_max))
-                        #      curr_threshold = (curr_min, curr_max)
-                        # else:
-                        #      curr_val = st.number_input("Threshold Value", key=thr_key, min_value=float(plot_min), max_value=float(plot_max))
-                        #      curr_threshold = curr_val
 
                         # Capture selection events BEFORE rendering chart to avoid "select twice" bug
                         # We check the session state key directly
@@ -606,7 +598,10 @@ def render_analysis_tab():
 
                         # D. Interactive KDE Plot
                         # Colors
-                        colors = px.colors.qualitative.Plotly
+                        if len(selected_samples) > 0:
+                             colors = px.colors.sample_colorscale("Viridis", np.linspace(0, 1, len(selected_samples)))
+                        else:
+                             colors = px.colors.qualitative.Plotly
 
 
                         # Generate support points for KDE
@@ -680,17 +675,52 @@ def render_analysis_tab():
 
                                 color = colors[i % len(colors)]
 
-                                fig.add_trace(go.Scatter(
-                                    x=x_domain,
-                                    y=y_vals,
-                                    mode='lines+markers', # Markers needed for click targeting
-                                    marker=dict(size=20, color=color, opacity=0), # Invisible markers but hit-testable
-                                    line=dict(color=color, width=2),
-                                    name=s,
-                                    fill='tozeroy',
-                                    opacity=0.6,
-                                    hovertemplate=f"<b>{s}</b><br>Intensity: %{{x}}<br>Density: %{{y}}<extra></extra>"
-                                ))
+                                if use_ridgeline:
+                                    # Normalize y to max 1 for consistent stacking
+                                    if np.max(y_vals) > 0:
+                                        y_vals = y_vals / np.max(y_vals)
+
+                                    # Apply Offset
+                                    base_y = i * ridgeline_offset
+                                    y_plotted = y_vals + base_y
+
+                                    # Create filled area (Pseudo-Ridgeline)
+                                    # We use 'toself' with a closed polygon to fill relative to the baseline
+                                    x_poly = np.concatenate([x_domain, x_domain[::-1]])
+                                    y_poly = np.concatenate([y_plotted, np.full_like(y_plotted, base_y)])
+
+                                    fig.add_trace(go.Scatter(
+                                        x=x_poly,
+                                        y=y_poly,
+                                        fill='toself',
+                                        mode='lines',
+                                        line=dict(color='white', width=0.1),
+                                        fillcolor=color,
+                                        name=s,
+                                        opacity=0.5,
+                                        hoverinfo='skip' # Simplify hover for filled area
+                                    ))
+                                    # Add Line on top for clarity
+                                    fig.add_trace(go.Scatter(
+                                        x=x_domain,
+                                        y=y_plotted,
+                                        mode='lines',
+                                        line=dict(color='black', width=1.5),
+                                        showlegend=False,
+                                        hoverinfo='skip'
+                                    ))
+                                else:
+                                    fig.add_trace(go.Scatter(
+                                        x=x_domain,
+                                        y=y_vals,
+                                        mode='lines+markers', # Markers needed for click targeting
+                                        marker=dict(size=20, color=color, opacity=0), # Invisible markers but hit-testable
+                                        line=dict(color=color, width=2),
+                                        name=s,
+                                        fill='tozeroy',
+                                        opacity=0.5,
+                                        hovertemplate=f"<b>{s}</b><br>Intensity: %{{x}}<br>Density: %{{y}}<extra></extra>"
+                                    ))
 
                         # Update Layout
                         # Range determined by logic above
@@ -739,10 +769,24 @@ def render_analysis_tab():
                              fig.add_vline(x=curr_val_for_line, line_width=2, line_dash="dash", line_color="red",
                                           annotation_text=f"Threshold: {curr_val_for_line:.1f}", annotation_position=annot_pos)
 
+                        # Dynamic Height and Y-Axis for Ridgeline
+                        plot_height = 450
+                        y_title = "Density"
+                        yaxis_dict: dict[str, Any] = dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black'))
+
+                        if use_ridgeline and len(selected_samples) > 0:
+                             total_y_span = 1.0 + (len(selected_samples) - 1) * ridgeline_offset
+                             plot_height = int(max(450, total_y_span * 100 + 100))
+
+                             y_title = "Samples"
+                             yaxis_dict['tickvals'] = [i * ridgeline_offset for i in range(len(selected_samples))]
+                             yaxis_dict['ticktext'] = [str(i) for i in range(len(selected_samples))]
+
                         fig.update_layout(
+                            height=plot_height,
                             title=f"Density Plot: {selected_channel} (Subset: {parent_gate})",
                             xaxis_title=selected_channel,
-                            yaxis_title="Density",
+                            yaxis_title=y_title,
                             plot_bgcolor="white",
                             paper_bgcolor="white",
                             # Log axes if requested
@@ -755,7 +799,7 @@ def render_analysis_tab():
                             # Fixed range prevents accidental zoom toggling
                             dragmode='select' if is_range else 'zoom',
                             xaxis=dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
-                            yaxis=dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
+                            yaxis=yaxis_dict,
                             font=dict(color="black")
                         )
 

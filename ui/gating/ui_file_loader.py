@@ -189,7 +189,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                          del st.session_state['dir_new_col_input']
 
                 if st.session_state.preview_meta:
-                    st.subheader("Edit Metadata Structure")
+                    st.subheader("Metadata Editing")
 
                     if 'working_df_dir' not in st.session_state:
                          st.session_state.working_df_dir = pd.DataFrame(st.session_state.preview_meta)
@@ -248,7 +248,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     # Moving "Add Custom Column" INSIDE the form ensures pending edits are submitted when you click "Add".
                     with st.form("dir_metadata_form"):
                         # A. Add Custom Column UI (Safety: Submitting valid form saves data)
-                        st.write("Add Custom Column (Clicking Add saves current table data)")
+                        st.write("Add Custom Column (Clicking 'Add' saves current table data)")
                         c1, c2 = st.columns([0.7, 0.3])
                         new_col_name = c1.text_input("Add Custom Column", label_visibility="collapsed")
                         add_col_btn = c2.form_submit_button("Add New Column")
@@ -256,9 +256,11 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         # B. Column Selector logic is tricky inside forms.
                         # We display the multiselect, but changes only apply on SUBMIT (Add Column or Confirm).
                         # This matches the user request for safety.
-                        cols_selected = st.multiselect("Select columns to annotate (Click 'Update View' or 'Load' to apply changes):",
+                        st.write("Select columns to annotate (Click 'Update View' or 'Load Files' to apply changes)")
+                        cols_selected = st.multiselect("Select columns",
                                                     options=all_selectable,
-                                                    default=st.session_state.dir_cols_selected)
+                                                    default=st.session_state.dir_cols_selected,
+                                                    label_visibility="collapsed")
 
                         update_view_btn = st.form_submit_button("Update View / Save Progress")
 
@@ -277,7 +279,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                                     num_rows="fixed",
                                                     key="dir_editor")
 
-                        confirm_dir = st.form_submit_button("Confirm and Load Directory files")
+                        confirm_dir = st.form_submit_button("Confirm and Load Directory Files")
 
                     # --- LOGIC HANDLING ---
                     # 1. First, SAVE ANY PENDING DATA if any button was clicked
@@ -326,7 +328,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                             loaded_files = loader.process_files(sanitized_meta_list, output_dir="processed_fcs_ui")
                             st.session_state.loaded_files = loaded_files
                             st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
-                            st.write("Loaded Metadata Sample:", pd.DataFrame(loaded_files).head())
+                            st.write("Loaded Metadata Example:", pd.DataFrame(loaded_files).head())
 
     elif upload_option == "Upload Files / Drag & Drop Folder":
         st.info("You can drag and drop a folder containing FCS files directly into the box below. All files in the folder will be uploaded.")
@@ -367,7 +369,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                          del st.session_state["new_col_input"]
 
                 if st.session_state.preview_meta:
-                    st.subheader("Edit Metadata Structure")
+                    st.subheader("Metadata Editing")
                     if 'working_df' not in st.session_state:
                          st.session_state.working_df = pd.DataFrame(st.session_state.preview_meta)
 
@@ -412,15 +414,17 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     # WRAPPED IN FORM to prevent auto-refresh on every keystroke
                     with st.form("upload_metadata_form"):
                         # A. Add Custom Column UI (Safety: Submitting valid form saves data)
-                        st.write("Add Custom Column (Clicking Add saves current table data)")
+                        st.write("Add Custom Column (Clicking 'Add' saves current table data)")
                         c1, c2 = st.columns([0.7, 0.3])
                         new_col_name = c1.text_input("Add Custom Column", label_visibility="collapsed")
                         add_col_btn = c2.form_submit_button("Add New Column")
 
                         # B. Column Selector logic
-                        cols_selected = st.multiselect("Select columns to annotate (Click 'Update View' or 'Load' to apply changes):",
+                        st.write("Select columns to annotate (Click 'Update View' or 'Load Files' to apply changes)")
+                        cols_selected = st.multiselect("Select columns",
                                                     options=available_options,
-                                                    default=st.session_state.upload_cols_selected)
+                                                    default=st.session_state.upload_cols_selected,
+                                                    label_visibility="collapsed")
 
                         update_view_btn = st.form_submit_button("Update View / Save Progress")
 

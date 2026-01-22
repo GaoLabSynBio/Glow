@@ -9,8 +9,8 @@ def render_metadata_upload_section(key_prefix="", reset_keys=None):
     """
     if reset_keys is None:
         reset_keys = []
-    st.markdown("---")
-    st.write("### Bulk Metadata Upload (CSV/Excel)")
+    # Removed divider
+    st.markdown("#### Bulk Metadata Upload (CSV/Excel)")
     with st.expander("Upload Metadata File", expanded=True):
         uploaded_file = st.file_uploader("Upload CSV or Excel", type=['csv', 'xlsx', 'xls'], key=f"{key_prefix}_uploader")
 
