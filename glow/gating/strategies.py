@@ -140,6 +140,49 @@ class OutlierDetector:
             print(f"OutlierDetector Warning: {e}. Falling back to full experiment.")
             return experiment
 
+
+def remove_non_finite(experiment, channels):
+    data = experiment.data
+    # Check for NaNs/Infs in relevant channels
+    mask = np.ones(len(data), dtype=bool)
+    for col in channels:
+        if col in data.columns:
+            # Handle numeric types only
+             if data[col].dtype.kind in 'fi':
+                 mask &= np.isfinite(data[col])
+
+    if mask.all():
+        return experiment
+
+    clean_data = data[mask].copy()
+
+    # Reconstruct Experiment
+    try:
+        if hasattr(experiment, 'clone'):
+            new_exp = experiment.clone()
+            new_exp.data = clean_data
+            return new_exp
+    except:
+        pass
+
+    # For Cytoflow (fallback)
+    try:
+        import cytoflow
+        # Attempt to preserve metadata if possible, or minimally reconstruction
+        # Use existing metadata property if available
+        meta = getattr(experiment, 'metadata', None)
+        if meta is None:
+             # Infer minimal metadata
+             meta = {c: 'channel' for c in channels}
+
+        return cytoflow.Experiment(data=clean_data, metadata=meta)
+    except:
+        # Last resort: if it behaves like an object with .data
+        import copy
+        new_exp = copy.copy(experiment)
+        new_exp.data = clean_data
+        return new_exp
+
 class AutomaticGating(GatingStrategy):
     """
     Base class for automated, data-driven gating strategies.
@@ -155,9 +198,14 @@ class AutomaticGating(GatingStrategy):
         Returns the dataset to be used for estimating the gate parameters.
         If an outlier detector is configured, it returns the cleaned subset.
         """
+        # Step 1: Remove Non-Finite Values (NaN/Inf)
+        clean_exp = remove_non_finite(experiment, self.channels)
+
+        # Step 2: Apply Outlier Detection
         if self.outlier_detector:
-            return self.outlier_detector.get_clean_subset(experiment, self.channels)
-        return experiment
+            return self.outlier_detector.get_clean_subset(clean_exp, self.channels)
+        
+        return clean_exp
 
 class ManualGating(GatingStrategy):
     """

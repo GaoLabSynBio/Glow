@@ -379,6 +379,9 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
 
                     render_metadata_upload_section(key_prefix="upload", reset_keys=['working_df'])
 
+                    if 'user_custom_cols' not in st.session_state:
+                        st.session_state.user_custom_cols = []
+
                     # 2. Configure View Options for Uploads
                     default_cols = ["Replicate", "Cell_Line", "Experiment_Name", "Timepoint", "Concentration"]
                     preview_df_cols = pd.DataFrame(st.session_state.preview_meta).columns.tolist() if st.session_state.preview_meta else []
