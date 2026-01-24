@@ -255,16 +255,48 @@ class DensityGating(AutomaticGating):
         self.sigma = sigma
 
     def apply(self, experiment):
-        density_op = cytoflow.DensityGateOp(name=self.name,
-                                            xchannel=self.channels[0],
-                                            ychannel=self.channels[1],
-                                            keep=self.keep,
-                                            sigma=self.sigma)
+        try:
+            density_op = cytoflow.DensityGateOp(name=self.name,
+                                                xchannel=self.channels[0],
+                                                ychannel=self.channels[1],
+                                                keep=self.keep,
+                                                sigma=self.sigma)
 
-        estimation_data = self.get_estimation_data(experiment)
-        density_op.estimate(estimation_data)
+            estimation_data = self.get_estimation_data(experiment)
+            
+            # Sanity check
+            if len(estimation_data.data) < 10:
+                raise ValueError("Not enough events for density estimation after cleaning.")
 
-        return density_op.apply(experiment)
+            density_op.estimate(estimation_data)
+
+            return density_op.apply(experiment)
+        except Exception as e:
+            # Fallback for "autodetected range" or other plotting/KDE errors
+            msg = str(e)
+            if "autodetected range" in msg or "finite" in msg or "Singular matrix" in msg:
+                print(f"Density Gating failed ({msg}). Falling back to robust quantile gating...")
+                
+                # Fallback: Use OutlierDetector or simple Quantiles to create a boolean gate
+                # This approximates "finding the main population"
+                if self.outlier_detector:
+                    mask = self.outlier_detector.get_mask(experiment, self.channels)
+                else:
+                    # Default robust quantile
+                    od = OutlierDetector(method='quantile', outlier_low=0.05, outlier_high=0.95)
+                    mask = od.get_mask(experiment, self.channels)
+                
+                # Apply mask to create boolean channel
+                res = experiment.clone()
+                # Ensure mask is boolean series compatible with data index
+                res.data[self.name] = mask.astype(bool)
+                # Add metadata for the new channel
+                if hasattr(res, 'metadata'):
+                    res.metadata[self.name] = {'type': 'condition', 'class': 'boolean'}
+                
+                return res
+            raise e
+
 
 
 class DBSCANGating(AutomaticGating):

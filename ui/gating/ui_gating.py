@@ -220,8 +220,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                          channels = exp.data.columns.tolist() # Fallback
 
                     # Try to default to standard Scatter channels if available
-                    default_x = "FSC 488/10-A" if "FSC 488/10-A" in channels else channels[0]
-                    default_y = "SSC 488/10-A" if "SSC 488/10-A" in channels else channels[1] if len(channels) > 1 else channels[0]
+                    def get_default_channel(substrings, all_channels, fallback):
+                        for sub in substrings:
+                                for c in all_channels:
+                                    if sub.lower() in c.lower():
+                                        return c
+                        return fallback
+
+                    default_x = get_default_channel(['fsc-a', 'fsc-area', 'fsc', 'forward'], channels, channels[0])
+                    default_y = get_default_channel(['ssc-a', 'ssc-area', 'ssc', 'side'], channels, channels[1] if len(channels) > 1 else channels[0])
 
                     x_axis = st.selectbox("X Axis", channels, index=channels.index(default_x) if default_x in channels else 0, key="csv_x")
                     y_axis = st.selectbox("Y Axis", channels, index=channels.index(default_y) if default_y in channels else 0, key="csv_y")
@@ -404,8 +411,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                 channels = base_exp.channels
 
                 # Try to be smart about defaults
-                default_x = "FSC 488/10-A" if "FSC 488/10-A" in channels else channels[0]
-                default_y = "SSC 488/10-A" if "SSC 488/10-A" in channels else channels[1] if len(channels) > 1 else channels[0]
+                def get_default_channel(substrings, all_channels, fallback):
+                    for sub in substrings:
+                            for c in all_channels:
+                                if sub.lower() in c.lower():
+                                    return c
+                    return fallback
+
+                default_x = get_default_channel(['fsc-a', 'fsc-area', 'fsc', 'forward'], channels, channels[0])
+                default_y = get_default_channel(['ssc-a', 'ssc-area', 'ssc', 'side'], channels, channels[1] if len(channels) > 1 else channels[0])
 
                 x_channel = st.selectbox("X Channel (Forward Scatter)", options=channels, index=channels.index(default_x) if default_x in channels else 0)
                 y_channel = st.selectbox("Y Channel (Side Scatter)", options=channels, index=channels.index(default_y) if default_y in channels else 0)

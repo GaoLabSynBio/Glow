@@ -61,10 +61,61 @@ class GatingManager:
     def apply_compensation(self, experiment, spillover_matrix_file=None):
         return self.compensation_manager.apply_compensation(experiment, spillover_matrix_file)
 
+    def _resolve_channel(self, experiment, channel_name: str, variants: List[str] = None) -> str:
+        """
+        Helper to resolve channel names flexibly (case-insensitive, variants).
+        """
+        if channel_name in experiment.channels:
+            return channel_name
+
+        lower_map = {c.lower(): c for c in experiment.channels}
+        
+        if channel_name.lower() in lower_map:
+            return lower_map[channel_name.lower()]
+
+        if variants:
+            for v in variants:
+                if v in experiment.channels:
+                    return v
+                if v.lower() in lower_map:
+                    return lower_map[v.lower()]
+        
+        # Fallback: Try to find something that looks like the requested channel
+        # e.g. "FSC-A" -> look for "FSC" and "A" or "Area"
+        # This is a bit of a heuristic for common flow cytometry naming
+        base = channel_name.upper()
+        candidates = []
+        if "FSC" in base or "FORWARD" in base:
+            if "A" in base or "AREA" in base:
+                candidates = ["FSC-Area", "FS-Area", "Forward Scatter-Area", "FSC-A", "FS-A"]
+            elif "H" in base or "HEIGHT" in base:
+                candidates = ["FSC-Height", "FS-Height", "Forward Scatter-Height", "FSC-H", "FS-H"]
+            elif "W" in base or "WIDTH" in base:
+                candidates = ["FSC-Width", "FS-Width", "Forward Scatter-Width", "FSC-W", "FS-W"]
+        elif "SSC" in base or "SIDE" in base:
+             if "A" in base or "AREA" in base:
+                candidates = ["SSC-Area", "SS-Area", "Side Scatter-Area", "SSC-A", "SS-A"]
+             elif "H" in base or "HEIGHT" in base:
+                candidates = ["SSC-Height", "SS-Height", "Side Scatter-Height", "SSC-H", "SS-H"]
+             elif "W" in base or "WIDTH" in base:
+                candidates = ["SSC-Width", "SS-Width", "Side Scatter-Width", "SSC-W", "SS-W"]
+
+        for c in candidates:
+            if c in experiment.channels:
+                return c
+            if c.lower() in lower_map:
+                return lower_map[c.lower()]
+
+        return channel_name
+
     def remove_duplicates(self, experiment, fsc_h_channel="FSC-H", fsc_a_channel="FSC-A", linearity_threshold=0.1, method="gmm", cell_type="colo"):
         """
         Removes doublets/duplicates.
         """
+        # Resolve channels
+        fsc_h_channel = self._resolve_channel(experiment, fsc_h_channel, ["FSC-Height", "FS-H", "FS-Height"])
+        fsc_a_channel = self._resolve_channel(experiment, fsc_a_channel, ["FSC-Area", "FS-A", "FS-Area"])
+
         if method == "gmm":
             strategy = GMMGating(name="_temp_singlet_mask_auto",
                                  channels=[fsc_a_channel, fsc_h_channel],
@@ -83,6 +134,10 @@ class GatingManager:
         Uses AutoGatingStrategy (GMM, Density).
         method: 'gmm', 'density', or 'smart' (legacy alias for density + outliers).
         """
+        # Resolve channels
+        x_channel = self._resolve_channel(experiment, x_channel, ["FSC-Area", "FS-A", "FS-Area"])
+        y_channel = self._resolve_channel(experiment, y_channel, ["SSC-Area", "SS-A", "SS-Area"])
+
         outlier_detector = None
 
         # Handle 'smart' alias or explicit request
@@ -127,6 +182,9 @@ class GatingManager:
         """
         Uses ManualGatingStrategy (Polygon).
         """
+        x_channel = self._resolve_channel(experiment, x_channel)
+        y_channel = self._resolve_channel(experiment, y_channel)
+
         strategy = PolygonGating(name=name,
                                  channels=[x_channel, y_channel],
                                  vertices=vertices)
@@ -136,6 +194,9 @@ class GatingManager:
         """
         Uses AutoGatingStrategy (Density implementation).
         """
+        x_channel = self._resolve_channel(experiment, x_channel)
+        y_channel = self._resolve_channel(experiment, y_channel)
+
         strategy = DensityGating(name=name,
                                  channels=[x_channel, y_channel],
                                  keep=keep,
