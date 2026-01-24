@@ -1,0 +1,523 @@
+{
+    "applyComp": false,
+    "curComp": {
+        "autoFluo": null,
+        "keyList": [
+            "FSC-H",
+            "FSC-A",
+            "SSC-H",
+            "SSC-A",
+            "FL1-H",
+            "FL1-A",
+            "FL3-H",
+            "FL3-A",
+            "FL6-H",
+            "FL6-A",
+            "FL11-H",
+            "FL11-A",
+            "FSC-Width",
+            "Time"
+        ],
+        "spillMat": null,
+        "useAutoFluo": false
+    },
+    "derivedParams": [],
+    "figOptions": {
+        "curAxLims": [
+            "auto",
+            "auto"
+        ],
+        "curAxScales": [
+            "logicle",
+            "linear"
+        ],
+        "curChnls": [
+            "FL1-A",
+            "SSC-A"
+        ],
+        "curDotSize": "Regular",
+        "curNormOption": "Unit Area",
+        "curOpacity": 80,
+        "curPlotType": "Histogram",
+        "curSmooth": 42
+    },
+    "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/analysis.eflq",
+    "gateSaveList": [
+        {
+            "axScales": [
+                "log",
+                "log"
+            ],
+            "checkState": 2,
+            "chnls": [
+                "FSC-H",
+                "SSC-A"
+            ],
+            "displayName": "cells",
+            "logicleParams": [
+                null,
+                null
+            ],
+            "type": "polygonGate",
+            "uuid": "eq1qp3jb",
+            "verts": [
+                [
+                    146953.52407796582,
+                    298715.73040482117
+                ],
+                [
+                    115765.74147719902,
+                    250751.09038963143
+                ],
+                [
+                    89691.6899361665,
+                    198558.80309412646
+                ],
+                [
+                    72643.83526295512,
+                    131983.66966728636
+                ],
+                [
+                    53838.94054799813,
+                    90327.59826047278
+                ],
+                [
+                    45838.11745615826,
+                    50400.66340104894
+                ],
+                [
+                    40571.60128097487,
+                    29811.95547745585
+                ],
+                [
+                    42885.96233667531,
+                    20402.84487099834
+                ],
+                [
+                    52950.3215598631,
+                    20402.84487099834
+                ],
+                [
+                    60827.66276497728,
+                    19816.252024883266
+                ],
+                [
+                    70265.6322267385,
+                    15691.621830072365
+                ],
+                [
+                    92214.39312020506,
+                    15691.621830072365
+                ],
+                [
+                    108912.50465388146,
+                    23606.781483187526
+                ],
+                [
+                    142142.5815405859,
+                    31603.041755130092
+                ],
+                [
+                    167881.651114632,
+                    39910.07729821635
+                ],
+                [
+                    222780.7123230028,
+                    61818.82219272515
+                ],
+                [
+                    248922.18835208836,
+                    87730.63086296705
+                ],
+                [
+                    281234.26601053315,
+                    104512.08581540287
+                ],
+                [
+                    321285.7481581096,
+                    148319.08626154356
+                ],
+                [
+                    330322.35545630543,
+                    204436.4621631538
+                ],
+                [
+                    328494.9259128513,
+                    307558.19517855725
+                ],
+                [
+                    270522.33473293297,
+                    307558.19517855725
+                ],
+                [
+                    225266.28165219814,
+                    307558.19517855725
+                ],
+                [
+                    173563.75543438748,
+                    335687.31872117583
+                ]
+            ]
+        },
+        {
+            "axScales": [
+                "log",
+                "log"
+            ],
+            "checkState": 2,
+            "chnls": [
+                "SSC-H",
+                "SSC-A"
+            ],
+            "displayName": "cells2",
+            "logicleParams": [
+                null,
+                null
+            ],
+            "type": "polygonGate",
+            "uuid": "z7v7q09a",
+            "verts": [
+                [
+                    158919.68395545115,
+                    296563.01056303066
+                ],
+                [
+                    131626.5636403901,
+                    278626.2304969261
+                ],
+                [
+                    118721.56269296478,
+                    243167.5809429683
+                ],
+                [
+                    105177.28041905703,
+                    208641.07355263515
+                ],
+                [
+                    86724.01094220686,
+                    165351.98773706701
+                ],
+                [
+                    73459.3983189078,
+                    142681.19385600192
+                ],
+                [
+                    68371.08199894469,
+                    127380.55310674789
+                ],
+                [
+                    55621.74055520163,
+                    103267.92781683282
+                ],
+                [
+                    51768.98628973497,
+                    94309.3125461661
+                ],
+                [
+                    42495.07962911432,
+                    78211.32296805127
+                ],
+                [
+                    39908.0582641688,
+                    65230.07313020772
+                ],
+                [
+                    35355.170028260414,
+                    58235.02432216264
+                ],
+                [
+                    31888.859808709203,
+                    51403.69008536714
+                ],
+                [
+                    25942.45746920602,
+                    42871.880134296334
+                ],
+                [
+                    22982.82689434172,
+                    36784.653043603656
+                ],
+                [
+                    22272.26683643492,
+                    32103.34892191056
+                ],
+                [
+                    20544.361238829497,
+                    28177.15844930287
+                ],
+                [
+                    17558.908607110545,
+                    25013.2664699443
+                ],
+                [
+                    16864.04021680562,
+                    23103.931420696947
+                ],
+                [
+                    16416.139594361688,
+                    21583.79086343394
+                ],
+                [
+                    16416.139594361688,
+                    20163.66909828719
+                ],
+                [
+                    17324.161432674242,
+                    20163.66909828719
+                ],
+                [
+                    182632.93085429523,
+                    260293.8079501615
+                ],
+                [
+                    181815.39613140392,
+                    291559.66406057717
+                ]
+            ]
+        },
+        {
+            "checkState": 0,
+            "chnl": "FL1-A",
+            "displayName": "GFP Positive",
+            "ends": [
+                714.4460594175652,
+                172652.68707202747
+            ],
+            "type": "lineGate",
+            "uuid": "ru8c5ufh"
+        },
+        {
+            "checkState": 0,
+            "chnl": "FL11-A",
+            "displayName": "mCherry Positive",
+            "ends": [
+                8273.86028282961,
+                7239259.897498386
+            ],
+            "type": "lineGate",
+            "uuid": "09m7ynfl"
+        }
+    ],
+    "qsSaveList": [],
+    "save_ver": 1.7,
+    "smplSaveList": [
+        {
+            "Subpops": [],
+            "displayName": "5428_Ctrl",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-A1.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-A1.fcs",
+            "fileDir_rel": "01-Well-A1.fcs",
+            "plotColor": [
+                0.10588235408067703,
+                0.6196078658103943,
+                0.46666666865348816,
+                1.0
+            ],
+            "selected": true
+        },
+        {
+            "Subpops": [
+                {
+                    "Subpops": [],
+                    "displayName": "12411_mCh+",
+                    "gateIDs": [
+                        "eq1qp3jb",
+                        "z7v7q09a",
+                        "09m7ynfl"
+                    ],
+                    "plotColor": [
+                        1.0,
+                        1.0,
+                        0.20000000298023224,
+                        1.0
+                    ],
+                    "selected": false
+                }
+            ],
+            "displayName": "12411_Ctrl",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-A2.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-A2.fcs",
+            "fileDir_rel": "01-Well-A2.fcs",
+            "plotColor": [
+                0.8509804010391235,
+                0.37254902720451355,
+                0.007843137718737125,
+                1.0
+            ],
+            "selected": false
+        },
+        {
+            "Subpops": [],
+            "displayName": "12412_Ctrl",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-A3.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-A3.fcs",
+            "fileDir_rel": "01-Well-A3.fcs",
+            "plotColor": [
+                0.4588235318660736,
+                0.43921568989753723,
+                0.7019608020782471,
+                1.0
+            ],
+            "selected": false
+        },
+        {
+            "Subpops": [],
+            "displayName": "5428_.3x dox",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-B1.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-B1.fcs",
+            "fileDir_rel": "01-Well-B1.fcs",
+            "plotColor": [
+                0.9058823585510254,
+                0.16078431904315948,
+                0.5411764979362488,
+                1.0
+            ],
+            "selected": true
+        },
+        {
+            "Subpops": [
+                {
+                    "Subpops": [],
+                    "displayName": "12411_.3xdox_mCh+",
+                    "gateIDs": [
+                        "eq1qp3jb",
+                        "z7v7q09a",
+                        "09m7ynfl"
+                    ],
+                    "plotColor": [
+                        1.0,
+                        0.49803921580314636,
+                        0.0,
+                        1.0
+                    ],
+                    "selected": false
+                }
+            ],
+            "displayName": "12411_.3x dox",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-B2.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-B2.fcs",
+            "fileDir_rel": "01-Well-B2.fcs",
+            "plotColor": [
+                0.4000000059604645,
+                0.6509804129600525,
+                0.11764705926179886,
+                1.0
+            ],
+            "selected": false
+        },
+        {
+            "Subpops": [],
+            "displayName": "12412_.3x dox",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-B3.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-B3.fcs",
+            "fileDir_rel": "01-Well-B3.fcs",
+            "plotColor": [
+                0.9019607901573181,
+                0.6705882549285889,
+                0.007843137718737125,
+                1.0
+            ],
+            "selected": false
+        },
+        {
+            "Subpops": [],
+            "displayName": "5428_1x dox",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-C1.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-C1.fcs",
+            "fileDir_rel": "01-Well-C1.fcs",
+            "plotColor": [
+                0.6509804129600525,
+                0.4627451002597809,
+                0.11372549086809158,
+                1.0
+            ],
+            "selected": true
+        },
+        {
+            "Subpops": [],
+            "displayName": "12411_1x dox",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-C2.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-C2.fcs",
+            "fileDir_rel": "01-Well-C2.fcs",
+            "plotColor": [
+                0.4000000059604645,
+                0.4000000059604645,
+                0.4000000059604645,
+                1.0
+            ],
+            "selected": false
+        },
+        {
+            "Subpops": [],
+            "displayName": "12412_1x dox",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-C3.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-C3.fcs",
+            "fileDir_rel": "01-Well-C3.fcs",
+            "plotColor": [
+                0.8941176533699036,
+                0.10196078568696976,
+                0.10980392247438431,
+                1.0
+            ],
+            "selected": false
+        },
+        {
+            "Subpops": [],
+            "displayName": "5428_3x dox",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-D1.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-D1.fcs",
+            "fileDir_rel": "01-Well-D1.fcs",
+            "plotColor": [
+                0.21568627655506134,
+                0.4941176474094391,
+                0.7215686440467834,
+                1.0
+            ],
+            "selected": true
+        },
+        {
+            "Subpops": [],
+            "displayName": "12411_3x dox",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-D2.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-D2.fcs",
+            "fileDir_rel": "01-Well-D2.fcs",
+            "plotColor": [
+                0.3019607961177826,
+                0.686274528503418,
+                0.29019609093666077,
+                1.0
+            ],
+            "selected": false
+        },
+        {
+            "Subpops": [],
+            "displayName": "12412_3x dox",
+            "fileDir": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-D3.fcs",
+            "fileDir_abs": "/Users/acheron/Desktop/jsp/Exp_20260121_1/01-Well-D3.fcs",
+            "fileDir_rel": "01-Well-D3.fcs",
+            "plotColor": [
+                0.5960784554481506,
+                0.30588236451148987,
+                0.6392157077789307,
+                1.0
+            ],
+            "selected": false
+        }
+    ],
+    "stainDict": {
+        "FL1-A": "",
+        "FL1-H": "",
+        "FL11-A": "",
+        "FL11-H": "",
+        "FL3-A": "",
+        "FL3-H": "",
+        "FL6-A": "",
+        "FL6-H": "",
+        "FSC-A": "",
+        "FSC-H": "",
+        "FSC-Width": "",
+        "SSC-A": "",
+        "SSC-H": "",
+        "Time": ""
+    }
+}

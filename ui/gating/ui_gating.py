@@ -7,6 +7,7 @@ from .ui_active_learning import render_uncertainty_controls, get_uncertainty_tra
 from glow.canvas.functions import add_plot_to_canvas
 from .ui_file_loader import reset_live_gating, reset_singlet_gating
 import matplotlib.pyplot as plt
+from glow.utils import safe_log10
 
 
 def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
@@ -41,7 +42,7 @@ def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
 
                     X_s = df.loc[subset_idxs, channels].values
                     if np.max(X_s) > 10:
-                        X_s = np.log10(X_s + 1)
+                        X_s = safe_log10(X_s + 1, min_val=1e-9)
 
                     ids = np.zeros(len(X_s), dtype=int)
                     cts = np.array([gate.get('cell_type', 'colo')] * len(X_s))
@@ -252,8 +253,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         df_viz = data_df.copy()
                         color_c = None
                         try:
-                            x_d = np.log10(df_viz[x_curr]) if use_log else df_viz[x_curr]
-                            y_d = np.log10(df_viz[y_curr]) if use_log else df_viz[y_curr]
+                            x_d = safe_log10(df_viz[x_curr]) if use_log else df_viz[x_curr]
+                            y_d = safe_log10(df_viz[y_curr]) if use_log else df_viz[y_curr]
                             mask = np.isfinite(x_d) & np.isfinite(y_d)
                             x_c, y_c = x_d[mask], y_d[mask]
 
@@ -324,11 +325,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 xp = x_series[x_series > 0]
                                 yp = y_series[y_series > 0]
                                 if not xp.empty:
-                                    lx_min, lx_max = np.log10(xp.min()), np.log10(xp.max())
+                                    lx_min, lx_max = safe_log10(xp.min()), safe_log10(xp.max())
                                     pad_x = (lx_max - lx_min) * 0.05 if lx_max != lx_min else 0.1
                                     range_x = [lx_min - pad_x, lx_max + pad_x]
                                 if not yp.empty:
-                                    ly_min, ly_max = np.log10(yp.min()), np.log10(yp.max())
+                                    ly_min, ly_max = safe_log10(yp.min()), safe_log10(yp.max())
                                     pad_y = (ly_max - ly_min) * 0.05 if ly_max != ly_min else 0.1
                                     range_y = [ly_min - pad_y, ly_max + pad_y]
                             else:
@@ -669,8 +670,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         # --- Density Calculation (Fast 2D Histogram Method) ---
                         try:
                             # Use log data for density calculation if log scale is selected
-                            x_data = np.log10(df[x_channel]) if is_log else df[x_channel]
-                            y_data = np.log10(df[y_channel]) if is_log else df[y_channel]
+                            x_data = safe_log10(df[x_channel]) if is_log else df[x_channel]
+                            y_data = safe_log10(df[y_channel]) if is_log else df[y_channel]
 
                             # Remove infs/nans for calculation
                             mask = np.isfinite(x_data) & np.isfinite(y_data)
@@ -1783,8 +1784,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                             # --- Fast Density Calculation for Singlets ---
                             try:
-                                x_d = np.log10(viz_df_full[d_x] + 1) if d_is_log else viz_df_full[d_x]
-                                y_d = np.log10(viz_df_full[d_y] + 1) if d_is_log else viz_df_full[d_y]
+                                x_d = safe_log10(viz_df_full[d_x] + 1) if d_is_log else viz_df_full[d_x]
+                                y_d = safe_log10(viz_df_full[d_y] + 1) if d_is_log else viz_df_full[d_y]
                                 mask_v = np.isfinite(x_d) & np.isfinite(y_d)
                                 x_c, y_c = x_d[mask_v], y_d[mask_v]
 
@@ -2065,7 +2066,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         learner = get_active_learner("singlet")
                                         if learner:
                                             X_lin = df_gated[[d_x, d_y]].values
-                                            X_pred = np.log10(X_lin + 1) if np.max(X_lin) > 10 else X_lin
+                                            X_pred = safe_log10(X_lin + 1, min_val=1e-9) if np.max(X_lin) > 10 else X_lin
                                             c_type = str(active_line_singlets).lower() if active_line_singlets else "colo"
                                             # Context
                                             ctx_ids = np.zeros(len(X_pred), dtype=int)
@@ -2075,7 +2076,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             subset_n = 5000
                                             viz_df = viz_df_full.sample(subset_n, random_state=42) if len(viz_df_full) > subset_n else viz_df_full
                                             v_lin = viz_df[[d_x, d_y]].values
-                                            v_pred_in = np.log10(v_lin + 1) if np.max(v_lin) > 10 else v_lin
+                                            v_pred_in = safe_log10(v_lin + 1, min_val=1e-9) if np.max(v_lin) > 10 else v_lin
                                             v_ids = np.zeros(len(v_lin), dtype=int)
                                             v_types = np.array([c_type] * len(v_lin))
                                             viz_df["Singlet"] = learner.model.predict(v_pred_in, dataset_ids=v_ids, cell_types=v_types)
@@ -2138,7 +2139,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 if len(s_subset) > 10:
                                                     s_hull_x, s_hull_y = None, None
                                                     if d_is_log:
-                                                        pts = np.log10(s_subset[[d_x, d_y]].values + 1)
+                                                        pts = safe_log10(s_subset[[d_x, d_y]].values + 1, min_val=1e-9)
                                                         bx, by = compute_density_boundary(pts, percentile=95)
                                                         if bx is not None:
                                                             s_hull_x, s_hull_y = 10**bx - 1, 10**by - 1
@@ -2287,10 +2288,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         # For Density, we need 1D arrays
                                         if d_is_log:
                                             # Safe log
-                                            x_to_plot = np.log10(viz_df[d_x] + 1)
-                                            y_to_plot = np.log10(viz_df[d_y] + 1)
-                                            ell_x_plot = np.log10(ell_x + 1) if not np.any(ell_x <= -1) else ell_x # approximation
-                                            ell_y_plot = np.log10(ell_y + 1) if not np.any(ell_y <= -1) else ell_y
+                                            x_to_plot = safe_log10(viz_df[d_x] + 1)
+                                            y_to_plot = safe_log10(viz_df[d_y] + 1)
+                                            ell_x_plot = safe_log10(ell_x + 1) if not np.any(ell_x <= -1) else ell_x # approximation
+                                            ell_y_plot = safe_log10(ell_y + 1) if not np.any(ell_y <= -1) else ell_y
                                         else:
                                             x_to_plot = viz_df[d_x]
                                             y_to_plot = viz_df[d_y]
@@ -2331,8 +2332,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         ell_x_poly = d_mean[0] + 2.5 * lambda_d[0] * v_d[0, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[0, 1] * np.sin(theta_poly)
                                         ell_y_poly = d_mean[1] + 2.5 * lambda_d[0] * v_d[1, 0] * np.cos(theta_poly) + 2.5 * lambda_d[1] * v_d[1, 1] * np.sin(theta_poly)
 
-                                        ell_x_plot = np.log10(ell_x_poly + 1) if d_is_log else ell_x_poly
-                                        ell_y_plot = np.log10(ell_y_poly + 1) if d_is_log else ell_y_poly
+                                        ell_x_plot = safe_log10(ell_x_poly + 1) if d_is_log else ell_x_poly
+                                        ell_y_plot = safe_log10(ell_y_poly + 1) if d_is_log else ell_y_poly
 
                                         # Draw the Singlet Gate (Auto/GMM)
                                         # Use a slightly thicker line if it's the final choice

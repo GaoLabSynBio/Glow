@@ -4,6 +4,7 @@ import cytoflow
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple, cast
 import warnings
+from glow.utils import safe_log10
 
 # Suppress Cytoflow PnR vs PnB warning (common in commercial FCS)
 warnings.filterwarnings("ignore", message="The data range .* doesn't match the data bits")
@@ -447,9 +448,9 @@ class MLPGating(AutomaticGating):
         # Heuristic Log Transform if data seems linear (max > 10)
         # The model 'gating_model_full.pkl' was trained on Log data.
         if np.max(xs) > 10:
-            xs = np.log10(xs + 1)
+            xs = safe_log10(xs + 1, min_val=1e-9)
         if np.max(ys) > 10:
-            ys = np.log10(ys + 1)
+            ys = safe_log10(ys + 1, min_val=1e-9)
 
         X = np.column_stack([xs, ys])
 
@@ -503,9 +504,9 @@ class MLPSingletGating(AutomaticGating):
 
         # Heuristic Log Transform if data seems linear
         if np.max(xs) > 10:
-            xs = np.log10(xs + 1)
+            xs = safe_log10(xs + 1, min_val=1e-9)
         if np.max(ys) > 10:
-            ys = np.log10(ys + 1)
+            ys = safe_log10(ys + 1, min_val=1e-9)
 
         X = np.column_stack([xs, ys])
 

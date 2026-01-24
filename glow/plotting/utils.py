@@ -73,12 +73,20 @@ def filter_experiment(experiment, condition, values):
             def conditions(self): return {c: self.data[c] for c in self.data.columns if not pd.api.types.is_numeric_dtype(self.data[c])}
         return SimpleExp(subset_df)
 
+from glow.utils import safe_log10
+
 def get_point_density(x, y, bins=100, log_x=False, log_y=False):
     """
     Calculates density for scatter plots using 2D histogram lookup.
     """
     # Filter NaNs
     mask = np.isfinite(x) & np.isfinite(y)
+    # We use safe checking via safe_log10 implicitly if we wanted, but to keep logic similar:
+    # If we use safe_log10, it returns NaNs for <= 0.
+    # But we want to filter them out for histogram2d.
+    
+    # Original logic explicitly removed delicate values.
+    # Let's keep the explicit filter as it's efficient for histogram2d which needs clean data.
     if log_x:
         mask &= (x > 0)
     if log_y:
@@ -92,8 +100,9 @@ def get_point_density(x, y, bins=100, log_x=False, log_y=False):
 
     # Transform to log space for density calculation if needed
     # (Matches visual density on log-scaled plots)
-    tx = np.log10(x) if log_x else x
-    ty = np.log10(y) if log_y else y
+    # Using safe_log10 adds an extra layer of safety even if filtered
+    tx = safe_log10(x) if log_x else x
+    ty = safe_log10(y) if log_y else y
 
     # Histogram
     hh, locx, locy = np.histogram2d(tx, ty, bins=bins)
