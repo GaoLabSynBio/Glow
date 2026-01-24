@@ -7,7 +7,7 @@ from .ui_active_learning import render_uncertainty_controls, get_uncertainty_tra
 from glow.canvas.functions import add_plot_to_canvas
 from .ui_file_loader import reset_live_gating, reset_singlet_gating
 import matplotlib.pyplot as plt
-from glow.utils import safe_log10
+from glow.utils import safe_log10, logicle_transform
 
 
 def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
@@ -2348,8 +2348,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             apx_ = [v[0] for v in apv] + [apv[0][0]]
                                             apy_ = [v[1] for v in apv] + [apv[0][1]]
                                             if d_is_log:
-                                                apx_ = np.log10(np.array(apx_) + 1)
-                                                apy_ = np.log10(np.array(apy_) + 1)
+                                                apx_ = logicle_transform(np.array(apx_))
+                                                apy_ = logicle_transform(np.array(apy_))
                                             fig_d.add_trace(go.Scatter(x=apx_, y=apy_, mode="lines+markers",
                                                                     line=dict(color="lime", width=4),
                                                                     marker=dict(size=6, color="lime"),
@@ -2371,8 +2371,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 py_ = [v[1] for v in pv] + [pv[0][1]]
 
                                                 if d_is_log:
-                                                    px_ = np.log10(np.array(px_) + 1)
-                                                    py_ = np.log10(np.array(py_) + 1)
+                                                    px_ = logicle_transform(np.array(px_))
+                                                    py_ = logicle_transform(np.array(py_))
 
                                                 fig_d.add_trace(go.Scatter(x=px_, y=py_, mode='lines+markers',
                                                                         line=dict(color='#f0f921', width=3), name="Manual Selection"))
@@ -2747,7 +2747,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     clf = SingletClassifier.load("data/singlet_model_full.pkl")
                                                     X = df_export[s_params["diff_channels"]].values
                                                     if np.max(X) > 10:
-                                                        X = np.log10(X + 1)
+                                                        # Use logicle transform to handle negative values from compensation
+                                                        X = logicle_transform(X)
                                                     c_type = s_params.get("cell_type", "colo")
                                                     ids = np.zeros(len(X), dtype=int)
                                                     cts = np.array([c_type] * len(X))
@@ -2792,7 +2793,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                             clf = SingletClassifier.load("data/singlet_model_full.pkl")
                                                             X_s = df_export.loc[subset_idxs, gate['diff_channels']].values
                                                             if np.max(X_s) > 10:
-                                                                X_s = np.log10(X_s + 1)
+                                                                # Use logicle transform to handle negative values from compensation
+                                                                X_s = logicle_transform(X_s)
                                                             c_type = gate.get('cell_type', 'colo')
                                                             ids = np.zeros(len(X_s), dtype=int)
                                                             cts = np.array([c_type] * len(X_s))
@@ -2976,7 +2978,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     clf = SingletClassifier.load("data/singlet_model_full.pkl")
                                                     X = full_exp.data[s_params["diff_channels"]].values
                                                     if np.max(X) > 10:
-                                                        X = np.log10(X + 1)
+                                                        # Use logicle transform to handle negative values from compensation
+                                                        X = logicle_transform(X)
                                                     c_type = s_params.get("cell_type", "colo")
                                                     ids = np.zeros(len(X), dtype=int)
                                                     cts = np.array([c_type] * len(X))
@@ -3009,7 +3012,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                              clf = SingletClassifier.load("data/singlet_model_full.pkl")
                                                              X_s = full_exp.data.loc[subset_idxs, gate['diff_channels']].values
                                                              if np.max(X_s) > 10:
-                                                                 X_s = np.log10(X_s + 1)
+                                                                 # Use logicle transform to handle negative values from compensation
+                                                                 X_s = logicle_transform(X_s)
                                                              c_type = gate.get('cell_type', 'colo')
                                                              ids = np.zeros(len(X_s), dtype=int)
                                                              cts = np.array([c_type] * len(X_s))

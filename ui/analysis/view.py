@@ -8,6 +8,7 @@ from scipy.stats import gaussian_kde
 from glow.analysis.stats import get_summary_statistics
 from glow.analysis.positive import get_channel_data_for_samples, calculate_positive_stats_recursive
 from glow.canvas.functions import add_plot_to_canvas
+from glow.utils import logicle_transform
 
 def render_analysis_tab():
     st.header("Analysis & Statistics")
@@ -1011,9 +1012,9 @@ def render_analysis_tab():
                     density_vals = None
                     if show_density and len(arr_x) > 0:
                         try:
-                            # Histogram-based density
-                            dx_calc = np.log10(arr_x) if use_log else arr_x
-                            dy_calc = np.log10(arr_y) if use_log else arr_y
+                            # Histogram-based density (use logicle for negative-safe transform)
+                            dx_calc = logicle_transform(arr_x) if use_log else arr_x
+                            dy_calc = logicle_transform(arr_y) if use_log else arr_y
                             H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
                             x_bins = np.digitize(dx_calc, xedges) - 1
                             y_bins = np.digitize(dy_calc, yedges) - 1
@@ -1311,9 +1312,9 @@ def render_analysis_tab():
                     density_vals = None
                     if show_density and len(arr_x) > 0:
                         try:
-                            # Histogram-based density
-                            dx_calc = np.log10(arr_x) if use_log else arr_x
-                            dy_calc = np.log10(arr_y) if use_log else arr_y
+                            # Histogram-based density (use logicle for negative-safe transform)
+                            dx_calc = logicle_transform(arr_x) if use_log else arr_x
+                            dy_calc = logicle_transform(arr_y) if use_log else arr_y
                             H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
                             x_bins = np.digitize(dx_calc, xedges) - 1
                             y_bins = np.digitize(dy_calc, yedges) - 1
