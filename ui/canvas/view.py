@@ -1,6 +1,7 @@
 import streamlit as st
 import io
 import numpy as np
+import warnings
 from glow.canvas.functions import get_canvas_plots, remove_plot_from_canvas, move_plot_in_canvas
 
 def render_canvas_tab():
@@ -183,10 +184,16 @@ def render_canvas_tab():
                         # Automatic "Enabling" without user action might be intrusive if they already liked their plot.
                         # Showing the option is the "Enablement".
 
+                    # Force redraw after all modifications to ensure artists are updated
+                    # This is critical for proper rendering of polygons/fills on log scale after resizing
+                    fig.canvas.draw()
+
                     # Render to PNG buffer
                     buf = io.BytesIO()
                     # Increase DPI with scale to maintain sharpness/resolution
-                    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100 * font_scale)
+                    with warnings.catch_warnings():
+                         warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
+                         fig.savefig(buf, format="png", bbox_inches="tight", dpi=100 * font_scale)
 
                     st.image(buf, width="stretch")
 
@@ -194,21 +201,27 @@ def render_canvas_tab():
                     # Stack buttons vertically
                     buf_svg = io.BytesIO()
                     try:
-                        fig.savefig(buf_svg, format="svg", bbox_inches="tight")
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
+                            fig.savefig(buf_svg, format="svg", bbox_inches="tight")
                         st.download_button("Download SVG", buf_svg.getvalue(), f"{title}.svg", "image/svg+xml", key=f"dl_svg_{plot_id}")
                     except Exception:
                         pass
 
                     buf_png = io.BytesIO()
                     try:
-                        fig.savefig(buf_png, format="png", bbox_inches="tight", dpi=300)
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
+                            fig.savefig(buf_png, format="png", bbox_inches="tight", dpi=300)
                         st.download_button("Download PNG", buf_png.getvalue(), f"{title}.png", "image/png", key=f"dl_png_{plot_id}")
                     except Exception:
                         pass
 
                     buf_pdf = io.BytesIO()
                     try:
-                        fig.savefig(buf_pdf, format="pdf", bbox_inches="tight")
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
+                            fig.savefig(buf_pdf, format="pdf", bbox_inches="tight")
                         st.download_button("Download PDF", buf_pdf.getvalue(), f"{title}.pdf", "application/pdf", key=f"dl_pdf_{plot_id}")
                     except Exception:
                         pass

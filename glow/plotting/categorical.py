@@ -448,9 +448,8 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
 
     # Text Overlap Prevention
     # Use layout engine to spacing (only if compatible, otherwise tight_layout with padding)
-    try:
-        fig.tight_layout()
-    except Exception:
-        pass
+    # Text Overlap Prevention
+    # Use layout engine to spacing (only if compatible, otherwise tight_layout with padding)
+    # fig.tight_layout() removed to avoid GridSpec warnings with Tables
 
     return fig

@@ -31,16 +31,28 @@ def _histogram_curve(values: np.ndarray, bins: int, log_scale: bool) -> tuple[np
         return np.array([]), np.array([])
 
     if log_scale:
-        vmin = values.min()
-        vmax = values.max()
-        if vmin <= 0:
-            vmin = np.min(values[values > 0]) if np.any(values > 0) else 1e-3
+        valid_vals = values[values > 0]
+        if len(valid_vals) == 0:
+             return np.array([]), np.array([])
+
+        # Robust min/max: Clamp min to 0.01 to avoid extreme scaling from artifacts/noise
+        vmin = max(valid_vals.min(), 0.01)
+        vmax = valid_vals.max()
+
+        if vmin >= vmax:
+             vmax = vmin * 10
+
         edges = np.logspace(np.log10(vmin), np.log10(vmax), int(bins) + 1)
     else:
         edges = np.linspace(values.min(), values.max(), int(bins) + 1)
 
     counts, edges = np.histogram(values, bins=edges)
-    centers = 0.5 * (edges[:-1] + edges[1:])
+    if log_scale:
+        # For log-spaced edges, the geometric mean is the correct "visual center" on a log axis
+        # centers = sqrt(edge[i] * edge[i+1])
+        centers = np.sqrt(edges[:-1] * edges[1:])
+    else:
+        centers = 0.5 * (edges[:-1] + edges[1:])
     return centers, counts.astype(float)
 
 
@@ -81,6 +93,8 @@ def plot_1d_histogram(
         fig, ax = plt.subplots(figsize=(8, 6))
 
         c = color if color is not None else 'gray'
+        if log_scale:
+            ax.set_xscale('log')
 
         x, y = _histogram_curve(df[channel].values, bins=bins, log_scale=log_scale)
         if x.size > 0:
@@ -92,15 +106,17 @@ def plot_1d_histogram(
                 y = y / m if m > 0 else y
 
             y_s = _smooth_1d(y, smooth_sigma)
-            ax.fill_between(x, y_s, step="mid", alpha=0.5, color=c)
-            ax.plot(x, y_s, color=c, linewidth=2)
+            # Use ax.fill() with explicit polygon vertices for robust rendering
+            # This handles log scale and figure resizing better than fill_between
+            poly_x = np.concatenate([[x[0]], x, [x[-1]]])
+            poly_y = np.concatenate([[0], y_s, [0]])
+            ax.fill(poly_x, poly_y, alpha=0.5, color=c, zorder=1)
+            ax.plot(x, y_s, color=c, linewidth=2, zorder=2)
+            ax.set_ylim(bottom=0)
 
         if not show_yaxis:
             ax.set_yticks([])
             ax.set_ylabel("")
-
-        if log_scale:
-            ax.set_xscale('log')
 
         if title:
             ax.set_title(title)
@@ -233,9 +249,13 @@ def plot_1d_histogram(
 
         x, y = cached_curves[i]
         if x.size > 0:
-            # Add a thin white outline to make the ridge stand out
+            # Use ax.fill() with explicit polygon vertices for robust rendering
+            # This handles log scale and figure resizing better than fill_between
+            poly_x = np.concatenate([[x[0]], x, [x[-1]]])
+            poly_y = np.concatenate([[0], y, [0]])
+            # At small sizes, stroke is more precise than fill
             ax.plot(x, y, color='white', linewidth=2.5, zorder=1)
-            ax.fill_between(x, y, step="mid", alpha=0.7, color=color, zorder=2)
+            ax.fill(poly_x, poly_y, alpha=0.7, color=color, zorder=2)
             ax.plot(x, y, color=color, linewidth=1.5, zorder=3)
 
         # Aesthetics

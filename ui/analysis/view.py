@@ -475,7 +475,8 @@ def render_analysis_tab():
                                  plot_min, plot_max = 0, 1
                             else:
                                 # Use percentiles to find "High Density Region" and exclude far outliers
-                                plot_min = float(np.percentile(valid_data_for_range, 0.1)) # 0.1th percentile
+                                # Clamp min to 0.01 to avoid extreme scaling from artifacts
+                                plot_min = max(0.01, float(np.percentile(valid_data_for_range, 0.1))) # 0.1th percentile
                                 plot_max = float(np.percentile(valid_data_for_range, 99.9)) # 99.9th percentile
                         else:
                             valid_data_for_range = all_values
