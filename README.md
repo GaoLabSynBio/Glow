@@ -75,24 +75,24 @@ Run the provided app bundle (no command line required).
    * **Channel Selection**: You can modify this to include/exclude specific channels.
    * **Export**: Save the "Gated Population" (Live + Singlets) or generate a full annotated dataset. You can also change the names of file to download here.
 
-### 5. Analysis
+ 5. **Analysis**:
 
-After exporting or selecting your data, you can perform further analysis within the app:
+   * After exporting or selecting your data, you can perform further analysis within the app:
+   
+   * **Transfection Efficiency Gate**: Specialized gating for transfection efficiency assessment. You can do gating for binary or just binary.
+   * **2D Quadratic Gating**: Use quadratic boundaries for more complex population separation in 2D plots.
+   * Additional analysis tools and visualizations are available to support your experimental needs.
 
-* **Transfection Efficiency Gate**: Specialized gating for transfection efficiency assessment. You can do gating for binary or just binary.
-* **2D Quadratic Gating**: Use quadratic boundaries for more complex population separation in 2D plots.
-* Additional analysis tools and visualizations are available to support your experimental needs.
+6. **Plotting**:
 
-### 6. Plotting
+   * Glow supports a variety of plotting options to help visualize your data:
+   
+   * **1D Stack Plot**: Visualize distributions across samples or conditions in a stacked format.
+   * **2D Running Means**: Display trends and relationships between two variables using running means in 2D plots.
+   * **Bar Plots**: Summarize and compare data across groups or conditions with customizable bar plots.
+   * Additional plotting features are available for in-depth data exploration.
 
-Glow supports a variety of plotting options to help visualize your data:
-
-* **1D Stack Plot**: Visualize distributions across samples or conditions in a stacked format.
-* **2D Running Means**: Display trends and relationships between two variables using running means in 2D plots.
-* **Bar Plots**: Summarize and compare data across groups or conditions with customizable bar plots.
-* Additional plotting features are available for in-depth data exploration.
-
-### 7. Canvas Customization
+### 3. Canvas Customization
 
 Glow provides a canvas feature where you can customize the appearance of your plots, all plots are able to added to canvas to tune or directly downloaded as svg to be further modified in illustrator easily:
 
