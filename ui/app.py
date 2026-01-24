@@ -3,7 +3,7 @@ import os
 import sys
 
 # Set page config must be the first streamlit command
-st.set_page_config(page_title="Glow Flow Analysis", layout="wide")
+st.set_page_config(page_title="Glow Flow Analysis", page_icon="assets/glow_icon.png", layout="wide")
 
 # Add parent directory to path to import pipeline modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -33,7 +33,11 @@ from canvas.view import render_canvas_tab
 from compensation.view import render_compensation_tab
 from gating.ui_file_loader import clear_experiment_state
 
-st.title("Glow Flow Analysis Pipeline")
+col1, col2 = st.columns([1, 2.5], vertical_alignment="center")
+with col1:
+    st.image("assets/glow_icon_breath.gif")
+with col2:
+    st.markdown('<h1 style="padding-top: 0px; position: relative; top: 1px;">   Flow Analysis Pipeline</h1>', unsafe_allow_html=True)
 
 # Initialize Session State for Workflow
 if 'gating_complete' not in st.session_state:
@@ -53,6 +57,7 @@ if 'cleanup_done' not in st.session_state and DataLoader:
 
 
 # Sidebar Navigation
+st.sidebar.image("assets/glow_icon.png", width=80)
 st.sidebar.title("Navigation")
 
 # Determine available tabs based on state
