@@ -1,4 +1,4 @@
-<img src="assets/glow_icon_breath.gif" width="300" alt="Glow Icon" />
+<img src="assets/glow_icon_breath.svg" width="300" alt="Glow Icon" />
 
 A user-friendly flow analysis pipeline with pretty UI and Active Learning capabilities.
 
@@ -76,7 +76,7 @@ Run the provided app bundle (no command line required).
    * **Export**: Save the "Gated Population" (Live + Singlets) or generate a full annotated dataset. You can also change the names of file to download here.
 
 5. **Analysis**:
-   
+
    * After exporting or selecting your data, you can perform further analysis within the app:
    * **Transfection Efficiency Gate**: Specialized gating for transfection efficiency assessment. You can do gating for binary or just binary.
    * **2D Quadratic Gating**: Use quadratic boundaries for more complex population separation in 2D plots.

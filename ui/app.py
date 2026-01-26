@@ -35,7 +35,7 @@ from gating.ui_file_loader import clear_experiment_state
 
 col1, col2 = st.columns([1, 2.5], vertical_alignment="center")
 with col1:
-    st.image("assets/glow_icon_breath.gif")
+    st.image("assets/glow_icon_breath.svg", width=500)
 with col2:
     st.markdown('<h1 style="padding-top: 0px; position: relative; top: 1px;">   Flow Analysis Pipeline</h1>', unsafe_allow_html=True)
 
@@ -46,7 +46,7 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'current_tab' not in st.session_state:
     st.session_state.current_tab = "Gating"
-    
+
 # Initial Cache Cleanup (Optimized Data Management)
 if 'cleanup_done' not in st.session_state and DataLoader:
     # Clear active learning/temp data on fresh start
