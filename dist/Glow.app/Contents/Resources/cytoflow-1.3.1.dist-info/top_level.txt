@@ -1,5 +1,0 @@
-cytoflow
-cytoflowgui
-docs
-fcsparser
-package
