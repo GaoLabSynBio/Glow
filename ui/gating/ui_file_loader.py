@@ -222,7 +222,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
 
                     # Initialize Default Selection (First Run Only)
                     if 'dir_cols_selected' not in st.session_state:
-                         default_selection = ["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else [])
+                         default_selection = ["Experiment_Name", "Replicate", "Cell_Line"] + ([extra_opts[0]] if extra_opts else [])
                          st.session_state.dir_cols_selected = [c for c in default_selection if c in all_selectable]
 
                     # 5. Prepare DataFrame from Persistent State
@@ -285,6 +285,19 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     # 1. First, SAVE ANY PENDING DATA if any button was clicked
                     if add_col_btn or update_view_btn or confirm_dir:
                          if edited_df is not None:
+                              # Auto-populate Replicate if Experiment Name changed and Replicate did not
+                              old_df = st.session_state.working_df_dir
+                              if "Experiment_Name" in edited_df.columns and "Replicate" in edited_df.columns:
+                                   for idx in edited_df.index:
+                                        if idx in old_df.index:
+                                             new_exp = str(edited_df.at[idx, "Experiment_Name"])
+                                             old_exp = str(old_df.at[idx, "Experiment_Name"]) if "Experiment_Name" in old_df.columns else ""
+                                             new_rep = str(edited_df.at[idx, "Replicate"])
+                                             old_rep = str(old_df.at[idx, "Replicate"]) if "Replicate" in old_df.columns else ""
+
+                                             if new_exp != old_exp and new_rep == old_rep:
+                                                  edited_df.at[idx, "Replicate"] = new_exp
+
                               st.session_state.working_df_dir.update(edited_df)
 
                          # Save column selection
@@ -394,7 +407,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
 
                     # 4. Initialize Selection Default (First Run Only)
                     if 'upload_cols_selected' not in st.session_state:
-                        default_selection = ["Replicate", "Cell_Line", "Experiment_Name"] + ([extra_opts[0]] if extra_opts else [])
+                        default_selection = ["Experiment_Name", "Replicate", "Cell_Line"] + ([extra_opts[0]] if extra_opts else [])
                         st.session_state.upload_cols_selected = [c for c in default_selection if c in available_options]
 
                     # 5. Prepare View
@@ -452,6 +465,19 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     # 1. First, SAVE ANY PENDING DATA
                     if add_col_btn or update_view_btn or confirm_upload:
                          if edited_df is not None:
+                              # Auto-populate Replicate if Experiment Name changed and Replicate did not
+                              old_df = st.session_state.working_df
+                              if "Experiment_Name" in edited_df.columns and "Replicate" in edited_df.columns:
+                                   for idx in edited_df.index:
+                                        if idx in old_df.index:
+                                             new_exp = str(edited_df.at[idx, "Experiment_Name"])
+                                             old_exp = str(old_df.at[idx, "Experiment_Name"]) if "Experiment_Name" in old_df.columns else ""
+                                             new_rep = str(edited_df.at[idx, "Replicate"])
+                                             old_rep = str(old_df.at[idx, "Replicate"]) if "Replicate" in old_df.columns else ""
+
+                                             if new_exp != old_exp and new_rep == old_rep:
+                                                  edited_df.at[idx, "Replicate"] = new_exp
+
                               st.session_state.working_df.update(edited_df)
 
                          st.session_state.upload_cols_selected = cols_selected

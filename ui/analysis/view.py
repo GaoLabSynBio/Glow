@@ -10,6 +10,11 @@ from glow.analysis.positive import get_channel_data_for_samples, calculate_posit
 from glow.canvas.functions import add_plot_to_canvas
 from glow.utils import logicle_transform
 
+def update_threshold_value(model_key, widget_key):
+    """Callback to sync widget value to model state."""
+    if widget_key in st.session_state:
+        st.session_state[model_key] = st.session_state[widget_key]
+
 def render_analysis_tab():
     st.header("Analysis & Statistics")
 
@@ -457,7 +462,7 @@ def render_analysis_tab():
                         # Checkbox for log scale
                         use_log = c_log.checkbox("Log Scale Plot", value=True)
 
-                        use_ridgeline = c_ridge.checkbox("Ridgeline Mode", value=False)
+                        use_ridgeline = c_ridge.checkbox("Ridgeline Mode", value=True)
                         ridgeline_offset = 0.6
                         if use_ridgeline:
                              ridgeline_offset = c_ridge.slider("Offset", 0.1, 2.0, 0.6, 0.1)
@@ -524,10 +529,11 @@ def render_analysis_tab():
                              st.session_state[max_key] = plot_max - (plot_max - plot_min) * 0.2
 
                         # Checkbounds for single threshold
-                        if st.session_state[thr_key] < plot_min:
-                            st.session_state[thr_key] = plot_min
-                        if st.session_state[thr_key] > plot_max:
-                            st.session_state[thr_key] = plot_max
+                        # Removed to allow threshold to persist across sample changes even if out of calculated percentile range
+                        # if st.session_state[thr_key] < plot_min:
+                        #     st.session_state[thr_key] = plot_min
+                        # if st.session_state[thr_key] > plot_max:
+                        #     st.session_state[thr_key] = plot_max
 
                         # Capture selection events BEFORE rendering chart to avoid "select twice" bug
                         # We check the session state key directly
@@ -581,21 +587,28 @@ def render_analysis_tab():
                         if is_range:
                              col_min, col_max = st.columns(2)
                              with col_min:
-                                  # Clip values to ensure they are within the dynamic bounds allowed by the widget
-                                  # We use plot_max * 10 to allow user to go beyond percentile limits if they type it
-                                  curr_min = st.number_input("Min Threshold", key=min_key,
-                                                           min_value=float(min(plot_min, st.session_state[min_key])),
-                                                           max_value=float(max(plot_max*2, st.session_state[min_key])))
+                                  w_min_key = f"w_{min_key}"
+                                  # Sync Model -> Widget (if external change happened)
+                                  if w_min_key not in st.session_state or abs(float(st.session_state.get(w_min_key, 0)) - float(st.session_state[min_key])) > 0.0001:
+                                      st.session_state[w_min_key] = float(st.session_state[min_key])
+
+                                  curr_min = st.number_input("Min Threshold", key=w_min_key, on_change=update_threshold_value, args=(min_key, w_min_key))
+
                              with col_max:
-                                  curr_max = st.number_input("Max Threshold", key=max_key,
-                                                           min_value=float(min(plot_min, st.session_state[max_key])),
-                                                           max_value=float(max(plot_max*2, st.session_state[max_key])))
+                                  w_max_key = f"w_{max_key}"
+                                  if w_max_key not in st.session_state or abs(float(st.session_state.get(w_max_key, 0)) - float(st.session_state[max_key])) > 0.0001:
+                                      st.session_state[w_max_key] = float(st.session_state[max_key])
+
+                                  curr_max = st.number_input("Max Threshold", key=w_max_key, on_change=update_threshold_value, args=(max_key, w_max_key))
+
                              curr_threshold = (curr_min, curr_max)
                         else:
                              # For binary mode, use a single point selection logic
-                             curr_val = st.number_input("Threshold Value", key=thr_key,
-                                                      min_value=float(min(plot_min, st.session_state[thr_key])),
-                                                      max_value=float(max(plot_max*2, st.session_state[thr_key])))
+                             w_thr_key = f"w_{thr_key}"
+                             if w_thr_key not in st.session_state or abs(float(st.session_state.get(w_thr_key, 0)) - float(st.session_state[thr_key])) > 0.0001:
+                                  st.session_state[w_thr_key] = float(st.session_state[thr_key])
+
+                             curr_val = st.number_input("Threshold Value", key=w_thr_key, on_change=update_threshold_value, args=(thr_key, w_thr_key))
                              curr_threshold = curr_val
 
                         # D. Interactive KDE Plot
@@ -735,12 +748,12 @@ def render_analysis_tab():
 
                         # Get Current Value for Line (from State)
                         # We use the state value because we haven't rendered component yet
-                        curr_val_for_line = st.session_state[thr_key]
+                        # curr_val_for_line = st.session_state[thr_key]
 
                         # Add Threshold Line (Visual Feedback)
                         if is_range:
-                             rmin = st.session_state[min_key]
-                             rmax = st.session_state[max_key]
+                             rmin = float(st.session_state[min_key])
+                             rmax = float(st.session_state[max_key])
 
                              # Add shaded region
                              fig.add_vrect(x0=rmin, x1=rmax, fillcolor="green", opacity=0.1, layer="below", line_width=0)
@@ -754,6 +767,7 @@ def render_analysis_tab():
                              # Let's use Green for Positive, Red for Negative shading.
                              shade_color = "red" if is_negative else "green"
 
+                             curr_val_for_line = float(st.session_state[thr_key])
                              if is_negative:
                                  # Shade from Min to Threshold
                                  # Use plot_min, but ensure it covers the view

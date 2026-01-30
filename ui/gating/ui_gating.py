@@ -552,11 +552,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         sigma_val = 2.0
                         min_samples = 50
 
-                use_outliers = st.checkbox("Remove Outliers before Estimation", value=False, key=f"outliers{ukey}")
+                    # Boundary Percentile (User Request: Toggle bar 50-100, step 1)
+                    # This controls the contour tightness for the final Polygon gate
+                    boundary_percentile = st.slider("Boundary Confidence (Percentile)", 50, 100, 90, 1, key=f"bound{ukey}")
 
-                # Boundary Percentile (User Request: Toggle bar 50-100, step 1)
-                # This controls the contour tightness for the final Polygon gate
-                boundary_percentile = st.slider("Boundary Confidence (Percentile)", 50, 100, 90, 1, key=f"bound{ukey}")
+                use_outliers = st.checkbox("Remove Outliers before Estimation", value=False, key=f"outliers{ukey}")
 
             # --- Reactive Auto-Gating ---
             # Detect parameter changes to trigger re-calculation automatically.
