@@ -356,8 +356,17 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 # Combine local gates and selected analysis gates
                 all_applied_gates = st.session_state.bar_gates + analysis_gates_to_apply
 
-                if all_applied_gates:
-                    st.write(f"Applying {len(all_applied_gates)} filters...")
+                # Normalize gates for backend compatibility (e.g. Range gates from Analysis)
+                normalized_gates = []
+                for g in all_applied_gates:
+                    ng = g.copy()
+                    # Fix Range Gate (Analysis uses min/max, Backend uses threshold tuple)
+                    if ng.get('type') == 'range' and 'min' in ng and 'max' in ng:
+                         ng['threshold'] = (ng['min'], ng['max'])
+                    normalized_gates.append(ng)
+
+                if normalized_gates:
+                    st.write(f"Applying {len(normalized_gates)} filters...")
 
                 fig = categorical.plot_means_with_significance(
                     filtered_experiment,
@@ -374,7 +383,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     use_bars=use_bars,
                     font_size=font_size,
                     bracket_spacing=step_fraction,
-                    gates=all_applied_gates,
+                    gates=normalized_gates,
                     error_bar=error_bar_val if error_bar_val else "ci" # Default if None
                 )
                 st.pyplot(fig)
