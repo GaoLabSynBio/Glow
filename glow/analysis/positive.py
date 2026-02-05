@@ -371,12 +371,18 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
 
     return pd.DataFrame(results)
 
-def get_channel_data_for_samples(experiment, channel, sample_names, parent_gate_name=None, defined_gates=None):
+def get_channel_data_for_samples(experiment, channel, sample_names, parent_gate_name=None, defined_gates=None, apply_scaling=False):
     """
     Retrieve data vectors for the specified channel, filtered by sample names AND parent gating.
+    If apply_scaling is True and experiment metadata indicates high-res data, values are scaled down.
     """
     df = experiment.data
     data_map = {}
+
+    # Scaling Logic
+    scaling_factor = 1.0
+    if apply_scaling and hasattr(experiment, 'metadata') and experiment.metadata.get('is_high_res', False):
+        scaling_factor = experiment.metadata.get('scaling_factor', 10000.0)
 
     # ----------------------------------------------------
     # Apply Parent Gate Filtering Globally (Optimization?)
@@ -424,6 +430,10 @@ def get_channel_data_for_samples(experiment, channel, sample_names, parent_gate_
             s_name = str(name)
 
         if s_name in sample_names:
-            data_map[s_name] = group[channel].values
+            vals = group[channel].values
+            if scaling_factor != 1.0:
+                 # Ensure float for division
+                 vals = vals.astype(float) / scaling_factor
+            data_map[s_name] = vals
 
     return data_map

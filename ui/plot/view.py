@@ -1,4 +1,7 @@
 import streamlit as st
+import pandas as pd
+import numpy as np
+import copy
 from glow.plotting import plots
 from .base import render_data_selection
 from .histogram_ui import render_histogram_ui
@@ -24,6 +27,44 @@ def render_plot_tab():
     filtered_experiment, conditions = render_data_selection(experiment)
     if filtered_experiment is None:
         return # Selection failed
+
+    # --- High Resolution Scaling Logic ---
+    if hasattr(experiment, 'metadata') and experiment.metadata.get('is_high_res', False):
+         st.warning("High-resolution data detected. Data logic is scaled by default (1/10000).")
+         use_raw = st.toggle("Show Raw Values (Unscaled)", value=False, key="plot_show_raw_vals")
+         
+         if not use_raw:
+             scaling_factor = experiment.metadata.get('scaling_factor', 10000.0)
+             # Create a safe copy for modification
+             if hasattr(filtered_experiment, 'clone'):
+                 filtered_experiment = filtered_experiment.clone()
+             else:
+                 filtered_experiment = copy.copy(filtered_experiment)
+                 # Ensure data is also a copy to avoid reference modification
+                 filtered_experiment.data = filtered_experiment.data.copy()
+
+             # Perform Scaling on Numeric Channels
+             # EXCLUDE Flags and Time columns to prevent breaking gates (boolean logic) or time-series
+             EXCLUDE_FROM_SCALING = [
+                'cells', 'singlets', 'IsSinglet', 'Is_Singlet',
+                'Population', 'AutoLiveGate', 'LiveGate', 'SingletGate',
+                'Is_Live', 'Live', 'Density', 'Time', 'time'
+             ]
+
+             numeric_cols = []
+             for c in filtered_experiment.data.columns:
+                 # Check dtype
+                 if pd.api.types.is_numeric_dtype(filtered_experiment.data[c]):
+                     # Check exclusion list
+                     if c in EXCLUDE_FROM_SCALING:
+                         continue
+                     # Check if it's strictly boolean (sometimes stored as bool dtype)
+                     if pd.api.types.is_bool_dtype(filtered_experiment.data[c]):
+                         continue
+                     numeric_cols.append(c)
+
+             if numeric_cols:
+                 filtered_experiment.data[numeric_cols] = filtered_experiment.data[numeric_cols].astype(float) / scaling_factor
 
     # 2. Main Plot Type Selection
     all_available_channels = plots.get_channels(filtered_experiment)

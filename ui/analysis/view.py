@@ -33,6 +33,16 @@ def render_analysis_tab():
         st.error("No experiment loaded. Please go back to Gating tab.")
         return
 
+    # Check for High Resolution Data Scaling
+    apply_scaling = False
+    scaling_factor = 1.0
+    if hasattr(experiment, 'metadata') and experiment.metadata.get('is_high_res', False):
+        st.warning("High-resolution data detected. Data logic is scaled by default (1/10000).")
+        use_raw = st.toggle("Show Raw Values (Unscaled)", value=False, key="analysis_show_raw_vals")
+        apply_scaling = not use_raw
+        if apply_scaling:
+            scaling_factor = experiment.metadata.get('scaling_factor', 10000.0)
+
     # --- UNIFY COMPENSATED CHANNEL NAMES ---
     # Requirement: Rename "Comp_{fluor}-A" (or comp_) to "Comp-{fluor}-A"
     # Working on a clone/copy to avoid modifying shared session state used by Gating
@@ -194,7 +204,7 @@ def render_analysis_tab():
                         p_gate = g.get('parent', 'Singlets')
                         ch = g['channel']
 
-                        data_map_v = get_channel_data_for_samples(experiment, ch, disp_samples, parent_gate_name=p_gate, defined_gates=st.session_state.positive_gates)
+                        data_map_v = get_channel_data_for_samples(experiment, ch, disp_samples, parent_gate_name=p_gate, defined_gates=st.session_state.positive_gates, apply_scaling=apply_scaling)
 
                         # Prepare Plot
                         fig_g = go.Figure()
@@ -251,11 +261,16 @@ def render_analysis_tab():
                             # Add Threshold/Range Line
                             if g.get('type') == 'range':
                                  t_min, t_max = g.get('min'), g.get('max')
+                                 if apply_scaling:
+                                     t_min /= scaling_factor
+                                     t_max /= scaling_factor
                                  fig_g.add_vrect(x0=t_min, x1=t_max, fillcolor="green", opacity=0.1, layer="below", line_width=0)
                                  fig_g.add_vline(x=t_min, line_dash="dash", line_color="green")
                                  fig_g.add_vline(x=t_max, line_dash="dash", line_color="green")
                             else:
                                  thr = g['threshold']
+                                 if apply_scaling:
+                                     thr /= scaling_factor
                                  is_pos = (g.get('direction', 'positive') == 'positive')
                                  color_line = "green" if is_pos else "red"
                                  fig_g.add_vline(x=thr, line_dash="dash", line_color=color_line, line_width=2)
@@ -442,7 +457,7 @@ def render_analysis_tab():
 
                 if selected_samples:
                     # Fetch Data, Filtered by Parent gate
-                    data_map = get_channel_data_for_samples(experiment, selected_channel, selected_samples, parent_gate_name=parent_gate, defined_gates=st.session_state.positive_gates)
+                    data_map = get_channel_data_for_samples(experiment, selected_channel, selected_samples, parent_gate_name=parent_gate, defined_gates=st.session_state.positive_gates, apply_scaling=apply_scaling)
 
                     # determine range for slider
                     all_values = []
@@ -953,18 +968,26 @@ def render_analysis_tab():
                                      'samples': selected_samples # Persist the samples used for visualization
                                  }
 
-                                 if is_range and isinstance(curr_threshold, (list, tuple, np.ndarray)) and len(curr_threshold) >= 2:
-                                      new_gate['min'] = curr_threshold[0]
-                                      new_gate['max'] = curr_threshold[1]
+                                 # Apply Scaling Back to Raw for gate storage if Needed
+                                 final_threshold = curr_threshold
+                                 if apply_scaling and scaling_factor != 1.0:
+                                     if isinstance(curr_threshold, (list, tuple, np.ndarray)):
+                                         final_threshold = [float(x) * scaling_factor for x in curr_threshold]
+                                     else:
+                                         final_threshold = float(curr_threshold) * scaling_factor
+
+                                 if is_range and isinstance(final_threshold, (list, tuple, np.ndarray)) and len(final_threshold) >= 2:
+                                      new_gate['min'] = final_threshold[0]
+                                      new_gate['max'] = final_threshold[1]
                                       # For backward compat or display, we can store threshold as tuple or string representation
-                                      new_gate['threshold'] = curr_threshold
+                                      new_gate['threshold'] = final_threshold
                                  else:
-                                      new_gate['threshold'] = curr_threshold
+                                      new_gate['threshold'] = final_threshold
 
                                  st.session_state.positive_gates.append(new_gate)
 
                                  # Save to threshold_gate object for plotting usage
-                                 st.session_state.threshold_gate[gate_label] = curr_threshold
+                                 st.session_state.threshold_gate[gate_label] = final_threshold
 
                                  st.session_state.show_gate_creator = False # Hide creator
                                  st.success(f"Added Gate: {new_gate['label']}")
@@ -993,8 +1016,8 @@ def render_analysis_tab():
 
             if sel_x and sel_y and sel_samps:
                 # Fetch Data
-                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates)
-                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates)
+                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates, apply_scaling=apply_scaling)
+                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates, apply_scaling=apply_scaling)
 
                 # Combine
                 arr_x, arr_y = [], []
@@ -1270,12 +1293,19 @@ def render_analysis_tab():
                                      lbl_suffix = f"{sel_x}/{sel_y} Combined"
 
                                  lbl = f"{parent_gate} -> {lbl_suffix}" if parent_gate!='Singlets' else lbl_suffix
+                                 
+                                 final_tx = curr_tx
+                                 final_ty = curr_ty
+                                 if apply_scaling and scaling_factor != 1.0:
+                                     final_tx *= scaling_factor
+                                     final_ty *= scaling_factor
+
                                  new_g = {
                                      'type': 'quadrant',
                                      'parent': parent_gate,
                                      'label': lbl,
                                      'channel_x': sel_x, 'channel_y': sel_y,
-                                     'threshold_x': curr_tx, 'threshold_y': curr_ty,
+                                     'threshold_x': final_tx, 'threshold_y': final_ty,
                                      'quadrant': selected_quads,
                                      'samples': sel_samps
                                  }
@@ -1304,8 +1334,8 @@ def render_analysis_tab():
 
             if sel_x and sel_y and sel_samps:
                 # Fetch Data
-                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates)
-                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates)
+                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates, apply_scaling=apply_scaling)
+                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates, apply_scaling=apply_scaling)
 
                 # Combine
                 arr_x, arr_y = [], []
@@ -1542,12 +1572,20 @@ def render_analysis_tab():
                         if len(verts) >= 3:
                              if st.button("Create Gate"):
                                   lbl = f"{parent_gate} -> {sel_x}:{sel_y} Poly" if parent_gate!='Singlets' else f"{sel_x}:{sel_y} Poly"
+                                  
+                                  final_verts = verts
+                                  if apply_scaling and scaling_factor != 1.0:
+                                      final_verts = []
+                                      for v in verts:
+                                          # v is [x, y] list
+                                          final_verts.append([v[0] * scaling_factor, v[1] * scaling_factor])
+
                                   new_g = {
                                       'type': 'polygon',
                                       'parent': parent_gate,
                                       'label': lbl,
                                       'channel_x': sel_x, 'channel_y': sel_y,
-                                      'vertices': verts,
+                                      'vertices': final_verts,
                                       'samples': sel_samps
                                   }
                                   st.session_state.positive_gates.append(new_g)

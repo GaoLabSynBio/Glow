@@ -221,6 +221,34 @@ class DataLoader:
         meta = self.generate_preview_metadata(paths, rename_strategy)
         return self.process_files(meta, output_dir)
 
+    def _detect_and_tag_high_res(self, experiment):
+        """
+        Detects if the experiment data appears to be from a high-resolution cytometer
+        (e.g., BioRad ZE5 with 32-bit integers) and tags metadata accordingly.
+        """
+        if experiment is None or experiment.data is None:
+            return experiment
+        
+        # Heuristic: Check numeric columns for very large values
+        # Typical 18-bit flow data maxes around 262,144.
+        # 32-bit signed int max is ~2.14e9.
+        # If max > 1,000,000 (10^6), flag it.
+        threshold = 1000000 
+        
+        numeric_cols = experiment.data.select_dtypes(include=[np.number]).columns
+        if numeric_cols.empty:
+            return experiment
+
+        max_vals = experiment.data[numeric_cols].max()
+        if (max_vals > threshold).any():
+            print("Detected high-resolution data. Tagging metadata.")
+            new_meta = experiment.metadata.copy() if experiment.metadata else {}
+            new_meta['is_high_res'] = True
+            new_meta['scaling_factor'] = 10000.0
+            experiment.metadata = new_meta
+            
+        return experiment
+
     def load_as_cytoflow_experiment(self, metadata_list=None):
         if metadata_list is None:
             metadata_list = self.loaded_files_metadata
@@ -288,7 +316,7 @@ class DataLoader:
             try:
                 import_op = cytoflow.ImportOp(tubes=tubes, conditions=import_conditions_schema)
                 experiment = import_op.apply()
-                return experiment
+                return self._detect_and_tag_high_res(experiment)
             except Exception as e:
                 # Check for channel mismatch error or generic CytoflowOpError
                 msg = str(e)
@@ -343,7 +371,7 @@ class DataLoader:
                         unified_experiment = cytoflow.Experiment()
                         unified_experiment.data = combined_df
                         unified_experiment.metadata = combined_metadata
-                        return unified_experiment
+                        return self._detect_and_tag_high_res(unified_experiment)
                     except Exception as e_final:
                          print(f"Failed to create unified experiment: {e_final}")
                          return None
