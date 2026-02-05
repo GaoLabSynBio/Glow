@@ -2879,7 +2879,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             zip_name = file_name.replace('.csv.gz', '.zip')
 
                                             with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-                                                zf.writestr(csv_name, df_export.to_csv(index=False))
+                                                # Inject Metadata header if present
+                                                csv_content = df_export.to_csv(index=False)
+                                                if hasattr(st.session_state.base_experiment, 'metadata') and st.session_state.base_experiment.metadata.get('is_high_res'):
+                                                    scaling_f = st.session_state.base_experiment.metadata.get('scaling_factor', 10000.0)
+                                                    header_line = f"# GlowMetadata: is_high_res=True, scaling_factor={scaling_f}\n"
+                                                    csv_content = header_line + csv_content
+                                                
+                                                zf.writestr(csv_name, csv_content)
 
                                             st.session_state.final_csv_export = buf.getvalue()
                                             st.session_state.final_csv_name = zip_name

@@ -22,8 +22,9 @@ def detect_cell_line_from_path(path):
 
 # Mock Experiment Class to emulate Cytoflow structure for downstream compatibility
 class MockExperiment:
-    def __init__(self, data):
+    def __init__(self, data, metadata=None):
         self.data = data
+        self.metadata = metadata if metadata else {}
         # Infer channels (numeric columns not in exclusion list)
         exclude_cols = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate', 'Sample', 'sample']
         self.channels = [c for c in data.columns if c not in exclude_cols and pd.api.types.is_numeric_dtype(data[c])]
@@ -31,7 +32,7 @@ class MockExperiment:
         self.conditions = {c: "category" for c in data.columns if c not in self.channels}
 
     def clone(self):
-        return MockExperiment(self.data.copy())
+        return MockExperiment(self.data.copy(), metadata=self.metadata.copy())
     def __repr__(self):
         return f"<MockExperiment: {len(self.data)} events>"
 
@@ -77,6 +78,58 @@ def clear_experiment_state():
         if key in st.session_state:
             del st.session_state[key]
 
+def parse_csv_with_metadata(file_obj, **kwargs):
+    """
+    Parses a CSV file object, extracting optional # GlowMetadata header.
+    Returns (df, metadata_dict).
+    """
+    meta = {}
+    is_metadata_line = False
+    
+    # Try reading first line if seekable
+    try:
+        if hasattr(file_obj, 'seek') and hasattr(file_obj, 'readline'):
+             pos = file_obj.tell()
+             line = file_obj.readline()
+             
+             # Decode bytes if needed
+             if isinstance(line, bytes):
+                 line_str = line.decode('utf-8', errors='ignore')
+             else:
+                 line_str = line
+                 
+             if line_str and line_str.startswith("# GlowMetadata:"):
+                 is_metadata_line = True
+                 content = line_str.replace("# GlowMetadata:", "").strip()
+                 parts = content.split(",")
+                 for p in parts:
+                     kv = p.split("=")
+                     if len(kv) == 2:
+                         key = kv[0].strip()
+                         val = kv[1].strip()
+                         if key == "is_high_res":
+                             meta[key] = (val.lower() == "true")
+                         elif key == "scaling_factor":
+                             try:
+                                 meta[key] = float(val)
+                             except:
+                                 pass
+             
+             # If NOT metadata, we must reset
+             if not is_metadata_line:
+                 file_obj.seek(pos)
+             # If IT IS metadata, we leave the pointer ADVANCED so read_csv skips the header line
+    except Exception as e:
+        # Fallback: try to reset and just read
+        try:
+            file_obj.seek(0)
+        except:
+            pass
+            
+    # Read Data
+    df = pd.read_csv(file_obj, **kwargs)
+    return df, meta
+
 def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
     """
     Renders the File Loading section
@@ -97,6 +150,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                 try:
                     with st.spinner("Loading CSV..."):
                         df = None
+                        metadata = {}
                         # Handle ZIP
                         if uploaded_csv.name.endswith('.zip'):
                             import zipfile
@@ -107,11 +161,17 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                     return
                                 # Assume first CSV is the data
                                 with z.open(csv_files[0]) as f:
-                                    df = pd.read_csv(f)
+                                    df, metadata = parse_csv_with_metadata(f)
                         else:
                             # Auto-detect compression based on extension
                             comp_arg = 'gzip' if uploaded_csv.name.endswith('.gz') else 'infer'
-                            df = pd.read_csv(uploaded_csv, compression=comp_arg)
+                            # If using compression, we can't easily peek lines without stream wrappers
+                            # For simplicity, if .gz, we skip metadata parsing unless we implement GzipFile wrapping
+                            # But if plain .csv, we can parse.
+                            if comp_arg == 'infer' and not uploaded_csv.name.endswith('.gz'):
+                                df, metadata = parse_csv_with_metadata(uploaded_csv, compression=comp_arg)
+                            else:
+                                df = pd.read_csv(uploaded_csv, compression=comp_arg)
 
                         # Data Integrity Check: Ensure vital columns exist (if we expect FCS-like data)
                         # We at least need some numeric columns to be useful.
@@ -129,13 +189,13 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         # Clear any existing experiment state before loading new CSV
                         clear_experiment_state()
 
-                        st.session_state.base_experiment = MockExperiment(df)
+                        st.session_state.base_experiment = MockExperiment(df, metadata=metadata)
 
                         # Handle Gating Logic based on columns
                         if 'cells' in df.columns and 'singlets' in df.columns:
                             # Do NOT filter rows, just create the experiment with the full data
                             # The analysis module will handle the 'cells' and 'singlets' boolean columns
-                            st.session_state.gated_experiment = MockExperiment(df)
+                            st.session_state.gated_experiment = MockExperiment(df, metadata=metadata)
 
                             valid_count = (df['cells'] & df['singlets']).sum()
                             st.info(f"Loaded {len(df)} events. Identified {valid_count} valid events (Live & Singlet).")
