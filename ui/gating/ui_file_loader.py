@@ -25,10 +25,39 @@ class MockExperiment:
     def __init__(self, data, metadata=None):
         self.data = data
         self.metadata = metadata if metadata else {}
+        
+        # Determine explicit condition columns from Metadata if available
+        explicit_conditions = []
+        if 'conditions' in self.metadata and self.metadata['conditions']:
+             # Can be list or pipe-separated string depending on source
+             if isinstance(self.metadata['conditions'], list):
+                 explicit_conditions = self.metadata['conditions']
+             elif isinstance(self.metadata['conditions'], str):
+                 explicit_conditions = self.metadata['conditions'].split('|')
+
+        # Columns that should ALWAYS be treated as Metadata (Conditions), never Channels
+        # even if they are numeric.
+        force_condition_cols = [
+            'cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate', 
+            'Sample', 'sample', 'Experiment_Name', 'Experiment Name', 'experiment_name',
+            'Replicate', 'replicate', 'Timepoint', 'timepoint', 'Time', 'time',
+            'Cell_Line', 'CellLine', 'cell_line', 'Concentration', 'concentration', 'Dose', 'dose',
+            'Treatment', 'treatment', 'Condition', 'condition', 'Group', 'group', 'Genotype', 'genotype'
+        ]
+        
+        # Combine forced and explicit
+        # normalize explicit to matching columns
+        all_metadata_cols = set(force_condition_cols)
+        for ec in explicit_conditions:
+            if ec in data.columns:
+                all_metadata_cols.add(ec)
+        
         # Infer channels (numeric columns not in exclusion list)
-        exclude_cols = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate', 'Sample', 'sample']
-        self.channels = [c for c in data.columns if c not in exclude_cols and pd.api.types.is_numeric_dtype(data[c])]
+        self.channels = [c for c in data.columns if c not in all_metadata_cols and pd.api.types.is_numeric_dtype(data[c])]
+        
         # Preserve metadata columns as conditions for plotting and filtering
+        # Anything that is NOT a channel is a condition. A column cannot be both.
+        # This automatically captures numeric columns that were forced out of channels list.
         self.conditions = {c: "category" for c in data.columns if c not in self.channels}
 
     def clone(self):
@@ -114,6 +143,8 @@ def parse_csv_with_metadata(file_obj, **kwargs):
                                  meta[key] = float(val)
                              except:
                                  pass
+                         elif key == "conditions":
+                             meta['conditions'] = val.split('|')
              
              # If NOT metadata, we must reset
              if not is_metadata_line:

@@ -389,19 +389,64 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
     ax.spines['right'].set_visible(False)
     ax.tick_params(axis='both', labelsize=font_size)
 
+    # Label Formatting
+    clean_channel = channel.replace("-A", "")
+    y_label_text = f"{clean_channel} fluorescence intensity (A.U.)"
+
     if log_scale:
-        from matplotlib.ticker import FuncFormatter
-        # We plotted in Log10 space. Y values are 2, 3, 4, 5...
-        # We want labels 10^2, 10^3...
-        # Or nicely formatted 100, 1000...
+        from matplotlib.ticker import FuncFormatter, MaxNLocator
+        
+        # Determine Limits for Integers
+        current_y_max = ax.get_ylim()[1]
+        
+        # User Request: If data is around 10^1, set max to 10^3.
+        # This implies rounding up to nearest integer + 2 padding
+        # But we must be careful not to hide data if brackets pushed it up
+        
+        # 1. Round up to nearest integer
+        import math
+        ceil_max = math.ceil(current_y_max)
+        
+        # 2. Add cushion (1 or 2 decades) ONLY if NOT showing distribution
+        # If we are close to the integer boundary, add 1. 
+        if not show_distribution:
+            new_max = ceil_max + 1
+            
+            # Ensure we don't zoom in (cut off data)
+            if new_max < current_y_max:
+                 new_max += 1
 
-        def log_formatter(x, pos):
-            return f"$10^{{{int(x)}}}$"
+            # Also set min? Matplotlib usually handles min okay, but usually we want at least 1 or 2 decades view
+            # Let's just enforce max for now as requested
+            ax.set_ylim(top=new_max)
 
-        ax.yaxis.set_major_formatter(FuncFormatter(log_formatter))
-        ax.set_ylabel(f"Log10 {channel}", fontsize=font_size)
+        def log_formatter_int(x, pos):
+             return f"$10^{{{int(round(x))}}}$"
+
+        ax.yaxis.set_major_formatter(FuncFormatter(log_formatter_int))
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+        # Add Log Scale Minor Ticks (2, 3.. 9 inside each decade)
+        # Since we are on a linear log10 axis, these are at integer + log10(k)
+        from matplotlib.ticker import FixedLocator
+        current_ylim = ax.get_ylim()
+        floor_min = int(math.floor(current_ylim[0]))
+        ceil_max = int(math.ceil(current_ylim[1]))
+        
+        minor_locs = []
+        for d in range(floor_min, ceil_max + 1):
+            for k in range(2, 10):
+                 val = d + np.log10(k)
+                 if current_ylim[0] <= val <= current_ylim[1]:
+                     minor_locs.append(val)
+        
+        if minor_locs:
+             ax.yaxis.set_minor_locator(FixedLocator(minor_locs))
+             ax.tick_params(which='minor', axis='y', length=3)
+
+        ax.set_ylabel(y_label_text, fontsize=font_size)
     else:
-        ax.set_ylabel(channel, fontsize=font_size)
+        ax.set_ylabel(y_label_text, fontsize=font_size)
 
     # Update x-axis labels with annotations if requested
     if annotation_cols:

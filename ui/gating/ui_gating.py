@@ -2862,6 +2862,28 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 keep_ch = list(st.session_state.selected_channels)
                                                 to_drop = [c for c in all_ch if c not in keep_ch]
                                                 cols_to_drop = [c for c in to_drop if c in df_export.columns]
+                                                
+                                                # --- PROTECT METADATA & MANUALLY ADDED COLUMNS ---
+                                                # Explicitly prevent metadata-like columns from being dropped, 
+                                                # even if they were classified as "channels" (e.g. numeric info).
+                                                protected_names = ["experiment_name", "experiment name", "replicate", "replicates", 
+                                                                   "cell_line", "cell line", "sample", "timepoint", "concentration", 
+                                                                   "condition", "dose", "treatment", "strain", "genotype", "group"]
+                                                
+                                                # Include explicit conditions from the Experiment object
+                                                if hasattr(st.session_state.base_experiment, 'conditions'):
+                                                    for cond_name in st.session_state.base_experiment.conditions.keys():
+                                                        if cond_name:
+                                                            protected_names.append(str(cond_name).lower())
+
+                                                final_cols_to_drop = []
+                                                for c in cols_to_drop:
+                                                    if str(c).lower() in protected_names:
+                                                        continue
+                                                    final_cols_to_drop.append(c)
+
+                                                cols_to_drop = final_cols_to_drop
+
                                                 if cols_to_drop:
                                                     df_export.drop(columns=cols_to_drop, inplace=True)
                                                 # Defragment frame
@@ -2879,11 +2901,47 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             zip_name = file_name.replace('.csv.gz', '.zip')
 
                                             with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-                                                # Inject Metadata header if present
+                                                # Inject Metadata header
                                                 csv_content = df_export.to_csv(index=False)
+                                                
+                                                meta_parts = []
+                                                
+                                                # 1. High Res Info
                                                 if hasattr(st.session_state.base_experiment, 'metadata') and st.session_state.base_experiment.metadata.get('is_high_res'):
                                                     scaling_f = st.session_state.base_experiment.metadata.get('scaling_factor', 10000.0)
-                                                    header_line = f"# GlowMetadata: is_high_res=True, scaling_factor={scaling_f}\n"
+                                                    meta_parts.append(f"is_high_res=True")
+                                                    meta_parts.append(f"scaling_factor={scaling_f}")
+                                                
+                                                # 2. Condition Columns (Manual & Auto)
+                                                # Gather all columns that should be treated as conditions
+                                                condition_cols = set()
+                                                
+                                                # 2a. From Experiment Definition
+                                                if hasattr(st.session_state.base_experiment, 'conditions'):
+                                                    # Cytoflow conditions dict or list
+                                                    cond_iter = st.session_state.base_experiment.conditions
+                                                    if isinstance(cond_iter, dict):
+                                                        condition_cols.update(cond_iter.keys())
+                                                    else:
+                                                        condition_cols.update(cond_iter)
+                                                
+                                                # 2b. Known Metadata Columns if present in DF
+                                                known_meta = ["Experiment_Name", "Replicate", "Cell_Line", "Sample", 
+                                                              "Timepoint", "Concentration", "Condition", "Dose", 
+                                                              "Treatment", "Group", "Genotype"]
+                                                for km in known_meta:
+                                                    if km in df_export.columns:
+                                                        condition_cols.add(km)
+                                                
+                                                # Filter to only what exists in the exported DF
+                                                final_conditions = [c for c in condition_cols if c in df_export.columns]
+                                                if final_conditions:
+                                                    # Encode as pipe-separated list to avoid comma conflict
+                                                    c_str = "|".join(sorted(final_conditions))
+                                                    meta_parts.append(f"conditions={c_str}")
+
+                                                if meta_parts:
+                                                    header_line = f"# GlowMetadata: {', '.join(meta_parts)}\n"
                                                     csv_content = header_line + csv_content
                                                 
                                                 zf.writestr(csv_name, csv_content)

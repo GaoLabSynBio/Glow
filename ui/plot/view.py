@@ -43,28 +43,32 @@ def render_plot_tab():
                  # Ensure data is also a copy to avoid reference modification
                  filtered_experiment.data = filtered_experiment.data.copy()
 
-             # Perform Scaling on Numeric Channels
-             # EXCLUDE Flags and Time columns to prevent breaking gates (boolean logic) or time-series
-             EXCLUDE_FROM_SCALING = [
-                'cells', 'singlets', 'IsSinglet', 'Is_Singlet',
-                'Population', 'AutoLiveGate', 'LiveGate', 'SingletGate',
-                'Is_Live', 'Live', 'Density', 'Time', 'time'
-             ]
+             # Perform Scaling on Channels Only (Fluorophores + Scatter)
+             # Instead of excluding specific metadata columns, we target declared channels.
+             # This ensures metadata like 'Experiment_Name' or 'Replicate' are never scaled.
+             
+             target_cols = []
+             
+             # Get declared channels (measurements)
+             # We prefer the explicit .channels property if available (Cytoflow or MockExperiment)
+             try:
+                 if hasattr(filtered_experiment, 'channels'):
+                     declared_channels = list(filtered_experiment.channels)
+                 else:
+                     declared_channels = plots.get_channels(filtered_experiment)
+             except:
+                 declared_channels = []
 
-             numeric_cols = []
-             for c in filtered_experiment.data.columns:
-                 # Check dtype
-                 if pd.api.types.is_numeric_dtype(filtered_experiment.data[c]):
-                     # Check exclusion list
-                     if c in EXCLUDE_FROM_SCALING:
-                         continue
-                     # Check if it's strictly boolean (sometimes stored as bool dtype)
-                     if pd.api.types.is_bool_dtype(filtered_experiment.data[c]):
-                         continue
-                     numeric_cols.append(c)
+             # Extra safety: explicitly exclude Time if it appears in channels
+             STRICT_EXCLUDE_TIME = ['Time', 'time', 'Time (ms)', 'Time (s)'] 
 
-             if numeric_cols:
-                 filtered_experiment.data[numeric_cols] = filtered_experiment.data[numeric_cols].astype(float) / scaling_factor
+             for c in declared_channels:
+                 if c in filtered_experiment.data.columns and c not in STRICT_EXCLUDE_TIME:
+                     if pd.api.types.is_numeric_dtype(filtered_experiment.data[c]):
+                         target_cols.append(c)
+
+             if target_cols:
+                 filtered_experiment.data[target_cols] = filtered_experiment.data[target_cols].astype(float) / scaling_factor
 
     # 2. Main Plot Type Selection
     all_available_channels = plots.get_channels(filtered_experiment)

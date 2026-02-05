@@ -28,12 +28,15 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     # Create split view: Options (Left), Plot (Right)
     col_opts, col_plot = st.columns([1, 3])
 
-    with col_opts:
-        # --- Grouping Settings ---
-        st.markdown("#### Grouping Settings")
+    # --- Grouping Settings (Variables to be shared) ---
+    selected_groups = None
+    final_order = None
+
+    with col_plot:
+        # Move Grouping Settings Here (Detailed Options)
+        st.markdown("### Grouping Configuration")
 
         # Force Group By to Experiment_Name/Sample if possible, as requested
-        # Search for Experiment_Name variants
         target_group_cols = ["Experiment_Name", "Experiment Name", "Sample", "sample"]
         found_group_col = None
         for t in target_group_cols:
@@ -43,69 +46,59 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
         if found_group_col:
             hue_var = found_group_col
+            # Show as info but allow override via checkbox? For now stick to logic
             st.info(f"Grouping by **{hue_var}**")
         else:
-            # Fallback if not found
             hue_var = st.selectbox("Group By (X-Axis)", conditions)
-
+        
         if hue_var:
             all_groups = sorted(filtered_experiment.data[hue_var].unique())
-
-            # User requested explicit ordering capability
-            # Multiselect is good for selection but tricky for reordering existing list
-            # We provide a "Sort Order" text area for power users
-
-            c_sel, c_ord = st.columns([3, 1])
-            with c_sel:
-                # Default to all
-                selected_groups = st.multiselect("Select Groups to Plot", all_groups, default=all_groups, help="Select which groups to include.")
-
-            with c_ord:
-                manual_order = st.checkbox("Manual Order", value=False)
-
+            
+            # Use columns for layout in wider area
+            gc1, gc2 = st.columns([3, 1])
+            
+            with gc1: 
+                selected_groups = st.multiselect("Select Groups to Plot", all_groups, default=all_groups)
+            with gc2:
+                st.write("") # Spacer to align checkbox
+                st.write("")
+                manual_order = st.checkbox("Manual Group Order", value=False)
+            
             final_order = selected_groups
 
             if manual_order and selected_groups:
-                 st.caption("Drag items here? No, Streamlit doesn't support that yet. Use the text area below.")
-                 order_text = st.text_area("Specify Order (comma separated)", value=", ".join(selected_groups))
-                 if order_text:
-                     # Parse text
-                     custom_order = [x.strip() for x in order_text.split(",") if x.strip()]
-                     # Filter to only keep valid ones that are also currently selected
-                     final_order = [x for x in custom_order if x in selected_groups]
-                     # Append any selected but not in custom order?
-                     remaining = [x for x in selected_groups if x not in final_order]
-                     final_order.extend(remaining)
+                    order_text = st.text_area("Specify Order (comma separated)", value=", ".join(selected_groups), height=68)
+                    if order_text:
+                        custom_order = [x.strip() for x in order_text.split(",") if x.strip()]
+                        final_order = [x for x in custom_order if x in selected_groups]
+                        remaining = [x for x in selected_groups if x not in final_order]
+                        final_order.extend(remaining)
 
-                     if len(final_order) < len(selected_groups):
-                         st.warning("Some selected groups are missing from the custom order list.")
+        st.divider()
 
-        else:
-            selected_groups = None
-            final_order = None
+    with col_opts:
+        # --- Channel & Statistics (Stacked vertically, no columns to squeeze) ---
+        st.markdown("#### Plot Settings")
+        
+        selected_channel = st.selectbox("Output Channel (Y-axis)", channels)
+        
+        correction_method = st.selectbox(
+            "Visual Significance Method",
+            ["t-test", "Bonferroni Correction", "FDR (Benjamini-Hochberg)"],
+            help="Selects how p-values are adjusted for multiple comparisons."
+        )
 
-        # --- Channel & Statistics ---
-        st.markdown("#### 2. Plot Settings")
-        col1, col2 = st.columns(2)
-        with col1:
-            selected_channel = st.selectbox("Output Channel (Y-axis)", channels)
-        with col2:
-            correction_method = st.selectbox(
-                "Visual Significance Method",
-                ["t-test", "Bonferroni Correction", "FDR (Benjamini-Hochberg)"],
-                help="Selects how p-values are adjusted for multiple comparisons."
-            )
+        # Map friendly name to backend key
+        corr_map = {
+            "t-test": "t-test",
+            "Bonferroni Correction": "bonferroni",
+            "FDR (Benjamini-Hochberg)": "fdr_bh"
+        }
+        selected_correction = corr_map[correction_method]
 
-            # Map friendly name to backend key
-            corr_map = {
-                "t-test": "t-test",
-                "Bonferroni Correction": "bonferroni",
-                "FDR (Benjamini-Hochberg)": "fdr_bh"
-            }
-            selected_correction = corr_map[correction_method]
 
         # --- Gating Logic ---
-        st.markdown("#### 3. Gating (Optional)")
+        st.markdown("#### Gating (Optional)")
 
         # NEW: Import Analysis Gates
         analysis_gates_to_apply = []
@@ -194,13 +187,11 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         with st.expander("Add New Local Gate"):
             importlib.reload(utils)
 
-            c1, c2 = st.columns(2)
-            with c1:
-                # Suggest a different channel for marker if possible
-                default_marker_idx = 0
-                if len(channels) > 1 and channels[0] == selected_channel:
-                    default_marker_idx = 1
-                new_gate_channel = st.selectbox("Marker Channel for New Local Gate", channels, index=default_marker_idx)
+            # Suggest a different channel for marker if possible
+            default_marker_idx = 0
+            if len(channels) > 1 and channels[0] == selected_channel:
+                default_marker_idx = 1
+            new_gate_channel = st.selectbox("Marker Channel for New Local Gate", channels, index=default_marker_idx)
 
             # --- Two-Dot Range Selection Linked with Raw Score ---
 
@@ -266,27 +257,22 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         # --- Comparisons ---
         comparisons = []
         if hue_var and selected_groups:
-            st.markdown("#### 4. Comparisons")
+            st.markdown("#### Comparisons")
             with st.expander("Add Comparisons"):
                 if 'bar_comparisons' not in st.session_state:
                     st.session_state.bar_comparisons = []
 
-                c1, c2, c3 = st.columns([3, 3, 1])
-                # Only allow comparisons between visible groups
+                # Stacked UI for narrow column
                 vis_groups = sorted(selected_groups)
                 if len(vis_groups) >= 2:
-                    with c1:
-                        g1 = st.selectbox("Group 1", vis_groups, key="g1")
-                    with c2:
-                        g2 = st.selectbox("Group 2", vis_groups, key="g2")
-                    with c3:
-                        st.write("") # Spacer
-                        st.write("")
-                        if st.button("Add Pair"):
-                            # Avoid duplicates
-                            pair = (g1, g2)
-                            if pair not in st.session_state.bar_comparisons and g1 != g2:
-                                st.session_state.bar_comparisons.append(pair)
+                    g1 = st.selectbox("Group 1", vis_groups, key="g1")
+                    g2 = st.selectbox("Group 2", vis_groups, key="g2")
+
+                    if st.button("Add Pair"):
+                        # Avoid duplicates
+                        pair = (g1, g2)
+                        if pair not in st.session_state.bar_comparisons and g1 != g2:
+                            st.session_state.bar_comparisons.append(pair)
 
                 if st.session_state.bar_comparisons:
                     # Sanitize old session state data (remove labels if present)
@@ -307,24 +293,18 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 comparisons = st.session_state.bar_comparisons
 
         # --- Style Settings ---
-        st.markdown("#### 5. Style Settings")
-        c_style_gen1, c_style_gen2 = st.columns(2)
-        with c_style_gen1:
-            show_dist = st.checkbox("Show Distributions", value=True)
-        with c_style_gen2:
-            use_bars = st.checkbox("Plot as Bars", value=False, help="Draw bars indicating the mean instead of just lines.")
-
+        st.markdown("#### Style Settings")
+        
+        # Stacked options to avoid squeezing
+        show_dist = st.checkbox("Show Distributions", value=True)
+        use_bars = st.checkbox("Plot as Bars", value=False, help="Draw bars indicating the mean instead of just lines.")
         log_scale = st.checkbox("Log Scale Y-Axis", value=True)
 
-        c_style1, c_style2, c_style3 = st.columns(3)
-        with c_style1:
-            font_size = st.number_input("Font Size", min_value=6, max_value=30, value=12)
-        with c_style2:
-            # Control step size / spacing for significance brackets
-            step_fraction = st.slider("Bracket Spacing", 0.05, 0.30, 0.15, 0.01, help="Vertical distance between significance brackets.")
-        with c_style3:
-            error_bar_type = st.selectbox("Error Bar", ["SEM", "SD", "None"], index=0)
-            error_bar_val = error_bar_type.lower() if error_bar_type != "None" else None
+        font_size = st.number_input("Font Size", min_value=6, max_value=30, value=12)
+        step_fraction = st.slider("Bracket Spacing", 0.05, 0.30, 0.15, 0.01, help="Vertical distance between significance brackets.")
+        
+        error_bar_type = st.selectbox("Error Bar", ["SEM", "SD", "None"], index=0)
+        error_bar_val = error_bar_type.lower() if error_bar_type != "None" else None
 
         # Auto-detect Replicate Column
         replicate_col = None

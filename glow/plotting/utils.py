@@ -62,16 +62,42 @@ def filter_experiment(experiment, condition, values):
     cls = type(experiment)
     try:
         # Check if constructor accepts just data, or try to mimic
+        # Pass metadata if available to preserve channel/condition definitions
+        if hasattr(experiment, 'metadata'):
+            return cls(subset_df, metadata=experiment.metadata)
         return cls(subset_df)
     except Exception:
         # Fallback to a simple container
         class SimpleExp:
-            def __init__(self, d): self.data = d
+            def __init__(self, d, orig=None): 
+                self.data = d
+                self._orig = orig
+            
             @property
-            def channels(self): return [c for c in self.data.columns if pd.api.types.is_numeric_dtype(self.data[c])]
+            def channels(self): 
+                # Try to inherit from original experiment to ensure consistency
+                if self._orig and hasattr(self._orig, 'channels'):
+                    return [c for c in self._orig.channels if c in self.data.columns]
+                    
+                # Robust fallback: Numeric but NOT Boolean (excludes flags like 'cells')
+                # Also exclude common metadata names explicitly in case they are numeric (e.g. Replicates)
+                excludes = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate',
+                            'Replicate', 'replicate', 'Experiment_Name', 'Experiment Name', 'Time', 'time',
+                            'Concentration', 'Timepoint', 'Group', 'group']
+                            
+                return [c for c in self.data.columns if pd.api.types.is_numeric_dtype(self.data[c]) 
+                        and not pd.api.types.is_bool_dtype(self.data[c])
+                        and c not in excludes]
+
             @property
-            def conditions(self): return {c: self.data[c] for c in self.data.columns if not pd.api.types.is_numeric_dtype(self.data[c])}
-        return SimpleExp(subset_df)
+            def conditions(self): 
+                # Try to inherit
+                if self._orig and hasattr(self._orig, 'conditions'):
+                    return self._orig.conditions
+                    
+                return {c: "category" for c in self.data.columns if c not in self.channels}
+                
+        return SimpleExp(subset_df, orig=experiment)
 
 from glow.utils import safe_log10
 
