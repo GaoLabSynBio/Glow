@@ -109,10 +109,12 @@ def render_plot_tab():
         )
         st.divider()
 
-    # Exclude FSC/FC and SSC channels for 1D, 2D, and Bar Plot
+    # Exclude FSC/FC, SSC, and Metadata-like channels for Plotting
     if plot_type in ["1D Histogram", "2D Scatter", "Bar Plot", "Pairwise Plot"]:
-        # User requested excluding fc and ssc channels. 'fc' likely implies FSC.
-        channels = [c for c in channels if not any(x in c.lower() for x in ['fsc', 'fc', 'ssc'])]
+        # Extended exclusion list based on user request (fluorophores only)
+        # Excludes Scatter (FSC/SSC), Time, and metadata-like numeric columns (Replicate, etc.)
+        exclude_patterns = ['fsc', 'fc', 'ssc', 'time', 'replicate', 'experiment', 'sample', 'well', 'plate']
+        channels = [c for c in channels if not any(x in c.lower() for x in exclude_patterns)]
 
     # hue_var and facet_var will be handled inside the specific UI modules now
     hue_var = None

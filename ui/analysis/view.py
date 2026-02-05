@@ -5,6 +5,7 @@ from typing import Any
 import plotly.graph_objects as go
 import plotly.express as px
 from scipy.stats import gaussian_kde
+from scipy.ndimage import gaussian_filter
 from glow.analysis.stats import get_summary_statistics
 from glow.analysis.positive import get_channel_data_for_samples, calculate_positive_stats_recursive
 from glow.canvas.functions import add_plot_to_canvas
@@ -1087,7 +1088,16 @@ def render_analysis_tab():
                                      # Histogram-based density (use logicle for negative-safe transform)
                                      dx_calc = logicle_transform(arr_x) if use_log else arr_x
                                      dy_calc = logicle_transform(arr_y) if use_log else arr_y
-                                     H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
+                                     
+                                     # Calculate density using percentile range to avoid outlier squeeze
+                                     rx = [np.percentile(dx_calc, 0.5), np.percentile(dx_calc, 99.5)]
+                                     ry = [np.percentile(dy_calc, 0.5), np.percentile(dy_calc, 99.5)]
+                                     
+                                     # Improved Density Resolution: More bins + Gaussian Smoothing
+                                     H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=300, range=[rx, ry])
+                                     H = gaussian_filter(H, sigma=2) 
+
+                                     # Digitize needs to handle full range, values outside will clip to edge bins
                                      x_bins = np.digitize(dx_calc, xedges) - 1
                                      y_bins = np.digitize(dy_calc, yedges) - 1
                                      x_bins = np.clip(x_bins, 0, H.shape[0]-1)
@@ -1107,7 +1117,13 @@ def render_analysis_tab():
                                   plot_x, plot_y = arr_x, arr_y
                                   plot_density = density_vals
 
+                             # Sort by density for correct z-order (dense on top)
                              if show_density and plot_density is not None:
+                                 sort_idx = np.argsort(plot_density)
+                                 plot_x = plot_x[sort_idx]
+                                 plot_y = plot_y[sort_idx]
+                                 plot_density = plot_density[sort_idx]
+
                                  marker_dict = dict(
                                      size=6,
                                      opacity=0.5,
@@ -1420,7 +1436,15 @@ def render_analysis_tab():
                                 # Histogram-based density (use logicle for negative-safe transform)
                                 dx_calc = logicle_transform(arr_x) if use_log else arr_x
                                 dy_calc = logicle_transform(arr_y) if use_log else arr_y
-                                H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
+                                
+                                # Calculate density using percentile range
+                                rx = [np.percentile(dx_calc, 0.5), np.percentile(dx_calc, 99.5)]
+                                ry = [np.percentile(dy_calc, 0.5), np.percentile(dy_calc, 99.5)]
+                                
+                                # Improved Density Resolution: More bins + Gaussian Smoothing
+                                H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=300, range=[rx, ry])
+                                H = gaussian_filter(H, sigma=2) 
+
                                 x_bins = np.digitize(dx_calc, xedges) - 1
                                 y_bins = np.digitize(dy_calc, yedges) - 1
                                 x_bins = np.clip(x_bins, 0, H.shape[0]-1)
@@ -1438,10 +1462,17 @@ def render_analysis_tab():
                              plot_x, plot_y = arr_x, arr_y
                              plot_density = density_vals
 
+                        # Sort by density for correct z-order (dense on top)
                         if show_density and plot_density is not None:
+                            sort_idx = np.argsort(plot_density)
+                            plot_x = plot_x[sort_idx]
+                            plot_y = plot_y[sort_idx]
+                            plot_density = plot_density[sort_idx]
+                            
                             marker_dict = dict(
                                 size=6,
                                 opacity=0.5,
+                                # ... existing code ...
                                 color=plot_density,
                                 colorscale='Viridis',
                                 showscale=True,
