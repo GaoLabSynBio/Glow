@@ -77,14 +77,8 @@ def render_plot_tab():
     hue_var = None
     facet_var = None
 
-    # 3. Global Scale Selector (Except for Bar Plot usually, but let's keep it common or pass it down)
-    scale = 'log'
-    if plot_type in ["1D Histogram", "2D Scatter", "Pairwise Plot"]:
-        st.subheader("2. Plot Configuration")
-        scale_opts = ["log", "linear", "logicle"]
-        col_s, _ = st.columns([1,2])
-        with col_s:
-            scale = st.selectbox("Scale", scale_opts, index=0)
+    # Scale is now handled inside individual UIs, default placeholder here
+    scale = 'log' 
 
     # 4. Delegate to specific sub-modules
     if plot_type == "1D Histogram":

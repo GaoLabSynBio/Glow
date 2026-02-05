@@ -9,61 +9,63 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
     """
     Renders the UI for Pairwise Plots (Seaborn pairplot).
     """
-    st.markdown("### Pairwise Plot Configuration")
+    col_opts, col_plot = st.columns([1, 3])
+    
+    with col_opts:
+        st.markdown("### Configuration")
 
-    # 1. Settings
-    col1, col2 = st.columns(2)
-
-    with col1:
+        # 1. Settings
         # Channel Selection
         # Default to first few channels if available
         default_channels = channels[:4] if len(channels) >= 4 else channels
         selected_channels = st.multiselect(
-            "Select Channels to Compare",
+            "Channels",
             channels,
             default=default_channels,
             help="Select at least 2 channels."
         )
 
-    with col2:
         # Hue Selection
         hue_options = ["None"] + conditions
         # Add Sample if not present
         if "Sample" in experiment.data.columns and "Sample" not in hue_options:
             hue_options.append("Sample")
 
-        selected_hue = st.selectbox("Select Hue (Group/Color)", hue_options, index=0)
+        selected_hue = st.selectbox("Group/Color", hue_options, index=0)
+        
+        # Scale Selector
+        scale = st.selectbox("Scale", ["log", "linear"], index=0, help="Axis scale transformation.")
 
-    # 2. Advanced / Performance
-    with st.expander("Advanced Settings & Performance", expanded=True):
+        # 2. Advanced / Performance
+        st.markdown("---")
+        st.markdown("**Advanced**")
         max_events = len(experiment.data)
 
-        s_col1, s_col2 = st.columns(2)
-        with s_col1:
-            # Downsampling
-            sample_size = st.number_input(
-                "Sample Size (Events)",
-                min_value=50,
-                max_value=max_events,
-                value=min(2000, max_events),
-                step=100,
-                help="Smaller sample size is faster. < 2000 recommended for KDE pairplots."
-            )
+        # Downsampling
+        sample_size = st.number_input(
+            "Sample Size",
+            min_value=50,
+            max_value=max_events,
+            value=min(2000, max_events),
+            step=100,
+            help="Smaller sample size is faster. < 2000 recommended for KDE pairplots."
+        )
 
-        with s_col2:
-            kind = st.selectbox("Plot Kind", ["scatter", "kde", "hist", "reg"], index=0, help="Type of plot for the off-diagonal subplots.")
-            corner = st.checkbox("Corner Plot", value=False, help="Hide the upper triangle of the plot to save space.")
+        kind = st.selectbox("Plot Kind", ["scatter", "kde", "hist", "reg"], index=0, help="Type of plot for the off-diagonal subplots.")
+        corner = st.checkbox("Corner Plot", value=False, help="Hide the upper triangle of the plot to save space.")
 
-    # 3. Generate Button
-    # We use a session state key to store the resulting figure so it persists
-    # across interactions (like 'Add to Canvas')
+        # 3. Generate Button
+        plot_key = "current_pairwise_fig"
+        st.markdown("---")
+        if st.button("Generate Pairwise Plot", type="primary"):
+            st.session_state.run_pairwise_gen = True
 
-    plot_key = "current_pairwise_fig"
-
-    if st.button("Generate Pairwise Plot", type="primary"):
+    # Logic Process (Between columns or inside one? Better inside plot column or conditional)
+    if st.session_state.get('run_pairwise_gen'):
+        st.session_state.run_pairwise_gen = False
+        
         if len(selected_channels) < 2:
             st.error("Please select at least 2 channels.")
-            # Clear previous if any
             if plot_key in st.session_state:
                 del st.session_state[plot_key]
         else:
@@ -96,18 +98,14 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
                         for col in selected_channels:
                              plot_df[col] = np.log10(plot_df[col])
 
-                    # Generate Seaborn PairGrid/Plot
-                    # Note: Using plt.figure() context to ensure we don't interfere with other plots?
-                    # Seaborn creates its own figure usually.
+                    plt.close('all') # Close open figures
 
-                    plt.close('all') # Close open figures to free memory/context
-
-                    # Define plot keywords to reduce dot size
+                    # Define plot keywords
                     plot_kws = {}
                     if kind == "scatter":
-                        plot_kws = {'s': 6, 'alpha': 0.6} # Reduced size and increased transparency
+                        plot_kws = {'s': 6, 'alpha': 0.6}
                     elif kind == "reg":
-                        plot_kws = {'scatter_kws': {'s': 3, 'alpha': 0.4}} # Reduced size and increased transparency
+                        plot_kws = {'scatter_kws': {'s': 3, 'alpha': 0.4}}
 
                     grid = sns.pairplot(
                         plot_df,
@@ -125,15 +123,15 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
                     if plot_key in st.session_state:
-                        del st.session_state[plot_key]
+                         del st.session_state[plot_key]
 
     # 4. Display Result
-    if plot_key in st.session_state and st.session_state[plot_key]:
-        st.divider()
-        fig = st.session_state[plot_key]
-        st.pyplot(fig)
+    with col_plot:
+        if plot_key in st.session_state and st.session_state[plot_key]:
+            fig = st.session_state[plot_key]
+            st.pyplot(fig)
 
-        if st.button("Add to Canvas", key="btn_add_pairwise_canvas"):
-            title = st.session_state.get('pairwise_title', "Pairwise Plot")
-            add_plot_to_canvas(fig, title)
-            st.success("Plot added to canvas!")
+            if st.button("Add to Canvas", key="btn_add_pairwise_canvas"):
+                title = st.session_state.get('pairwise_title', "Pairwise Plot")
+                add_plot_to_canvas(fig, title)
+                st.success("Plot added to canvas!")

@@ -303,142 +303,141 @@ def render_analysis_tab():
         st.divider()
         st.markdown("#### New Gate Definition")
 
-        # --- PARENT SELECTION ---
-        # Options: Singlets + any defined gates
-        parent_options = ['Singlets'] + [g['label'] for g in st.session_state.positive_gates]
-        parent_gate = st.selectbox("Select Parent Population", parent_options, index=0)
+        col_opts, col_plots = st.columns([1, 3])
 
-        # --- MODE SELECTION (Sidebar) ---
-        with st.sidebar:
+        with col_opts:
+            # --- PARENT SELECTION ---
+            # Options: Singlets + any defined gates
+            parent_options = ['Singlets'] + [g['label'] for g in st.session_state.positive_gates]
+            parent_gate = st.selectbox("Select Parent Population", parent_options, index=0)
+
+            # --- MODE SELECTION ---
             st.divider()
-            st.subheader("Analysis Settings")
+            st.markdown("#### Analysis Settings")
             analysis_mode = st.selectbox("Analysis Mode", ["1D Histogram", "2D Quadrant", "2D Polygon"], index=0)
 
-        # --- CHANNEL SELECTION ---
-        # Identify all numeric channels in the dataset
-        all_numeric = [c for c in experiment.data.columns if pd.api.types.is_numeric_dtype(experiment.data[c])]
+            # --- CHANNEL SELECTION ---
+            # Identify all numeric channels in the dataset
+            all_numeric = [c for c in experiment.data.columns if pd.api.types.is_numeric_dtype(experiment.data[c])]
 
-        # Filter out system flags and internal bookkeeping columns
-        ignore_cols = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate', 'Density']
+            # Filter out system flags and internal bookkeeping columns
+            ignore_cols = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate', 'Density']
 
-        # Get selected channels from Gating tab
-        # Use persistent state to ensure it survives tab switching
-        user_selected = st.session_state.get('persistent_selected_channels')
+            # Get selected channels from Gating tab
+            # Use persistent state to ensure it survives tab switching
+            user_selected = st.session_state.get('persistent_selected_channels')
 
-        # --- Compensation Switch ---
-        # Check if compensated channels exist
-        comp_cols = [c for c in all_numeric if c.startswith("Comp-")]
-        has_comp = len(comp_cols) > 0
-        use_comp = False
+            # --- Compensation Switch ---
+            # Check if compensated channels exist
+            comp_cols = [c for c in all_numeric if c.startswith("Comp-")]
+            has_comp = len(comp_cols) > 0
+            use_comp = False
 
-        if has_comp:
-            use_comp = st.checkbox("Use Compensated Data", value=True, key="use_comp_analysis")
+            if has_comp:
+                use_comp = st.checkbox("Use Compensated Data", value=True, key="use_comp_analysis")
 
-        # --- Helper for Fluorophore Filtering ---
-        COMMON_FLUORS = [
-            "GFP", "EGFP", "mCherry", "Cherry", "APC", "FITC", "PE", "DAPI", "PerCP",
-            "BV", "Brilliant", "Cy", "Cy3", "Cy5", "Cy7", "BFP", "EBFP", "TagBFP", "SB",
-            "RFP", "dsRed", "tdTomato", "YFP", "EYFP", "mNeon", "AmCyan", "Pacific Blue",
-            "Pacific Orange", "Alexa", "eFluor", "Hoechst", "PI", "7-AAD", "Zombie", "Live/Dead", "DraQ"
-        ]
-        def is_fluorophore(ch_name):
-            # Must NOT be Scatter or Time
-            if any(x in ch_name.upper() for x in ["FSC", "SSC", "TIME"]):
-                return False
-            # Must match common list OR contain "-A"/"Area" but passed scatter check
-            # Actually, user requested "common fluorophores" filter specifically.
-            return any(f.upper() in ch_name.upper() for f in COMMON_FLUORS)
+            # --- Helper for Fluorophore Filtering ---
+            COMMON_FLUORS = [
+                "GFP", "EGFP", "mCherry", "Cherry", "APC", "FITC", "PE", "DAPI", "PerCP",
+                "BV", "Brilliant", "Cy", "Cy3", "Cy5", "Cy7", "BFP", "EBFP", "TagBFP", "SB",
+                "RFP", "dsRed", "tdTomato", "YFP", "EYFP", "mNeon", "AmCyan", "Pacific Blue",
+                "Pacific Orange", "Alexa", "eFluor", "Hoechst", "PI", "7-AAD", "Zombie", "Live/Dead", "DraQ"
+            ]
+            def is_fluorophore(ch_name):
+                # Must NOT be Scatter or Time
+                if any(x in ch_name.upper() for x in ["FSC", "SSC", "TIME"]):
+                    return False
+                # Must match common list OR contain "-A"/"Area" but passed scatter check
+                # Actually, user requested "common fluorophores" filter specifically.
+                return any(f.upper() in ch_name.upper() for f in COMMON_FLUORS)
 
-        # Define valid channels: must be in user's selection and not ignored
-        if user_selected is not None:
-            # Filter 1: In User Selection
-            step1 = [c for c in all_numeric if c not in ignore_cols and c in user_selected]
+            # Define valid channels: must be in user's selection and not ignored
+            if user_selected is not None:
+                # Filter 1: In User Selection
+                step1 = [c for c in all_numeric if c not in ignore_cols and c in user_selected]
 
-            # --- Apply Compensation Logic ---
-            # If use_comp, we replace original channels with "Comp-" versions IF available
-            final_selection = []
+                # --- Apply Compensation Logic ---
+                # If use_comp, we replace original channels with "Comp-" versions IF available
+                final_selection = []
 
-            if use_comp:
-                for c in step1:
-                    comp_name = f"Comp-{c}"
-                    if comp_name in all_numeric:
-                        final_selection.append(comp_name)
-                    else:
-                        # User request: if a channel does not have Comp-xxx-A channel, just show that channel
-                        final_selection.append(c)
+                if use_comp:
+                    for c in step1:
+                        comp_name = f"Comp-{c}"
+                        if comp_name in all_numeric:
+                            final_selection.append(comp_name)
+                        else:
+                            # User request: if a channel does not have Comp-xxx-A channel, just show that channel
+                            final_selection.append(c)
+                else:
+                    final_selection = step1
+
+                # Filter 2: Is Fluorophore (Analysis Specific Requirement)
+                # Apply to the potentially comp-swapped list
+                valid_channels = sorted([c for c in final_selection if is_fluorophore(c)])
+
+                # Fallback
+                if not valid_channels:
+                    valid_channels = sorted([c for c in final_selection if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])])
             else:
-                final_selection = step1
+                # Fallback if gating wasn't visited - strict fluor filter on all numeric
+                # Also apply comp check here just in case
+                source_cols = all_numeric
+                if use_comp:
+                    comp_set = set(x for x in all_numeric if x.startswith("Comp-"))
+                    shadowed = set(x.replace("Comp-", "") for x in comp_set)
+                    source_cols = []
+                    for c in all_numeric:
+                        if c.startswith("Comp-"):
+                            source_cols.append(c)
+                        elif c in shadowed:
+                            continue
+                        else:
+                            source_cols.append(c)
 
-            # Filter 2: Is Fluorophore (Analysis Specific Requirement)
-            # Apply to the potentially comp-swapped list
-            valid_channels = sorted([c for c in final_selection if is_fluorophore(c)])
+                valid_channels = sorted([
+                    c for c in source_cols
+                    if c not in ignore_cols and is_fluorophore(c)
+                ])
 
-            # Fallback
+            # Final safety check: if everything was filtered out, show at least non-scatter
             if not valid_channels:
-                 valid_channels = sorted([c for c in final_selection if not any(x in c.upper() for x in ["FSC", "SSC", "TIME"])])
-        else:
-            # Fallback if gating wasn't visited - strict fluor filter on all numeric
-            # Also apply comp check here just in case
-            source_cols = all_numeric
-            if use_comp:
-                 comp_set = set(x for x in all_numeric if x.startswith("Comp-"))
-                 shadowed = set(x.replace("Comp-", "") for x in comp_set)
-                 source_cols = []
-                 for c in all_numeric:
-                     if c.startswith("Comp-"):
-                         source_cols.append(c)
-                     elif c in shadowed:
-                         continue
-                     else:
-                         source_cols.append(c)
+                # Just show whatever is numeric and not ignored
+                valid_channels = sorted([c for c in experiment.data.columns if pd.api.types.is_numeric_dtype(experiment.data[c]) and c not in ignore_cols])
 
-            valid_channels = sorted([
-                c for c in source_cols
-                if c not in ignore_cols and is_fluorophore(c)
-            ])
+            # --- Zipped CSV / Special Context Handling ---
+            if "Experiment_Name" in experiment.data.columns:
+                # Requirement: Only selectable channels are fluorophore-A channels and no Experiment_Name
+                strict_channels = []
+                for c in valid_channels:
+                    if c == "Experiment_Name":
+                        continue
+                    # Only allow channels ending in "-A" (Area) AND are fluorophores (excludes Scatter)
+                    if c.endswith("-A") and is_fluorophore(c):
+                        strict_channels.append(c)
 
-        # Final safety check: if everything was filtered out, show at least non-scatter
-        if not valid_channels:
-             # Just show whatever is numeric and not ignored
-             valid_channels = sorted([c for c in experiment.data.columns if pd.api.types.is_numeric_dtype(experiment.data[c]) and c not in ignore_cols])
-
-        # --- Zipped CSV / Special Context Handling ---
-        if "Experiment_Name" in experiment.data.columns:
-             # Requirement: Only selectable channels are fluorophore-A channels and no Experiment_Name
-             strict_channels = []
-             for c in valid_channels:
-                 if c == "Experiment_Name":
-                     continue
-                 # Only allow channels ending in "-A" (Area) AND are fluorophores (excludes Scatter)
-                 if c.endswith("-A") and is_fluorophore(c):
-                     strict_channels.append(c)
-
-             if strict_channels:
-                 valid_channels = strict_channels
-             else:
-                 # Fallback: at least remove Experiment_Name
-                 valid_channels = [vc for vc in valid_channels if vc != "Experiment_Name"]
+                if strict_channels:
+                    valid_channels = strict_channels
+                else:
+                    # Fallback: at least remove Experiment_Name
+                    valid_channels = [vc for vc in valid_channels if vc != "Experiment_Name"]
 
 
         if analysis_mode == "1D Histogram":
             # =========================================================
             # 1D HISTOGRAM / DENSITY LOGIC (Legacy)
             # =========================================================
-            # Use columns for layout
-            c1, c2 = st.columns([1, 2])
-
-
-            with c1:
+            with col_opts:
+                st.markdown("#### Hist Parameters")
                 # Use a key to prevent reset issues, though usually fine
                 selected_channel = st.selectbox("Select X-Axis Channel", valid_channels, key="analysis_channel_select")
-
+            
             if selected_channel:
                 # B. Sample Selection for Visualization
                 sample_list = full_df['Sample'].unique().tolist()
                 # Default to the first sample
                 default_samples = [sample_list[0]] if sample_list else []
 
-                with c2:
+                with col_opts:
                     selected_samples = st.multiselect("Select Samples to Overlay", sample_list, default=default_samples, key="analysis_sample_select")
 
                 if selected_samples:
@@ -455,17 +454,14 @@ def render_analysis_tab():
                     # Robust NaN filtering
                     all_values = np.array([x for x in all_values if not np.isnan(x)])
 
-                    if len(all_values) == 0:
-                        st.warning("No valid data found for selected samples.")
-                    else:
-                        c_log, c_ridge = st.columns([1, 1])
-                        # Checkbox for log scale
-                        use_log = c_log.checkbox("Log Scale Plot", value=True)
-
-                        use_ridgeline = c_ridge.checkbox("Ridgeline Mode", value=True)
+                    with col_opts:
+                        st.markdown("#### Axis & Overlay")
+                        use_log = st.checkbox("Log Scale Plot", value=True)
+                        use_ridgeline = st.checkbox("Ridgeline Mode", value=True)
+                        
                         ridgeline_offset = 0.6
                         if use_ridgeline:
-                             ridgeline_offset = c_ridge.slider("Offset", 0.1, 2.0, 0.6, 0.1)
+                             ridgeline_offset = st.slider("Offset", 0.1, 2.0, 0.6, 0.1)
 
                         # Check validity for log
                         if use_log and np.max(all_values) <= 0:
@@ -498,20 +494,17 @@ def render_analysis_tab():
                             plot_max = plot_min + 1.0
 
                         # C. Threshold Selection
-                        st.write("### Threshold Selection")
+                        st.markdown("#### Threshold Selection")
 
                         # 1. Gate Type Selection
-                        col_type, col_dir = st.columns([2, 1])
-                        with col_type:
-                            gate_type = st.radio("Gate Type", ["Binary (Threshold)", "Range (Min - Max)"], horizontal=True)
+                        gate_type = st.radio("Gate Type", ["Binary (Threshold)", "Range (Min - Max)"], horizontal=True)
 
                         is_range = (gate_type == "Range (Min - Max)")
 
                         is_negative = False
                         if not is_range:
-                            with col_dir:
-                                gate_direction = st.radio("Population Direction", ["Positive (-->)", "Negative (<--)"], horizontal=True)
-                                is_negative = (gate_direction == "Negative (<--)")
+                            gate_direction = st.radio("Population Direction", ["Positive (-->)", "Negative (<--)"], horizontal=True)
+                            is_negative = (gate_direction == "Negative (<--)")
 
                         st.info("Tip: Select a point on the plot to automatically set the threshold.")
 
@@ -527,13 +520,6 @@ def render_analysis_tab():
                              st.session_state[min_key] = plot_min + (plot_max - plot_min) * 0.2
                         if max_key not in st.session_state:
                              st.session_state[max_key] = plot_max - (plot_max - plot_min) * 0.2
-
-                        # Checkbounds for single threshold
-                        # Removed to allow threshold to persist across sample changes even if out of calculated percentile range
-                        # if st.session_state[thr_key] < plot_min:
-                        #     st.session_state[thr_key] = plot_min
-                        # if st.session_state[thr_key] > plot_max:
-                        #     st.session_state[thr_key] = plot_max
 
                         # Capture selection events BEFORE rendering chart to avoid "select twice" bug
                         # We check the session state key directly
@@ -585,23 +571,20 @@ def render_analysis_tab():
 
                         # Render Inputs
                         if is_range:
-                             col_min, col_max = st.columns(2)
-                             with col_min:
-                                  w_min_key = f"w_{min_key}"
-                                  # Sync Model -> Widget (if external change happened)
-                                  if w_min_key not in st.session_state or abs(float(st.session_state.get(w_min_key, 0)) - float(st.session_state[min_key])) > 0.0001:
-                                      st.session_state[w_min_key] = float(st.session_state[min_key])
+                              w_min_key = f"w_{min_key}"
+                              # Sync Model -> Widget (if external change happened)
+                              if w_min_key not in st.session_state or abs(float(st.session_state.get(w_min_key, 0)) - float(st.session_state[min_key])) > 0.0001:
+                                  st.session_state[w_min_key] = float(st.session_state[min_key])
 
-                                  curr_min = st.number_input("Min Threshold", key=w_min_key, on_change=update_threshold_value, args=(min_key, w_min_key))
+                              curr_min = st.number_input("Min Threshold", key=w_min_key, on_change=update_threshold_value, args=(min_key, w_min_key))
 
-                             with col_max:
-                                  w_max_key = f"w_{max_key}"
-                                  if w_max_key not in st.session_state or abs(float(st.session_state.get(w_max_key, 0)) - float(st.session_state[max_key])) > 0.0001:
-                                      st.session_state[w_max_key] = float(st.session_state[max_key])
+                              w_max_key = f"w_{max_key}"
+                              if w_max_key not in st.session_state or abs(float(st.session_state.get(w_max_key, 0)) - float(st.session_state[max_key])) > 0.0001:
+                                  st.session_state[w_max_key] = float(st.session_state[max_key])
 
-                                  curr_max = st.number_input("Max Threshold", key=w_max_key, on_change=update_threshold_value, args=(max_key, w_max_key))
+                              curr_max = st.number_input("Max Threshold", key=w_max_key, on_change=update_threshold_value, args=(max_key, w_max_key))
 
-                             curr_threshold = (curr_min, curr_max)
+                              curr_threshold = (curr_min, curr_max)
                         else:
                              # For binary mode, use a single point selection logic
                              w_thr_key = f"w_{thr_key}"
@@ -786,13 +769,14 @@ def render_analysis_tab():
                                           annotation_text=f"Threshold: {curr_val_for_line:.1f}", annotation_position=annot_pos)
 
                         # Dynamic Height and Y-Axis for Ridgeline
-                        plot_height = 450
+                        plot_height = 600
                         y_title = "Density"
                         yaxis_dict: dict[str, Any] = dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black'))
 
                         if use_ridgeline and len(selected_samples) > 0:
                              total_y_span = 1.0 + (len(selected_samples) - 1) * ridgeline_offset
-                             plot_height = int(max(450, total_y_span * 100 + 100))
+                             # Increase per-sample height allocation to prevent squeezing
+                             plot_height = int(max(400, total_y_span * 200 + 200))
 
                              y_title = "Samples"
                              yaxis_dict['tickvals'] = [i * ridgeline_offset for i in range(len(selected_samples))]
@@ -823,122 +807,144 @@ def render_analysis_tab():
                         # on_select="rerun" ensures app updates when a point is selected (clicked)
                         # Enable box selection
                         # Add unique KEY to prevent state leakage
-                        st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
+                        with col_plots:
+                             st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
 
-                        if st.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
-                            # Create Matplotlib Figure for Canvas
-                            import matplotlib.pyplot as plt
-                            mpl_fig, mpl_ax = plt.subplots(figsize=(6, 4))
+                             _, col_add = st.columns([3, 1])
+                             if col_add.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
+                                 # Create Matplotlib Figure for Canvas
+                                 import matplotlib.pyplot as plt
+                                 mpl_fig, mpl_ax = plt.subplots(figsize=(6, 4))
 
-                            for i, s in enumerate(selected_samples):
-                                if s in data_map:
-                                    vals = data_map[s]
-                                    vals = vals[~np.isnan(vals)]
-                                    if len(vals) < 2:
-                                        continue
+                                 for i, s in enumerate(selected_samples):
+                                     if s in data_map:
+                                         vals = data_map[s]
+                                         vals = vals[~np.isnan(vals)]
+                                         if len(vals) < 2:
+                                             continue
 
-                                    try:
-                                        if use_log:
-                                            qt_vals = vals[vals > 0]
-                                            if len(qt_vals) < 2:
-                                                continue
-                                            dataset = np.log10(qt_vals)
-                                            kde = gaussian_kde(dataset)
-                                            y_vals = kde(np.log10(x_domain))
-                                        else:
-                                            dataset = vals
-                                            kde = gaussian_kde(dataset)
-                                            y_vals = kde(x_domain)
+                                         try:
+                                             if use_log:
+                                                 qt_vals = vals[vals > 0]
+                                                 if len(qt_vals) < 2:
+                                                     continue
+                                                 dataset = np.log10(qt_vals)
+                                                 kde = gaussian_kde(dataset)
+                                                 y_vals = kde(np.log10(x_domain))
+                                             else:
+                                                 dataset = vals
+                                                 kde = gaussian_kde(dataset)
+                                                 y_vals = kde(x_domain)
 
-                                        color = colors[i % len(colors)]
-                                        mpl_ax.plot(x_domain, y_vals, color=color, label=s, linewidth=2, zorder=10)
+                                             raw_color = colors[i % len(colors)]
+                                             # Fix for Plotly 'rgb(r, g, b)' strings which Matplotlib rejects
+                                             color = raw_color
+                                             if isinstance(raw_color, str) and raw_color.startswith("rgb"):
+                                                 try:
+                                                     # Extract numbers
+                                                     import re
+                                                     nums = [float(n) for n in re.findall(r"[-+]?\d*\.\d+|\d+", raw_color)]
+                                                     if len(nums) >= 3:
+                                                         # Normalize 0-255 to 0-1
+                                                         r, g, b = nums[0]/255.0, nums[1]/255.0, nums[2]/255.0
+                                                         if len(nums) >= 4:
+                                                             color = (r, g, b, nums[3]) # Alpha is usually 0-1 already in css rgba? No, usually 0-1. But let's assume standard css rgba.
+                                                             # Plotly might return alpha.
+                                                         else:
+                                                             color = (r, g, b)
+                                                 except:
+                                                     pass
 
-                                        # Isolate fill to catch specific errors
-                                        try:
-                                            mpl_ax.fill_between(x_domain, y_vals, y2=0, color=color, alpha=0.5, zorder=5)
-                                        except Exception as e:
-                                            st.warning(f"Fill error for {s}: {e}")
-                                    except Exception as e:
-                                        st.warning(f"Plot error for {s}: {e}")
-                                        continue
+                                             mpl_ax.plot(x_domain, y_vals, color=color, label=s, linewidth=2, zorder=10)
 
-                            if use_log:
-                                mpl_ax.set_xscale('log')
+                                             # Isolate fill to catch specific errors
+                                             try:
+                                                 mpl_ax.fill_between(x_domain, y_vals, y2=0, color=color, alpha=0.5, zorder=5)
+                                             except Exception as e:
+                                                 st.warning(f"Fill error for {s}: {e}")
+                                         except Exception as e:
+                                             st.warning(f"Plot error for {s}: {e}")
+                                             continue
 
-                            mpl_ax.set_title(f"Density Plot: {selected_channel} (Subset: {parent_gate})")
-                            mpl_ax.set_xlabel(selected_channel)
-                            mpl_ax.set_ylabel("Density")
-                            mpl_ax.set_ylim(bottom=0)
-                            mpl_ax.spines['top'].set_visible(False)
-                            mpl_ax.spines['right'].set_visible(False)
+                                 if use_log:
+                                     mpl_ax.set_xscale('log')
 
-                            # Add Threshold Line (Background)
-                            if is_range:
-                                rmin = st.session_state[min_key]
-                                rmax = st.session_state[max_key]
-                                mpl_ax.axvline(x=rmin, color='green', linestyle='--', linewidth=2, zorder=3)
-                                mpl_ax.axvline(x=rmax, color='green', linestyle='--', linewidth=2, zorder=3)
-                                mpl_ax.axvspan(rmin, rmax, color='green', alpha=0.1, zorder=1)
-                            else:
-                                mpl_ax.axvline(x=curr_val_for_line, color='red', linestyle='--', linewidth=2, zorder=3)
-                                shade_color = "red" if is_negative else "green"
-                                if is_negative:
-                                    mpl_ax.axvspan(x_domain[0], curr_val_for_line, color=shade_color, alpha=0.1, zorder=1)
-                                else:
-                                    mpl_ax.axvspan(curr_val_for_line, x_domain[-1], color=shade_color, alpha=0.1, zorder=1)
+                                 mpl_ax.set_title(f"Density Plot: {selected_channel} (Subset: {parent_gate})")
+                                 mpl_ax.set_xlabel(selected_channel)
+                                 mpl_ax.set_ylabel("Density")
+                                 mpl_ax.set_ylim(bottom=0)
+                                 mpl_ax.spines['top'].set_visible(False)
+                                 mpl_ax.spines['right'].set_visible(False)
 
-                            mpl_ax.legend()
-                            mpl_fig.tight_layout()
+                                 # Add Threshold Line (Background)
+                                 if is_range:
+                                     rmin = st.session_state[min_key]
+                                     rmax = st.session_state[max_key]
+                                     mpl_ax.axvline(x=rmin, color='green', linestyle='--', linewidth=2, zorder=3)
+                                     mpl_ax.axvline(x=rmax, color='green', linestyle='--', linewidth=2, zorder=3)
+                                     mpl_ax.axvspan(rmin, rmax, color='green', alpha=0.1, zorder=1)
+                                 else:
+                                     mpl_ax.axvline(x=curr_val_for_line, color='red', linestyle='--', linewidth=2, zorder=3)
+                                     shade_color = "red" if is_negative else "green"
+                                     if is_negative:
+                                         mpl_ax.axvspan(x_domain[0], curr_val_for_line, color=shade_color, alpha=0.1, zorder=1)
+                                     else:
+                                         mpl_ax.axvspan(curr_val_for_line, x_domain[-1], color=shade_color, alpha=0.1, zorder=1)
 
-                            add_plot_to_canvas(mpl_fig, f"Density Plot: {selected_channel} (Subset: {parent_gate})")
-                            st.success("Plot added to canvas!")
-                            plt.close(mpl_fig)
+                                 mpl_ax.legend()
+                                 mpl_fig.tight_layout()
+
+                                 add_plot_to_canvas(mpl_fig, f"Density Plot: {selected_channel} (Subset: {parent_gate})")
+                                 st.success("Plot added to canvas!")
+                                 plt.close(mpl_fig)
 
                         # Finalize Gate
-                        ac1, ac2 = st.columns(2)
-                        if ac1.button("Save & Apply Gate"):
-                            # Logic to save the gate
-                            suffix = "+"
-                            if is_range:
-                                suffix = "_rng"
-                            elif is_negative:
-                                suffix = "-"
+                        with col_plots:
+                             st.divider()
+                             st.markdown("#### Apply Gate")
+                             # Use primary button style for emphasis
+                             if st.button("Save & Apply Gate", type="primary"):
+                                 # Logic to save the gate
+                                 suffix = "+"
+                                 if is_range:
+                                     suffix = "_rng"
+                                 elif is_negative:
+                                     suffix = "-"
 
-                            gate_label = f"{selected_channel}{suffix}"
-                            if parent_gate != "Singlets":
-                                gate_label = f"{parent_gate} -> {selected_channel}{suffix}"
+                                 gate_label = f"{selected_channel}{suffix}"
+                                 if parent_gate != "Singlets":
+                                     gate_label = f"{parent_gate} -> {selected_channel}{suffix}"
 
-                            # Determine final gate object structure
-                            new_gate = {
-                                'channel': selected_channel,
-                                'parent': parent_gate,
-                                'label': gate_label,
-                                'type': 'range' if is_range else 'binary',
-                                'direction': 'negative' if is_negative else 'positive',
-                                'samples': selected_samples # Persist the samples used for visualization
-                            }
+                                 # Determine final gate object structure
+                                 new_gate = {
+                                     'channel': selected_channel,
+                                     'parent': parent_gate,
+                                     'label': gate_label,
+                                     'type': 'range' if is_range else 'binary',
+                                     'direction': 'negative' if is_negative else 'positive',
+                                     'samples': selected_samples # Persist the samples used for visualization
+                                 }
 
-                            if is_range and isinstance(curr_threshold, (list, tuple, np.ndarray)) and len(curr_threshold) >= 2:
-                                 new_gate['min'] = curr_threshold[0]
-                                 new_gate['max'] = curr_threshold[1]
-                                 # For backward compat or display, we can store threshold as tuple or string representation
-                                 new_gate['threshold'] = curr_threshold
-                            else:
-                                 new_gate['threshold'] = curr_threshold
+                                 if is_range and isinstance(curr_threshold, (list, tuple, np.ndarray)) and len(curr_threshold) >= 2:
+                                      new_gate['min'] = curr_threshold[0]
+                                      new_gate['max'] = curr_threshold[1]
+                                      # For backward compat or display, we can store threshold as tuple or string representation
+                                      new_gate['threshold'] = curr_threshold
+                                 else:
+                                      new_gate['threshold'] = curr_threshold
 
-                            st.session_state.positive_gates.append(new_gate)
+                                 st.session_state.positive_gates.append(new_gate)
 
-                            # Save to threshold_gate object for plotting usage
-                            st.session_state.threshold_gate[gate_label] = curr_threshold
+                                 # Save to threshold_gate object for plotting usage
+                                 st.session_state.threshold_gate[gate_label] = curr_threshold
 
-                            st.session_state.show_gate_creator = False # Hide creator
-                            st.success(f"Added Gate: {new_gate['label']}")
-                            st.rerun()
+                                 st.session_state.show_gate_creator = False # Hide creator
+                                 st.success(f"Added Gate: {new_gate['label']}")
+                                 st.rerun()
 
-                        with ac2:
-                            if st.button("Cancel"):
-                                st.session_state.show_gate_creator = False
-                                st.rerun()
+                             if st.button("Cancel"):
+                                 st.session_state.show_gate_creator = False
+                                 st.rerun()
 
 
 
@@ -947,15 +953,13 @@ def render_analysis_tab():
             # =========================================================
             # 2D QUADRANT LOGIC
             # =========================================================
-            c_x, c_y, c_s = st.columns([1, 1, 2])
-            with c_x:
+            with col_opts:
+                st.markdown("#### Axis & Samples")
                 sel_x = st.selectbox("X Channel", valid_channels, key="quad_x")
-            with c_y:
                 idx_y = 1 if len(valid_channels) > 1 else 0
                 sel_y = st.selectbox("Y Channel", valid_channels, index=idx_y, key="quad_y")
 
-            sample_list = full_df['Sample'].unique().tolist()
-            with c_s:
+                sample_list = full_df['Sample'].unique().tolist()
                 def_samp = [sample_list[0]] if sample_list else []
                 sel_samps = st.multiselect("Samples", sample_list, default=def_samp, key="quad_samp")
 
@@ -983,8 +987,11 @@ def render_analysis_tab():
                 if len(arr_x) == 0:
                     st.warning("No data.")
                 else:
-                    use_log = st.checkbox("Log Scale", value=True, key="quad_log")
-                    show_density = st.checkbox("Show Density", value=True, key="quad_density")
+                    with col_opts:
+                         st.markdown("#### Settings")
+                         use_log = st.checkbox("Log Scale", value=True, key="quad_log")
+                         show_density = st.checkbox("Show Density", value=True, key="quad_density")
+
                     if use_log:
                         pos_mask = (arr_x > 0) & (arr_y > 0)
                         arr_x_p = arr_x[pos_mask]
@@ -1016,234 +1023,254 @@ def render_analysis_tab():
                               st.session_state[qk_y] = pt["y"]
 
                     # Inputs
-                    col_tx, col_ty = st.columns(2)
-                    with col_tx:
-                        curr_tx = st.number_input(f"{sel_x} Threshold", key=qk_x, format="%.4f")
-                    with col_ty:
-                        curr_ty = st.number_input(f"{sel_y} Threshold", key=qk_y, format="%.4f")
+                    with col_opts:
+                         curr_tx = st.number_input(f"{sel_x} Threshold", key=qk_x, format="%.4f")
+                         curr_ty = st.number_input(f"{sel_y} Threshold", key=qk_y, format="%.4f")
 
                     # Scatter Plot
-                    density_vals = None
-                    if show_density and len(arr_x) > 0:
-                        try:
-                            # Histogram-based density (use logicle for negative-safe transform)
-                            dx_calc = logicle_transform(arr_x) if use_log else arr_x
-                            dy_calc = logicle_transform(arr_y) if use_log else arr_y
-                            H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
-                            x_bins = np.digitize(dx_calc, xedges) - 1
-                            y_bins = np.digitize(dy_calc, yedges) - 1
-                            x_bins = np.clip(x_bins, 0, H.shape[0]-1)
-                            y_bins = np.clip(y_bins, 0, H.shape[1]-1)
-                            density_vals = H[x_bins, y_bins]
-                        except Exception as e:
-                            print(f"Density Error: {e}")
+                    # Put calculations and plot in col_plots
+                    with col_plots:
+                             density_vals = None
+                             if show_density and len(arr_x) > 0:
+                                 try:
+                                     # Histogram-based density (use logicle for negative-safe transform)
+                                     dx_calc = logicle_transform(arr_x) if use_log else arr_x
+                                     dy_calc = logicle_transform(arr_y) if use_log else arr_y
+                                     H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
+                                     x_bins = np.digitize(dx_calc, xedges) - 1
+                                     y_bins = np.digitize(dy_calc, yedges) - 1
+                                     x_bins = np.clip(x_bins, 0, H.shape[0]-1)
+                                     y_bins = np.clip(y_bins, 0, H.shape[1]-1)
+                                     density_vals = H[x_bins, y_bins]
+                                 except Exception as e:
+                                     print(f"Density Error: {e}")
 
-                    # Downsample for speed
-                    if len(arr_x) > 5000:
-                         # Use fixed seed for consistent visualization
-                         rng = np.random.RandomState(42)
-                         indices = rng.choice(len(arr_x), 5000, replace=False)
-                         plot_x, plot_y = arr_x[indices], arr_y[indices]
-                         plot_density = density_vals[indices] if density_vals is not None else None
-                    else:
-                         plot_x, plot_y = arr_x, arr_y
-                         plot_density = density_vals
+                             # Downsample for speed
+                             if len(arr_x) > 5000:
+                                  # Use fixed seed for consistent visualization
+                                  rng = np.random.RandomState(42)
+                                  indices = rng.choice(len(arr_x), 5000, replace=False)
+                                  plot_x, plot_y = arr_x[indices], arr_y[indices]
+                                  plot_density = density_vals[indices] if density_vals is not None else None
+                             else:
+                                  plot_x, plot_y = arr_x, arr_y
+                                  plot_density = density_vals
 
-                    if show_density and plot_density is not None:
-                        marker_dict = dict(
-                            size=4,
-                            opacity=0.5,
-                            color=plot_density,
-                            colorscale='Viridis',
-                            showscale=True,
-                            colorbar=dict(title='Density')
-                        )
-                    else:
-                        marker_dict = dict(size=4, opacity=0.5, color='slateblue')
+                             if show_density and plot_density is not None:
+                                 marker_dict = dict(
+                                     size=6,
+                                     opacity=0.5,
+                                     color=plot_density,
+                                     colorscale='Viridis',
+                                     showscale=True,
+                                     colorbar=dict(title='Density')
+                                 )
+                             else:
+                                 marker_dict = dict(size=6, opacity=0.5, color='slateblue')
 
-                    fig = go.Figure()
+                             fig = go.Figure()
 
-                    # Define Quadrant Shapes (Colored Backgrounds)
-                    x_span = max_x - min_x
-                    y_span = max_y - min_y
-                    if use_log:
-                        b_xmin = min_x / 5
-                        b_xmax = max_x * 5
-                        b_ymin = min_y / 5
-                        b_ymax = max_y * 5
-                    else:
-                        pad_x = x_span * 0.1 if x_span > 0 else 1.0
-                        pad_y = y_span * 0.1 if y_span > 0 else 1.0
-                        b_xmin = min_x - pad_x
-                        b_xmax = max_x + pad_x
-                        b_ymin = min_y - pad_y
-                        b_ymax = max_y + pad_y
+                             # Define Quadrant Shapes (Colored Backgrounds)
+                             x_span = max_x - min_x
+                             y_span = max_y - min_y
+                             if use_log:
+                                 b_xmin = min_x / 5
+                                 b_xmax = max_x * 5
+                                 b_ymin = min_y / 5
+                                 b_ymax = max_y * 5
+                             else:
+                                 pad_x = x_span * 0.1 if x_span > 0 else 1.0
+                                 pad_y = y_span * 0.1 if y_span > 0 else 1.0
+                                 b_xmin = min_x - pad_x
+                                 b_xmax = max_x + pad_x
+                                 b_ymin = min_y - pad_y
+                                 b_ymax = max_y + pad_y
 
-                    # Q1: UL (X-, Y+) - Top Left
-                    fig.add_shape(type="rect",
-                        x0=b_xmin, y0=curr_ty, x1=curr_tx, y1=b_ymax,
-                        fillcolor="rgba(255, 99, 71, 0.15)", line_width=0, layer="below"
-                    )
-                    # Q2: UR (X+, Y+) - Top Right
-                    fig.add_shape(type="rect",
-                        x0=curr_tx, y0=curr_ty, x1=b_xmax, y1=b_ymax,
-                        fillcolor="rgba(60, 179, 113, 0.15)", line_width=0, layer="below"
-                    )
-                    # Q3: LR (X+, Y-) - Bottom Right
-                    fig.add_shape(type="rect",
-                        x0=curr_tx, y0=b_ymin, x1=b_xmax, y1=curr_ty,
-                        fillcolor="rgba(100, 149, 237, 0.15)", line_width=0, layer="below"
-                    )
-                    # Q4: LL (X-, Y-) - Bottom Left
-                    fig.add_shape(type="rect",
-                        x0=b_xmin, y0=b_ymin, x1=curr_tx, y1=curr_ty,
-                        fillcolor="rgba(128, 128, 128, 0.15)", line_width=0, layer="below"
-                    )
+                             # Q1: UL (X-, Y+) - Top Left
+                             fig.add_shape(type="rect",
+                                 x0=b_xmin, y0=curr_ty, x1=curr_tx, y1=b_ymax,
+                                 fillcolor="rgba(255, 99, 71, 0.15)", line_width=0, layer="below"
+                             )
+                             # Q2: UR (X+, Y+) - Top Right
+                             fig.add_shape(type="rect",
+                                 x0=curr_tx, y0=curr_ty, x1=b_xmax, y1=b_ymax,
+                                 fillcolor="rgba(60, 179, 113, 0.15)", line_width=0, layer="below"
+                             )
+                             # Q3: LR (X+, Y-) - Bottom Right
+                             fig.add_shape(type="rect",
+                                 x0=curr_tx, y0=b_ymin, x1=b_xmax, y1=curr_ty,
+                                 fillcolor="rgba(100, 149, 237, 0.15)", line_width=0, layer="below"
+                             )
+                             # Q4: LL (X-, Y-) - Bottom Left
+                             fig.add_shape(type="rect",
+                                 x0=b_xmin, y0=b_ymin, x1=curr_tx, y1=curr_ty,
+                                 fillcolor="rgba(128, 128, 128, 0.15)", line_width=0, layer="below"
+                             )
 
-                    fig.add_trace(go.Scattergl(
-                        x=plot_x, y=plot_y, mode='markers',
-                        marker=marker_dict,
-                        name='Events'
-                    ))
+                             fig.add_trace(go.Scattergl(
+                                 x=plot_x, y=plot_y, mode='markers',
+                                 marker=marker_dict,
+                                 name='Events'
+                             ))
 
-                    # Add Quadrant Labels
-                    fig.add_annotation(x=0.02, y=0.98, xref="paper", yref="paper", text="Q1", showarrow=False, font=dict(size=20, color="black"), xanchor="left", yanchor="top")
-                    fig.add_annotation(x=0.98, y=0.98, xref="paper", yref="paper", text="Q2", showarrow=False, font=dict(size=20, color="black"), xanchor="right", yanchor="top")
-                    fig.add_annotation(x=0.98, y=0.02, xref="paper", yref="paper", text="Q3", showarrow=False, font=dict(size=20, color="black"), xanchor="right", yanchor="bottom")
-                    fig.add_annotation(x=0.02, y=0.02, xref="paper", yref="paper", text="Q4", showarrow=False, font=dict(size=20, color="black"), xanchor="left", yanchor="bottom")
+                             # Add Quadrant Labels
+                             fig.add_annotation(x=0.02, y=0.98, xref="paper", yref="paper", text="Q1", showarrow=False, font=dict(size=20, color="black"), xanchor="left", yanchor="top")
+                             fig.add_annotation(x=0.98, y=0.98, xref="paper", yref="paper", text="Q2", showarrow=False, font=dict(size=20, color="black"), xanchor="right", yanchor="top")
+                             fig.add_annotation(x=0.98, y=0.02, xref="paper", yref="paper", text="Q3", showarrow=False, font=dict(size=20, color="black"), xanchor="right", yanchor="bottom")
+                             fig.add_annotation(x=0.02, y=0.02, xref="paper", yref="paper", text="Q4", showarrow=False, font=dict(size=20, color="black"), xanchor="left", yanchor="bottom")
 
-                    # Add Lines (Crosshair)
-                    fig.add_vline(x=curr_tx, line_color="black", line_width=1, line_dash="dash")
-                    fig.add_hline(y=curr_ty, line_color="black", line_width=1, line_dash="dash")
+                             # Add Lines (Crosshair)
+                             fig.add_vline(x=curr_tx, line_color="black", line_width=1, line_dash="dash")
+                             fig.add_hline(y=curr_ty, line_color="black", line_width=1, line_dash="dash")
 
-                    fig.update_layout(
-                        title=f"Quadrant: {sel_x} vs {sel_y}",
-                        plot_bgcolor="white",
-                        paper_bgcolor="white",
-                        xaxis_title=sel_x, yaxis_title=sel_y,
-                        xaxis_type="log" if use_log else "linear",
-                        yaxis_type="log" if use_log else "linear",
-                        dragmode="pan", clickmode="event+select",
-                        font=dict(color="black"),
-                        xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                        yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey')
-                    )
+                             # Calculate plot range based on data
+                             if use_log:
+                                 # Range in log10 units for Plotly log axes
+                                 # Add slight padding (0.1 log units is factor of ~1.25)
+                                 pad = 0.2
+                                 range_x = [np.log10(min_x) - pad, np.log10(max_x) + pad]
+                                 range_y = [np.log10(min_y) - pad, np.log10(max_y) + pad]
+                             else:
+                                 pad_x = (max_x - min_x) * 0.05
+                                 range_x = [min_x - pad_x, max_x + pad_x]
+                                 pad_y = (max_y - min_y) * 0.05
+                                 range_y = [min_y - pad_y, max_y + pad_y]
 
-                    st.plotly_chart(fig, width="stretch", on_select="rerun", key=q_plot_key)
+                             fig.update_layout(
+                                 title=f"Quadrant: {sel_x} vs {sel_y}",
+                                 plot_bgcolor="white",
+                                 paper_bgcolor="white",
+                                 height=800,
+                                 xaxis_title=sel_x, yaxis_title=sel_y,
+                                 xaxis_type="log" if use_log else "linear",
+                                 yaxis_type="log" if use_log else "linear",
+                                 xaxis_range=range_x,
+                                 yaxis_range=range_y,
+                                 dragmode="pan", clickmode="event+select",
+                                 font=dict(color="black"),
+                                 xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
+                                 yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey')
+                             )
 
-                    # Add to Canvas Button
-                    if st.button("Add This Scatter Plot to Canvas", key=f"add_analysis_quad_{sel_x}_{sel_y}_{parent_gate}"):
-                        import matplotlib.pyplot as plt
-                        mpl_fig, mpl_ax = plt.subplots(figsize=(6, 6))
+                             st.plotly_chart(fig, width="stretch", on_select="rerun", key=q_plot_key)
 
-                        if show_density and density_vals is not None:
-                             # Combine all for density plot to match Plotly view
-                             # We have plot_x and plot_y and plot_density already prepared (downsampled) or full
-                             # But plot_density is downsampled or full from 'arr_x'.
-                             # For consistency, let's use the same 'plot_x', 'plot_y', 'plot_density' used in Plotly
-                             sc = mpl_ax.scatter(plot_x, plot_y, c=plot_density, cmap='viridis', s=10, alpha=0.6, edgecolors="none")
-                             plt.colorbar(sc, ax=mpl_ax, label='Density')
-                        else:
-                            colors_c = px.colors.qualitative.Plotly
-                            for i, s in enumerate(sel_samps):
-                                 if s in d_x and s in d_y:
-                                      vx, vy = d_x[s], d_y[s]
-                                      l_min = min(len(vx), len(vy))
-                                      vx = vx[:l_min]
-                                      vy = vy[:l_min]
-                                      mask = (~np.isnan(vx)) & (~np.isnan(vy))
-                                      if use_log:
-                                          mask = mask & (vx > 0) & (vy > 0)
-                                      vx = vx[mask]
-                                      vy = vy[mask]
-                                      if len(vx) > 0:
-                                           if len(vx) > 2000:
-                                                rng = np.random.RandomState(42)
-                                                idx = rng.choice(len(vx), 2000, replace=False)
-                                                vx = vx[idx]
-                                                vy = vy[idx]
-                                           c = colors_c[i%len(colors_c)]
-                                           mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
-                            mpl_ax.legend()
+                    # Add to Canvas & Controls to Options
+                    with col_opts:
+                        st.markdown("#### Actions")
+                        if st.button("Add This Scatter Plot to Canvas", key=f"add_analysis_quad_{sel_x}_{sel_y}_{parent_gate}"):
+                            import matplotlib.pyplot as plt
+                            mpl_fig, mpl_ax = plt.subplots(figsize=(6, 6))
 
-                        if use_log:
-                            mpl_ax.set_xscale("log")
-                            mpl_ax.set_yscale("log")
-                        mpl_ax.set_title(f"{sel_x} vs {sel_y}")
-                        mpl_ax.set_xlabel(sel_x)
-                        mpl_ax.set_ylabel(sel_y)
-                        mpl_ax.axvline(x=curr_tx, color="black", linestyle="--")
-                        mpl_ax.axhline(y=curr_ty, color="black", linestyle="--")
-
-                        mpl_fig.tight_layout()
-                        add_plot_to_canvas(mpl_fig, f"Scatter: {sel_x} vs {sel_y}")
-                        st.success("Added to Canvas!")
-                        plt.close(mpl_fig)
-
-                    st.write("#### Save Quadrants")
-                    st.write("Select which populations to create:")
-
-                    sq1, sq2, sq3, sq4 = st.columns(4)
-                    save_UL = sq1.checkbox(f"Q1: {sel_x}- {sel_y}+", value=True)
-                    save_UR = sq2.checkbox(f"Q2: {sel_x}+ {sel_y}+", value=True)
-                    save_LR = sq3.checkbox(f"Q3: {sel_x}+ {sel_y}-", value=True)
-                    save_LL = sq4.checkbox(f"Q4: {sel_x}- {sel_y}-", value=True)
-
-                    if st.button("Create Selected Gates"):
-                        selected_quads = []
-                        suffixes = []
-                        if save_UL:
-                            selected_quads.append("-+")
-                            suffixes.append("-+")
-                        if save_UR:
-                            selected_quads.append("++")
-                            suffixes.append("++")
-                        if save_LR:
-                            selected_quads.append("+-")
-                            suffixes.append("+-")
-                        if save_LL:
-                            selected_quads.append("--")
-                            suffixes.append("--")
-
-                        if selected_quads:
-                            # Combined Label
-                            if len(suffixes) == 1:
-                                lbl_suffix = f"{sel_x}{suffixes[0][0]} {sel_y}{suffixes[0][1]}"
+                            if show_density and density_vals is not None:
+                                 # Combine all for density plot to match Plotly view
+                                 # We have plot_x and plot_y and plot_density already prepared (downsampled) or full
+                                 # But plot_density is downsampled or full from 'arr_x'.
+                                 # For consistency, let's use the same 'plot_x', 'plot_y', 'plot_density' used in Plotly
+                                 sc = mpl_ax.scatter(plot_x, plot_y, c=plot_density, cmap='viridis', s=10, alpha=0.6, edgecolors="none")
+                                 plt.colorbar(sc, ax=mpl_ax, label='Density')
                             else:
-                                lbl_suffix = f"{sel_x}/{sel_y} Combined"
+                                colors_c = px.colors.qualitative.Plotly
+                                for i, s in enumerate(sel_samps):
+                                     if s in d_x and s in d_y:
+                                          vx, vy = d_x[s], d_y[s]
+                                          l_min = min(len(vx), len(vy))
+                                          vx = vx[:l_min]
+                                          vy = vy[:l_min]
+                                          mask = (~np.isnan(vx)) & (~np.isnan(vy))
+                                          if use_log:
+                                              mask = mask & (vx > 0) & (vy > 0)
+                                          vx = vx[mask]
+                                          vy = vy[mask]
+                                          if len(vx) > 0:
+                                               if len(vx) > 2000:
+                                                    rng = np.random.RandomState(42)
+                                                    idx = rng.choice(len(vx), 2000, replace=False)
+                                                    vx = vx[idx]
+                                                    vy = vy[idx]
+                                               c = colors_c[i%len(colors_c)]
+                                               mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+                                mpl_ax.legend()
 
-                            lbl = f"{parent_gate} -> {lbl_suffix}" if parent_gate!='Singlets' else lbl_suffix
-                            new_g = {
-                                'type': 'quadrant',
-                                'parent': parent_gate,
-                                'label': lbl,
-                                'channel_x': sel_x, 'channel_y': sel_y,
-                                'threshold_x': curr_tx, 'threshold_y': curr_ty,
-                                'quadrant': selected_quads,
-                                'samples': sel_samps
-                            }
-                            st.session_state.positive_gates.append(new_g)
+                            if use_log:
+                                mpl_ax.set_xscale("log")
+                                mpl_ax.set_yscale("log")
+                            mpl_ax.set_title(f"{sel_x} vs {sel_y}")
+                            mpl_ax.set_xlabel(sel_x)
+                            mpl_ax.set_ylabel(sel_y)
+                            mpl_ax.axvline(x=curr_tx, color="black", linestyle="--")
+                            mpl_ax.axhline(y=curr_ty, color="black", linestyle="--")
 
-                        st.session_state.show_gate_creator = False
-                        st.rerun()
+                            mpl_fig.tight_layout()
+                            add_plot_to_canvas(mpl_fig, f"Scatter: {sel_x} vs {sel_y}")
+                            st.success("Added to Canvas!")
+                            plt.close(mpl_fig)
 
-                    if st.button("Cancel Quad"):
-                         st.session_state.show_gate_creator = False
-                         st.rerun()
+                        st.markdown("#### Save Quadrants")
+                        st.write("Select which populations to create:")
+
+                        # Nested columns for quadrant selection inside options
+                        if True: # Just to match indent level flow
+
+                         sq1, sq2 = st.columns(2)
+                         save_UL = sq1.checkbox(f"Q1: {sel_x}- {sel_y}+", value=True)
+                         save_UR = sq2.checkbox(f"Q2: {sel_x}+ {sel_y}+", value=True)
+                         sq3, sq4 = st.columns(2)
+                         save_LR = sq3.checkbox(f"Q3: {sel_x}+ {sel_y}-", value=True)
+                         save_LL = sq4.checkbox(f"Q4: {sel_x}- {sel_y}-", value=True)
+
+                         if st.button("Create Selected Gates"):
+                             selected_quads = []
+                             suffixes = []
+                             if save_UL:
+                                 selected_quads.append("-+")
+                                 suffixes.append("-+")
+                             if save_UR:
+                                 selected_quads.append("++")
+                                 suffixes.append("++")
+                             if save_LR:
+                                 selected_quads.append("+-")
+                                 suffixes.append("+-")
+                             if save_LL:
+                                 selected_quads.append("--")
+                                 suffixes.append("--")
+
+                             if selected_quads:
+                                 # Combined Label
+                                 if len(suffixes) == 1:
+                                     lbl_suffix = f"{sel_x}{suffixes[0][0]} {sel_y}{suffixes[0][1]}"
+                                 else:
+                                     lbl_suffix = f"{sel_x}/{sel_y} Combined"
+
+                                 lbl = f"{parent_gate} -> {lbl_suffix}" if parent_gate!='Singlets' else lbl_suffix
+                                 new_g = {
+                                     'type': 'quadrant',
+                                     'parent': parent_gate,
+                                     'label': lbl,
+                                     'channel_x': sel_x, 'channel_y': sel_y,
+                                     'threshold_x': curr_tx, 'threshold_y': curr_ty,
+                                     'quadrant': selected_quads,
+                                     'samples': sel_samps
+                                 }
+                                 st.session_state.positive_gates.append(new_g)
+
+                             st.session_state.show_gate_creator = False
+                             st.rerun()
+
+                         if st.button("Cancel Quad"):
+                              st.session_state.show_gate_creator = False
+                              st.rerun()
 
         elif analysis_mode == "2D Polygon":
             # =========================================================
             # 2D POLYGON LOGIC
             # =========================================================
-            c_x, c_y, c_s = st.columns([1, 1, 2])
-            with c_x:
+            with col_opts:
+                st.markdown("#### Axis & Samples")
                 sel_x = st.selectbox("X Channel", valid_channels, key="poly_x")
-            with c_y:
                 idx_y = 1 if len(valid_channels) > 1 else 0
                 sel_y = st.selectbox("Y Channel", valid_channels, index=idx_y, key="poly_y")
-
-            sample_list = full_df['Sample'].unique().tolist()
-            with c_s:
+                
+                sample_list = full_df['Sample'].unique().tolist()
                 def_samp = [sample_list[0]] if sample_list else []
                 sel_samps = st.multiselect("Samples", sample_list, default=def_samp, key="poly_samp")
 
@@ -1270,8 +1297,11 @@ def render_analysis_tab():
                 if len(arr_x) == 0:
                     st.warning("No data.")
                 else:
-                    use_log = st.checkbox("Log Scale", value=True, key="poly_log")
-                    show_density = st.checkbox("Show Density", value=True, key="poly_density")
+                    with col_opts:
+                        st.markdown("#### Settings")
+                        use_log = st.checkbox("Log Scale", value=True, key="poly_log")
+                        show_density = st.checkbox("Show Density", value=True, key="poly_density")
+                    
                     if use_log:
                         pos_mask = (arr_x > 0) & (arr_y > 0)
                         arr_x_p = arr_x[pos_mask]
@@ -1309,177 +1339,199 @@ def render_analysis_tab():
                                    st.session_state[poly_key].extend(new_pts_list)
 
                     # Control Buttons
-                    col_b1, col_b2 = st.columns(2)
-                    with col_b1:
-                         if st.button("Clear Vertices"):
-                              st.session_state[poly_key] = []
-                              st.rerun()
-                         if st.button("Remove Last Point"):
-                              if st.session_state[poly_key]:
-                                   st.session_state[poly_key].pop()
+                    with col_opts:
+                         st.markdown("#### Vertices")
+                         col_b1, col_b2 = st.columns(2)
+                         with col_b1:
+                              if st.button("Clear Vertices"):
+                                   st.session_state[poly_key] = []
                                    st.rerun()
+                              if st.button("Remove Last Point"):
+                                   if st.session_state[poly_key]:
+                                        st.session_state[poly_key].pop()
+                                        st.rerun()
 
-                    with col_b2:
-                         st.info(f"Points Selected: {len(st.session_state[poly_key])}")
+                         with col_b2:
+                              st.info(f"Points Selected: {len(st.session_state[poly_key])}")
 
                     # Scatter Plot with Polygon Overlay
-                    density_vals = None
-                    if show_density and len(arr_x) > 0:
-                        try:
-                            # Histogram-based density (use logicle for negative-safe transform)
-                            dx_calc = logicle_transform(arr_x) if use_log else arr_x
-                            dy_calc = logicle_transform(arr_y) if use_log else arr_y
-                            H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
-                            x_bins = np.digitize(dx_calc, xedges) - 1
-                            y_bins = np.digitize(dy_calc, yedges) - 1
-                            x_bins = np.clip(x_bins, 0, H.shape[0]-1)
-                            y_bins = np.clip(y_bins, 0, H.shape[1]-1)
-                            density_vals = H[x_bins, y_bins]
-                        except Exception as e:
-                            print(f"Density Error: {e}")
+                    with col_plots:
+                        density_vals = None
+                        if show_density and len(arr_x) > 0:
+                            try:
+                                # Histogram-based density (use logicle for negative-safe transform)
+                                dx_calc = logicle_transform(arr_x) if use_log else arr_x
+                                dy_calc = logicle_transform(arr_y) if use_log else arr_y
+                                H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=100)
+                                x_bins = np.digitize(dx_calc, xedges) - 1
+                                y_bins = np.digitize(dy_calc, yedges) - 1
+                                x_bins = np.clip(x_bins, 0, H.shape[0]-1)
+                                y_bins = np.clip(y_bins, 0, H.shape[1]-1)
+                                density_vals = H[x_bins, y_bins]
+                            except Exception as e:
+                                print(f"Density Error: {e}")
 
-                    if len(arr_x) > 5000:
-                         rng = np.random.RandomState(42)
-                         indices = rng.choice(len(arr_x), 5000, replace=False)
-                         plot_x, plot_y = arr_x[indices], arr_y[indices]
-                         plot_density = density_vals[indices] if density_vals is not None else None
-                    else:
-                         plot_x, plot_y = arr_x, arr_y
-                         plot_density = density_vals
-
-                    if show_density and plot_density is not None:
-                        marker_dict = dict(
-                            size=4,
-                            opacity=0.5,
-                            color=plot_density,
-                            colorscale='Viridis',
-                            showscale=True,
-                            colorbar=dict(title='Density')
-                        )
-                    else:
-                        marker_dict = dict(size=4, opacity=0.5, color='slateblue')
-
-                    fig = go.Figure()
-
-                    # 1. Data Trace
-                    fig.add_trace(go.Scattergl(
-                        x=plot_x, y=plot_y, mode='markers',
-                        marker=marker_dict,
-                        name='Events',
-                        hoverinfo='none'
-                    ))
-
-                    # 2. Polygon Trace
-                    verts = st.session_state[poly_key]
-                    if len(verts) > 0:
-                         if len(verts) >= 3:
-                              vx = [v[0] for v in verts] + [verts[0][0]]
-                              vy = [v[1] for v in verts] + [verts[0][1]]
-                         else:
-                              vx = [v[0] for v in verts]
-                              vy = [v[1] for v in verts]
-
-                         fig.add_trace(go.Scattergl(
-                              x=vx, y=vy, mode='lines+markers',
-                              line=dict(color='orange', width=2),
-                              marker=dict(size=6, color='orange'),
-                              name='Polygon'
-                         ))
-
-                    fig.update_layout(
-                        title=f"Polygon: {sel_x} vs {sel_y} (Click on points to define vertices)",
-                        plot_bgcolor="white",
-                        paper_bgcolor="white",
-                        xaxis_title=sel_x, yaxis_title=sel_y,
-                        xaxis_type="log" if use_log else "linear",
-                        yaxis_type="log" if use_log else "linear",
-                        dragmode="pan",
-                        clickmode="event+select",
-                        font=dict(color="black"),
-                        xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                        yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                    )
-
-                    st.plotly_chart(fig, width="stretch", on_select="rerun", key=plot_key, selection_mode="points")
-
-                    # Add to Canvas Button
-                    if st.button("Add This Scatter Plot to Canvas", key=f"add_analysis_poly_{sel_x}_{sel_y}_{parent_gate}"):
-                        import matplotlib.pyplot as plt
-                        mpl_fig, mpl_ax = plt.subplots(figsize=(6, 6))
-
-                        if show_density and density_vals is not None:
-                             # Use pre-calculated density points
-                             sc = mpl_ax.scatter(plot_x, plot_y, c=plot_density, cmap='viridis', s=10, alpha=0.6, edgecolors="none")
-                             plt.colorbar(sc, ax=mpl_ax, label='Density')
+                        if len(arr_x) > 5000:
+                             rng = np.random.RandomState(42)
+                             indices = rng.choice(len(arr_x), 5000, replace=False)
+                             plot_x, plot_y = arr_x[indices], arr_y[indices]
+                             plot_density = density_vals[indices] if density_vals is not None else None
                         else:
-                            colors_c = px.colors.qualitative.Plotly
-                            for i, s in enumerate(sel_samps):
-                                 if s in d_x and s in d_y:
-                                      vx, vy = d_x[s], d_y[s]
-                                      l_min = min(len(vx), len(vy))
-                                      vx = vx[:l_min]
-                                      vy = vy[:l_min]
-                                      mask = (~np.isnan(vx)) & (~np.isnan(vy))
-                                      if use_log:
-                                          mask = mask & (vx > 0) & (vy > 0)
-                                      vx = vx[mask]
-                                      vy = vy[mask]
-                                      if len(vx) > 0:
-                                           if len(vx) > 2000:
-                                                rng = np.random.RandomState(42)
-                                                idx = rng.choice(len(vx), 2000, replace=False)
-                                                vx = vx[idx]
-                                                vy = vy[idx]
-                                           c = colors_c[i%len(colors_c)]
-                                           mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
-                            mpl_ax.legend()
+                             plot_x, plot_y = arr_x, arr_y
+                             plot_density = density_vals
 
-                        if use_log:
-                             mpl_ax.set_xscale("log")
-                             mpl_ax.set_yscale("log")
+                        if show_density and plot_density is not None:
+                            marker_dict = dict(
+                                size=6,
+                                opacity=0.5,
+                                color=plot_density,
+                                colorscale='Viridis',
+                                showscale=True,
+                                colorbar=dict(title='Density')
+                            )
+                        else:
+                            marker_dict = dict(size=6, opacity=0.5, color='slateblue')
 
-                        mpl_ax.set_title(f"Polygon: {sel_x} vs {sel_y}")
-                        mpl_ax.set_xlabel(sel_x)
-                        mpl_ax.set_ylabel(sel_y)
+                        fig = go.Figure()
 
-                        # Plot Polygon
+                        # 1. Data Trace
+                        fig.add_trace(go.Scattergl(
+                            x=plot_x, y=plot_y, mode='markers',
+                            marker=marker_dict,
+                            name='Events',
+                            hoverinfo='none'
+                        ))
+
+                        # 2. Polygon Trace
+                        verts = st.session_state[poly_key]
                         if len(verts) > 0:
                              if len(verts) >= 3:
-                                  vx_poly = [v[0] for v in verts] + [verts[0][0]]
-                                  vy_poly = [v[1] for v in verts] + [verts[0][1]]
+                                  vx = [v[0] for v in verts] + [verts[0][0]]
+                                  vy = [v[1] for v in verts] + [verts[0][1]]
                              else:
-                                  vx_poly = [v[0] for v in verts]
-                                  vy_poly = [v[1] for v in verts]
-                             mpl_ax.plot(vx_poly, vy_poly, color='orange', linewidth=2, marker='o', markersize=4)
+                                  vx = [v[0] for v in verts]
+                                  vy = [v[1] for v in verts]
 
-                        mpl_fig.tight_layout()
-                        add_plot_to_canvas(mpl_fig, f"Polygon Scatter: {sel_x} vs {sel_y}")
-                        st.success("Added to Canvas!")
-                        plt.close(mpl_fig)
+                             fig.add_trace(go.Scattergl(
+                                  x=vx, y=vy, mode='lines+markers',
+                                  line=dict(color='orange', width=2),
+                                  marker=dict(size=6, color='orange'),
+                                  name='Polygon'
+                             ))
 
-                    st.write("#### Save Polygon Gate")
-                    if len(verts) >= 3:
-                         if st.button("Create Gate"):
-                              lbl = f"{parent_gate} -> {sel_x}:{sel_y} Poly" if parent_gate!='Singlets' else f"{sel_x}:{sel_y} Poly"
-                              new_g = {
-                                  'type': 'polygon',
-                                  'parent': parent_gate,
-                                  'label': lbl,
-                                  'channel_x': sel_x, 'channel_y': sel_y,
-                                  'vertices': verts,
-                                  'samples': sel_samps
-                              }
-                              st.session_state.positive_gates.append(new_g)
-                              del st.session_state[poly_key]
-                              st.session_state.show_gate_creator = False
-                              st.rerun()
-                    else:
-                         st.warning("Select at least 3 points to form a polygon.")
+                        # Calculate plot range based on data for consistent scaling
+                        min_x, max_x = np.min(arr_x), np.max(arr_x)
+                        min_y, max_y = np.min(arr_y), np.max(arr_y)
 
-                    if st.button("Cancel Polygon"):
-                         st.session_state.show_gate_creator = False
-                         st.rerun()
+                        if use_log:
+                            pad = 0.2
+                            range_x = [np.log10(min_x) - pad, np.log10(max_x) + pad]
+                            range_y = [np.log10(min_y) - pad, np.log10(max_y) + pad]
+                        else:
+                            pad_x = (max_x - min_x) * 0.05
+                            range_x = [min_x - pad_x, max_x + pad_x]
+                            pad_y = (max_y - min_y) * 0.05
+                            range_y = [min_y - pad_y, max_y + pad_y]
+
+                        fig.update_layout(
+                            title=f"Polygon: {sel_x} vs {sel_y} (Click on points to define vertices)",
+                            plot_bgcolor="white",
+                            paper_bgcolor="white",
+                            height=800,
+                            xaxis_title=sel_x, yaxis_title=sel_y,
+                            xaxis_type="log" if use_log else "linear",
+                            yaxis_type="log" if use_log else "linear",
+                            xaxis_range=range_x,
+                            yaxis_range=range_y,
+                            dragmode="pan",
+                            clickmode="event+select",
+                            font=dict(color="black"),
+                            xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
+                            yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        )
+
+                        st.plotly_chart(fig, width="stretch", on_select="rerun", key=plot_key, selection_mode="points")
+
+                    # Add to Canvas Button & Controls
+                    with col_opts:
+                        st.markdown("#### Actions")
+                        if st.button("Add This Scatter Plot to Canvas", key=f"add_analysis_poly_{sel_x}_{sel_y}_{parent_gate}"):
+                            import matplotlib.pyplot as plt
+                            mpl_fig, mpl_ax = plt.subplots(figsize=(6, 6))
+
+                            if show_density and density_vals is not None:
+                                 # Use pre-calculated density points
+                                 sc = mpl_ax.scatter(plot_x, plot_y, c=plot_density, cmap='viridis', s=10, alpha=0.6, edgecolors="none")
+                                 plt.colorbar(sc, ax=mpl_ax, label='Density')
+                            else:
+                                colors_c = px.colors.qualitative.Plotly
+                                for i, s in enumerate(sel_samps):
+                                     if s in d_x and s in d_y:
+                                          vx, vy = d_x[s], d_y[s]
+                                          l_min = min(len(vx), len(vy))
+                                          vx = vx[:l_min]
+                                          vy = vy[:l_min]
+                                          mask = (~np.isnan(vx)) & (~np.isnan(vy))
+                                          if use_log:
+                                              mask = mask & (vx > 0) & (vy > 0)
+                                          vx = vx[mask]
+                                          vy = vy[mask]
+                                          if len(vx) > 0:
+                                               if len(vx) > 2000:
+                                                    rng = np.random.RandomState(42)
+                                                    idx = rng.choice(len(vx), 2000, replace=False)
+                                                    vx = vx[idx]
+                                                    vy = vy[idx]
+                                               c = colors_c[i%len(colors_c)]
+                                               mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+                                mpl_ax.legend()
+
+                            if use_log:
+                                 mpl_ax.set_xscale("log")
+                                 mpl_ax.set_yscale("log")
+
+                            mpl_ax.set_title(f"Polygon: {sel_x} vs {sel_y}")
+                            mpl_ax.set_xlabel(sel_x)
+                            mpl_ax.set_ylabel(sel_y)
+
+                            # Plot Polygon
+                            if len(verts) > 0:
+                                 if len(verts) >= 3:
+                                      vx_poly = [v[0] for v in verts] + [verts[0][0]]
+                                      vy_poly = [v[1] for v in verts] + [verts[0][1]]
+                                 else:
+                                      vx_poly = [v[0] for v in verts]
+                                      vy_poly = [v[1] for v in verts]
+                                 mpl_ax.plot(vx_poly, vy_poly, color='orange', linewidth=2, marker='o', markersize=4)
+
+                            mpl_fig.tight_layout()
+                            add_plot_to_canvas(mpl_fig, f"Polygon Scatter: {sel_x} vs {sel_y}")
+                            st.success("Added to Canvas!")
+                            plt.close(mpl_fig)
+
+                        st.write("#### Save Polygon Gate")
+                        if len(verts) >= 3:
+                             if st.button("Create Gate"):
+                                  lbl = f"{parent_gate} -> {sel_x}:{sel_y} Poly" if parent_gate!='Singlets' else f"{sel_x}:{sel_y} Poly"
+                                  new_g = {
+                                      'type': 'polygon',
+                                      'parent': parent_gate,
+                                      'label': lbl,
+                                      'channel_x': sel_x, 'channel_y': sel_y,
+                                      'vertices': verts,
+                                      'samples': sel_samps
+                                  }
+                                  st.session_state.positive_gates.append(new_g)
+                                  del st.session_state[poly_key]
+                                  st.session_state.show_gate_creator = False
+                                  st.rerun()
+                        else:
+                             st.warning("Select at least 3 points to form a polygon.")
+
+                        if st.button("Cancel Polygon"):
+                             st.session_state.show_gate_creator = False
+                             st.rerun()
     # -------------------------------------------------------------------------
     # 4. Navigation
     # -------------------------------------------------------------------------

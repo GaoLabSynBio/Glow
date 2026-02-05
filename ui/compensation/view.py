@@ -213,30 +213,34 @@ def render_compensation_tab():
             st.caption("Rows: Source (Control) | Columns: Detector (Spillover)")
 
         with t2:
-            st.write("#### Before Compensation")
-            # We need to construct a df with just the control data?
-            # Or the whole dataset? "before and after compensation"
-            # Usually we visualize the CONTROLS to see if they are aligned?
-            # Or the user wants to see the whole dataset to see if populations orthogonalize?
-            # Prompt: "plot pairwise... before and after ... apply compensation to all data"
-            # It implies using "All Data" for visualization?
-            # Or usually we check if the SINGLE STAINS are compensated correctly.
-            # Let's show the full dataset (downsampled) so they can see the correction on real cells.
+            col_opts, col_plots = st.columns([1, 3])
+            
+            with col_opts:
+                st.markdown("#### Settings")
+                # We need to construct a df with just the control data?
+                # Or the whole dataset? "before and after compensation"
+                # Usually we visualize the CONTROLS to see if they are aligned?
+                # Or the user wants to see the whole dataset to see if populations orthogonalize?
+                # Prompt: "plot pairwise... before and after ... apply compensation to all data"
+                # It implies using "All Data" for visualization?
+                # Or usually we check if the SINGLE STAINS are compensated correctly.
+                # Let's show the full dataset (downsampled) so they can see the correction on real cells.
 
-            show_sample = st.selectbox("Select Sample to Visualize", options=["All Combined"] + list(df['Sample'].unique().astype(str)))
+                show_sample = st.selectbox("Select Sample to Visualize", options=["All Combined"] + list(df['Sample'].unique().astype(str)))
 
             if show_sample == "All Combined":
                 viz_df = df
             else:
                 viz_df = df[df['Sample'] == show_sample]
 
-            st.write("##### Uncompensated")
-            render_pairwise_plots(viz_df, channels, title_prefix="Raw")
+            with col_plots:
+                st.write("##### Uncompensated")
+                render_pairwise_plots(viz_df, channels, title_prefix="Raw")
 
-            st.write("##### Compensated Preview")
-            # Apply temporarily for viz
-            comp_viz_df = st.session_state.comp_manager.apply_compensation(viz_df, channels, rename=False)
-            render_pairwise_plots(comp_viz_df, channels, title_prefix="Compensated", reference_df=viz_df)
+                st.write("##### Compensated Preview")
+                # Apply temporarily for viz
+                comp_viz_df = st.session_state.comp_manager.apply_compensation(viz_df, channels, rename=False)
+                render_pairwise_plots(comp_viz_df, channels, title_prefix="Compensated", reference_df=viz_df)
 
 
         st.divider()
