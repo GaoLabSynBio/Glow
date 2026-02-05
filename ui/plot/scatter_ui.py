@@ -32,36 +32,43 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
     # Create split view: Options (Left), Plot (Right)
     col_opts, col_plot = st.columns([1, 3])
 
+    # Variables to track group selection
+    selected_groups = None
+    final_order = None
+
     with col_opts:
         st.markdown("#### Plot Settings")
         
-        x_channel = st.selectbox("X Axis Channel", channels, index=0)
-        y_channel = st.selectbox("Y Axis Channel", channels, index=1 if len(channels) > 1 else 0)
+        # Determine default indices for mCherry (X) and GFP (Y)
+        default_x_index = 0
+        default_y_index = 1 if len(channels) > 1 else 0
+        
+        for i, c in enumerate(channels):
+            if "mcherry" in c.lower():
+                default_x_index = i
+                break
+        
+        for i, c in enumerate(channels):
+            if "gfp" in c.lower():
+                default_y_index = i
+                break
+
+        x_channel = st.selectbox("X Axis Channel", channels, index=default_x_index)
+        y_channel = st.selectbox("Y Axis Channel", channels, index=default_y_index)
         scale = st.selectbox("Scale", ["log", "linear", "logicle"], index=0, help="Axis scale transformation.")
-
-        compare_by = st.selectbox(
-            "Color/Group By",
-            ["None"] + conditions,
-            index=0 if not conditions else 1
-        )
-        hue_var = None if compare_by == "None" else compare_by
-
-        # Default to Experiment Name if available
-        default_idx = 0
-        if "Experiment Name" in conditions:
-            try:
-                default_idx = (["None"] + conditions).index("Experiment Name")
-            except ValueError:
-                default_idx = 0
-        facet_by = st.selectbox("Facet By (Subplots)", ["None"] + conditions, index=default_idx)
-        facet_var = None if facet_by == "None" else facet_by
 
         # Scatter specific settings
         st.markdown("---")
         st.markdown("**Rendering Options**")
         
         show_trend = st.checkbox("Show Trend Line (Moving Mean)", value=True)
-        show_dots = st.checkbox("Show Dots (Density Color)", value=True)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+             show_dots = st.checkbox("Show Dots (Individual)", value=True)
+        with c2:
+             show_dots_merged = st.checkbox("Show Dots (Merged)", value=False)
+             
         show_grid = st.checkbox("Show Grid", value=False)
 
         # Backend Selection
@@ -83,6 +90,76 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
         st.markdown("---")
 
     with col_plot:
+        st.markdown("#### Grouping Configuration")
+        
+        # Filter conditions to remove 'cells' and 'singlets'
+        filtered_conditions = [c for c in conditions if c not in ["cells", "singlets"]]
+        
+        # Determine defaults
+        default_group_idx = 0
+        default_facet_idx = 0
+        
+        # Candidates for defaults order: Experiment Name > Sample
+        candidates = ["Experiment Name", "Experiment_Name", "Sample", "sample"]
+        
+        # Find best candidate present in filtered conditions
+        best_candidate = None
+        for c in candidates:
+             if c in filtered_conditions:
+                 best_candidate = c
+                 break
+        
+        # Group Options
+        group_options = ["None"] + filtered_conditions
+        
+        # Set defaults if candidate found
+        if best_candidate:
+            if best_candidate in group_options:
+                 default_group_idx = group_options.index(best_candidate)
+            if best_candidate in group_options:
+                 default_facet_idx = group_options.index(best_candidate)
+
+        gc1, gc2 = st.columns(2)
+        with gc1:
+            compare_by = st.selectbox(
+                "Color/Group By",
+                group_options,
+                index=default_group_idx
+            )
+            hue_var = None if compare_by == "None" else compare_by
+        
+        with gc2:
+            facet_by = st.selectbox(
+                "Facet By (Subplots)", 
+                group_options, 
+                index=default_facet_idx
+            )
+            facet_var = None if facet_by == "None" else facet_by
+            
+        if hue_var:
+            all_groups = sorted(filtered_experiment.data[hue_var].unique())
+            
+            # Use columns for layout
+            sg1, sg2 = st.columns([3, 1])
+            with sg1:
+                selected_groups = st.multiselect("Select Groups to Plot", all_groups, default=all_groups)
+            with sg2:
+                st.write("") # Spacer
+                st.write("")
+                manual_order = st.checkbox("Manual Group Order", value=False)
+            
+            final_order = selected_groups
+
+            if manual_order and selected_groups:
+                order_text = st.text_area("Specify Order (comma separated)", value=", ".join(selected_groups), height=68)
+                if order_text:
+                    custom_order = [x.strip() for x in order_text.split(",") if x.strip()]
+                    final_order = [x for x in custom_order if x in selected_groups]
+                    remaining = [x for x in selected_groups if x not in final_order]
+                    final_order.extend(remaining)
+
+        st.write("") # Spacer
+
         if st.button("Generate Plot", type="primary", key="btn_scatter"):
             st.session_state.scatter_generated = True
 
@@ -128,6 +205,14 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                     if processed_gates:
                         st.write(f"Applying {len(processed_gates)} filters...")
 
+                    # Apply Group Filter (if Groups Selected)
+                    if hue_var and final_order is not None:
+                        # Filter dataframe to only keep rows where hue_var is in selected groups
+                        filtered_df = filtered_df[filtered_df[hue_var].isin(final_order)]
+                        if filtered_df.empty:
+                            st.warning("No events match the selected groups.")
+                            return
+
                     # Create temp experiment for backend
                     plot_experiment = copy.copy(filtered_experiment)
                     plot_experiment.data = filtered_df
@@ -147,23 +232,42 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 yscale=scale,
                                 show_trend=show_trend,
                                 show_dots=show_dots,
+                                show_dots_summary=show_dots_merged,
                                 show_grid=show_grid
                             )
 
                             if isinstance(res, tuple):
-                                fig_facets, fig_summary = res
+                                # Correct unpacking for 3 items (facets, summary, legend) or 2 items
+                                fig_legend = None
+                                if len(res) == 3:
+                                     fig_facets, fig_summary, fig_legend = res
+                                else:
+                                     fig_facets, fig_summary = res
+
                                 st.subheader("Merged Comparison")
-                                st.pyplot(fig_summary)
+                                
+                                # Shrink merged comparison plot to fit to half of the width of the column
+                                c_merge_1, c_merge_2 = st.columns([1, 1])
+                                with c_merge_1:
+                                    st.pyplot(fig_summary, use_container_width=True)
+                                
+                                if fig_legend:
+                                    with c_merge_2:
+                                        st.pyplot(fig_legend, use_container_width=False)
+                                
                                 download_btn(fig_summary, "scatter_summary")
                                 if st.button("Add Summary Plot to Canvas", key="add_scatter_summary_to_canvas"):
                                     if add_plot_to_canvas(fig_summary, base_title + " (summary)"):
                                         st.success("Plot added to canvas!")
-
+                                
+                                # Close figures to free memory
                                 if not getattr(fig_summary, '_glow_is_direct_ref', False):
                                     plt.close(fig_summary)
+                                if fig_legend and not getattr(fig_legend, '_glow_is_direct_ref', False):
+                                    plt.close(fig_legend)
 
                                 st.subheader("Separate Panels (Detailed)")
-                                st.pyplot(fig_facets)
+                                st.pyplot(fig_facets, use_container_width=False)
                                 download_btn(fig_facets, "scatter_facets")
                                 if st.button("Add Facet Plot to Canvas", key="add_scatter_facets_to_canvas"):
                                     if add_plot_to_canvas(fig_facets, base_title + " (facets)"):
@@ -172,7 +276,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 if not getattr(fig_facets, '_glow_is_direct_ref', False):
                                     plt.close(fig_facets)
                             else:
-                                st.pyplot(res)
+                                st.pyplot(res, use_container_width=False)
                                 download_btn(res, "scatter_plot")
                                 if st.button("Add Plot to Canvas", key="add_scatter_to_canvas"):
                                     if add_plot_to_canvas(res, base_title):
@@ -216,9 +320,10 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                     xscale=scale,
                                     yscale=scale,
                                     show_trend=False,
-                                    title=f"Experiment: {group}"
+                                    title=f"Experiment: {group}",
+                                    figsize=(3, 3)
                                 )
-                                st.pyplot(fig)
+                                st.pyplot(fig, use_container_width=False)
                                 download_btn(fig, f"scatter_ind_{i}")
                                 if st.button(f"Add \"{group}\" to Canvas", key=f"add_scatter_ind_{i}_to_canvas"):
                                     if add_plot_to_canvas(fig, base_title + f" ({group})"):

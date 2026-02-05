@@ -1,10 +1,35 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import matplotlib.colors as mc
+import colorsys
 from .utils import get_point_density
 import plotly.express as px
 
-def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_col=None, hue_col=None, xscale='log', yscale='log', batch_size=1000, show_dots=True, show_grid=False):
+def calc_log_limits(data_series):
+    """
+    Calculates log axis limits:
+    Min: Closest lower 10^x (minimal 10^0)
+    Max: 10^5 higher than min
+    """
+    # Filter valid positive values
+    valid = data_series[data_series > 0]
+    if len(valid) == 0:
+        return None, None
+        
+    min_val = valid.min()
+    # floor log10
+    base_exponent = np.floor(np.log10(min_val))
+    
+    # "minimal 10^0"
+    final_exponent = max(0, base_exponent)
+    
+    low = 10**final_exponent
+    high = 10**(final_exponent + 5)
+    
+    return low, high
+
+def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_col=None, hue_col=None, xscale='log', yscale='log', batch_size=1000, show_dots=True, show_dots_summary=None, show_grid=False):
     """
     Plots a row of 2D plots (one per facet).
     Overlays running means:
@@ -12,7 +37,14 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
     - Ghost lines for other facets (faint, for comparison).
     Adapted from user provided 'annotate_2d_density_with_running_mean'.
     """
+    if show_dots_summary is None:
+        show_dots_summary = show_dots
+
     df = experiment.data
+
+    # Calc custom limits if log
+    x_lims = calc_log_limits(df[x_channel]) if xscale == 'log' else None
+    y_lims = calc_log_limits(df[y_channel]) if yscale == 'log' else None
 
     # User requested: no matter what is chosen for color and facet, each experiment name should has its own curve.
     # We use "Experiment Name" as the internal grouping variable for trend lines.
@@ -30,7 +62,8 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
     n_facets = len(facets)
     # Use constrained_layout or tight_layout
-    fig, axs = plt.subplots(1, n_facets, figsize=(5 * n_facets, 5), constrained_layout=True, sharex=True, sharey=True)
+    # Defaut to 300px (3 inches) for individual plots
+    fig, axs = plt.subplots(1, n_facets, figsize=(3 * n_facets, 3), constrained_layout=True, sharex=True, sharey=True)
 
     if n_facets == 1:
         axs = [axs]
@@ -46,12 +79,53 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
     else:
         unique_colors = [None]
 
-    # Color Palette per Color Category
-    palette = sns.color_palette("bright", len(unique_colors)) if len(unique_colors) > 0 else ['black']
-    color_map = {h: palette[i] for i, h in enumerate(unique_colors)}
+    # Color Palette per Color Category: Distinct Hues, Excluding Greens
+    n_needed = len(unique_colors) if len(unique_colors) > 0 else 1
+    
+    # Generate a large pool to pick from (HUSL for perceptual uniformity)
+    n_pool = max(50, n_needed * 5)
+    pool_palette = sns.color_palette("husl", n_pool) 
+    
+    valid_colors = []
+    for c in pool_palette:
+        h, l, s = colorsys.rgb_to_hls(*c)
+        valid_colors.append(c)
 
-    # 3. Pre-calculate all trend lines
-    all_traces = []
+    # Select indices maximizing distance
+    safe_palette = []
+    if len(valid_colors) > 0:
+        if len(valid_colors) >= n_needed:
+             # Use endpoint=False to avoid picking the first and last colors which are often similar (Red vs Red-Purple)
+             # given that the valid pool wraps around in hue space (Start is Red, End is Red-wrap)
+             indices = np.linspace(0, len(valid_colors), n_needed, endpoint=False, dtype=int)
+             selection = [valid_colors[i] for i in indices]
+        else:
+             # Cycle if needed
+             selection = valid_colors * (n_needed // len(valid_colors) + 1)
+             selection = selection[:n_needed]
+    else:
+        selection = sns.color_palette("bright", n_needed)
+
+    # Apply brightness/saturation tweaks 
+    for c in selection:
+         h, l, s = colorsys.rgb_to_hls(*c)
+         # Slightly brighten and ensure high saturation as requested
+         new_l = min(0.85, max(0.5, l * 1.1)) 
+         # Increase saturation slightly but cap at 1.0
+         new_s = min(1.0, max(0.6, s * 1.2)) 
+         safe_palette.append(colorsys.hls_to_rgb(h, new_l, new_s))
+
+    color_map = {h: safe_palette[i] for i, h in enumerate(unique_colors)}
+
+    # Detect Replicate Column
+    rep_col = None
+    for c in df.columns:
+        if c.lower() == 'replicate':
+            rep_col = c
+            break
+
+    # 3. Pre-calculate Facet Traces (For Separate Plots - Split by Replicates)
+    facet_traces = []
 
     for facet in facets:
         if facet == "All Data":
@@ -68,41 +142,123 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
         else:
             groups = [(None, facet_df)]
 
-        for group_name, subset_df in groups:
-            if len(subset_df) < (batch_size // 5):
-                continue
-
-            # Determine color and label based on hue_col
-            if hue_col and hue_col in df.columns:
-                # Assuming one hue per experiment in a facet (common in flow)
-                # If an experiment has multiple hues, this takes the first one found
-                h_val = subset_df[hue_col].iloc[0]
-                color = color_map.get(h_val, 'black')
-                label = f"{h_val} ({group_name})" if group_name is not None else str(h_val)
+        for group_name, exp_subset in groups:
+            # Handle Replicates: Split exp_subset into replicates if available
+            replicate_subgroups = []
+            if rep_col:
+                # Group by replicate
+                for rep_val, rep_df in exp_subset.groupby(rep_col, observed=False):
+                    replicate_subgroups.append((rep_val, rep_df))
             else:
-                color = 'black'
-                label = str(group_name) if group_name is not None else "Mean"
+                # Treat as single group
+                replicate_subgroups.append(("All", exp_subset))
+            
+            # Determine base color and label based on hue_col
+            if hue_col and hue_col in df.columns:
+                h_val = exp_subset[hue_col].iloc[0]
+                base_color = color_map.get(h_val, 'black')
+                base_label = f"{h_val} ({group_name})" if group_name is not None else str(h_val)
+            else:
+                h_val = None
+                base_color = 'black'
+                base_label = str(group_name) if group_name is not None else "Mean" # Use group name if no hue
 
-            # Calculate Rolling Mean
-            subset_df = subset_df.sort_values(by=x_channel)
+            # Iterate through replicates to create traces
+            n_reps = len(replicate_subgroups)
+            for i, (rep_name, subset_df) in enumerate(replicate_subgroups):
 
-            eff_batch = batch_size
-            if len(subset_df) < eff_batch:
-                eff_batch = max(5, int(len(subset_df) * 0.1))
+                if len(subset_df) < (batch_size // 5):
+                    continue
+                
+                # Calculate Color Variation (Lightness Shift)
+                final_color = base_color
+                label = base_label
+                
+                if n_reps > 1:
+                    label = f"{base_label} (Rep {rep_name})"
+                    try:
+                        c_rgb = mc.to_rgb(base_color)
+                        c_hls = colorsys.rgb_to_hls(*c_rgb)
+                        # Spread lightness centered around original L
+                        # Shift range +/- 0.15 depending on number of reps
+                        if n_reps > 1:
+                            # Map i to range [-1, 1]
+                            rel_pos = (i / (n_reps - 1)) * 2 - 1  if n_reps > 1 else 0
+                            # Shift lightness: e.g. -0.15 to +0.15
+                            l_shift = rel_pos * 0.15
+                            new_l = max(0.2, min(0.9, c_hls[1] + l_shift))
+                            final_color = colorsys.hls_to_rgb(c_hls[0], new_l, c_hls[2])
+                    except Exception:
+                        pass # Keep base color if conversion fails
 
-            roller = subset_df.rolling(window=eff_batch, min_periods=eff_batch//2, center=True)
-            roll_x = roller[x_channel].mean()
-            roll_y = roller[y_channel].mean()
+                # Calculate Rolling Mean
+                subset_df = subset_df.sort_values(by=x_channel)
 
-            all_traces.append({
-                'facet': facet,
-                'group': group_name,
-                'x': roll_x,
-                'y': roll_y,
-                'color': color,
-                'label': label,
-                'hue_val': h_val if hue_col else None
-            })
+                eff_batch = batch_size
+                if len(subset_df) < eff_batch:
+                    eff_batch = max(5, int(len(subset_df) * 0.1))
+
+                roller = subset_df.rolling(window=eff_batch, min_periods=eff_batch//2, center=True)
+                roll_x = roller[x_channel].mean()
+                roll_y = roller[y_channel].mean()
+
+                facet_traces.append({
+                    'facet': facet,
+                    'group': group_name,
+                    'x': roll_x,
+                    'y': roll_y,
+                    'color': final_color,
+                    'label': label,
+                    'hue_val': h_val
+                })
+
+    # 4. Pre-calculate Summary Traces (For Merged Plot - Pooled Replicates)
+    summary_traces = []
+    
+    summary_group_col = hue_col if hue_col else exp_col
+    # If no hue and no experiment column found? Rare, but default to whole DF
+    if not summary_group_col:
+        sum_groups = [None]
+    else:
+        # Sort to ensure consistent color mapping
+        sum_groups = sorted(df[summary_group_col].unique())
+        
+    for g_val in sum_groups:
+        if g_val is None:
+            g_df = df
+        else:
+            g_df = df[df[summary_group_col] == g_val]
+        
+        if len(g_df) < (batch_size // 5):
+            continue
+        
+        if hue_col:
+            base_color = color_map.get(g_val, 'black') 
+        else:
+            # When grouping by experiment (no Hue), assign distinct colors cyclically from safe palette
+            if safe_palette and sum_groups:
+                 base_color = safe_palette[sum_groups.index(g_val) % len(safe_palette)]
+            else:
+                 base_color = 'black'
+
+        # Calculate Rolling Mean on POOLED data (all replicates)
+        g_df_sorted = g_df.sort_values(by=x_channel)
+        
+        eff_batch = batch_size
+        if len(g_df_sorted) < eff_batch:
+            eff_batch = max(5, int(len(g_df_sorted) * 0.1))
+        
+        roller = g_df_sorted.rolling(window=eff_batch, min_periods=eff_batch//2, center=True)
+        roll_x = roller[x_channel].mean()
+        roll_y = roller[y_channel].mean()
+        
+        summary_traces.append({
+            'x': roll_x,
+            'y': roll_y,
+            'color': base_color,
+            'label': str(g_val)
+        })
+
 
     # 4. Plotting Loop
     for i, ax in enumerate(axs):
@@ -144,8 +300,8 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
             ax.grid(False)
             ax.set_facecolor('white')
 
-        # B. Plot Traces
-        for trace in all_traces:
+        # B. Plot Traces (Facet specific)
+        for trace in facet_traces:
             # Check if this trace belongs to current facet
             is_current = (trace['facet'] == current_facet)
 
@@ -153,32 +309,22 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
                 # Main Line: Bold, opaque
                 ax.plot(trace['x'], trace['y'], color=trace['color'], linewidth=3, alpha=1.0, label=trace['label'], zorder=10)
 
-            # Removed Ghost Lines (compare=False behavior for individual plots)
-
-
-        # Add Legend only to first plot or make it unique?
-        # If hues are consistent, one legend is enough.
-        # User requested to remove legend on separate plots
-        # if i == 0 and len(all_traces) > 0:
-        #     # Filter handles to avoid duplicates and ghost lines
-        #     handles, labels = ax.get_legend_handles_labels()
-        #     by_label = dict(zip(labels, handles))
-        #     if by_label:
-        #         ax.legend(by_label.values(), by_label.keys(), loc='best', fontsize='small')
-
         # Axis scales/labels
         if xscale == 'log':
             ax.set_xscale('log')
+            if x_lims: ax.set_xlim(x_lims)
         if yscale == 'log':
             ax.set_yscale('log')
+            if y_lims: ax.set_ylim(y_lims)
         ax.set_xlabel(x_channel)
 
 
     # 5. Create Separate Summary Figure
-    fig_summary, ax_sum = plt.subplots(figsize=(6, 6))
+    # Default to 500px (5 inches) for merged plot
+    fig_summary, ax_sum = plt.subplots(figsize=(5, 5))
     ax_sum.set_title("Merged Comparison")
 
-    if show_dots:
+    if show_dots_summary:
          # For summary, maybe just sample randomly from everything?
         if len(df) > 5000:
             sum_bg = df.sample(5000, random_state=42)
@@ -205,15 +351,18 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
         ax_sum.grid(False)
         ax_sum.set_facecolor('white')
 
-    for trace in all_traces:
-        # Plot all traces on summary
+    for trace in summary_traces:
+        # Plot pooled/summary traces on summary
         # For the legend, we still want to group by Hue if labels are messy
-        ax_sum.plot(trace['x'], trace['y'], color=trace['color'], linewidth=2.5, alpha=0.8, label=trace['label'], zorder=10)
+        ax_sum.plot(trace['x'], trace['y'], color=trace['color'], linewidth=3.5, alpha=1.0, label=trace['label'], zorder=10)
 
 
     # De-duplicate legend to show unique Hues or group names
     handles, labels = ax_sum.get_legend_handles_labels()
-    # If we have many lines but few hues, we can simplify legend to show just hues
+    
+    legend_args = None
+    legend_kwargs = {}
+
     if hue_col:
         # Map back to hue label only for a cleaner legend
         clean_labels = []
@@ -226,23 +375,49 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
                   clean_labels.append(base_l)
                   clean_handles.append(h)
                   seen.add(base_l)
-        ax_sum.legend(clean_handles, clean_labels, loc='best', fontsize='small', title=hue_col)
+        if clean_handles:
+             legend_args = (clean_handles, clean_labels)
+             legend_kwargs = {'title': hue_col, 'loc': 'center left', 'fontsize': 'small'}
     else:
         by_label = dict(zip(labels, handles))
         if by_label:
-            ax_sum.legend(by_label.values(), by_label.keys(), loc='best', fontsize='small')
+            legend_args = (by_label.values(), by_label.keys())
+            legend_kwargs = {'loc': 'center left', 'fontsize': 'small'}
+
+    # Separate Legend Figure
+    fig_legend = None
+    if legend_args:
+        # Create a separate figure for the legend
+        # Shrink size significantly (approx half width/height logic)
+        n_items = len(legend_args[0])
+        fig_h = max(1.0, n_items * 0.2)
+        fig_legend = plt.figure(figsize=(1.5, fig_h))
+        fig_legend.patch.set_alpha(0.0)
+        
+        # Enforce smaller font for compact legend
+        legend_kwargs['fontsize'] = 'x-small'
+        if 'title_fontsize' not in legend_kwargs:
+             legend_kwargs['title_fontsize'] = 'x-small'
+
+        # Use fig.legend to place it centered or filling the figure
+        # We put it at center of figure
+        fig_legend.legend(*legend_args, **legend_kwargs)
 
     if xscale == 'log':
         ax_sum.set_xscale('log')
+        if x_lims: ax_sum.set_xlim(x_lims)
     if yscale == 'log':
         ax_sum.set_yscale('log')
+        if y_lims: ax_sum.set_ylim(y_lims)
     ax_sum.set_xlabel(x_channel)
     ax_sum.set_ylabel(y_channel)
 
+    # Force 1:1 Aspect Ratio on the Axes Box
+    ax_sum.set_box_aspect(1)
 
-    return fig, fig_summary
+    return fig, fig_summary, fig_legend
 
-def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xscale='log', yscale='log', show_trend=False, show_dots=True, show_grid=False, title=None):
+def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xscale='log', yscale='log', show_trend=False, show_dots=True, show_dots_summary=None, show_grid=False, title=None, figsize=(4, 4)):
     """
     Wrapper decision maker for 2D plots.
     """
@@ -257,12 +432,13 @@ def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xsca
             yscale=yscale,
             batch_size=1000,
             show_dots=show_dots,
+            show_dots_summary=show_dots_summary,
             show_grid=show_grid
         )
 
     # Otherwise standard scatter
     df = experiment.data
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=figsize)
 
     # Log scale
     log_x = (xscale == 'log')
@@ -275,8 +451,12 @@ def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xsca
 
     if log_x:
         ax.set_xscale('log')
+        x_lims = calc_log_limits(df[x_channel])
+        if x_lims: ax.set_xlim(x_lims)
     if log_y:
         ax.set_yscale('log')
+        y_lims = calc_log_limits(df[y_channel])
+        if y_lims: ax.set_ylim(y_lims)
 
     if title:
         ax.set_title(title)
