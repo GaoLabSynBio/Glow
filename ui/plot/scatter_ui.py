@@ -1,10 +1,12 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import importlib
+import copy
 import io
 import warnings
 from glow.plotting import plots
 from glow.canvas.functions import add_plot_to_canvas
+from .gating_component import render_gating_component, apply_gates_to_dataframe
 
 def download_btn(fig, key):
     buf = io.BytesIO()
@@ -24,6 +26,9 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
     """
     Renders UI and plot logic for 2D Scatter.
     """
+    # --- Gating (Unified Component) ---
+    local_gates, analysis_gates_to_apply = render_gating_component(filtered_experiment, channels, key_prefix="scatter_plot")
+
     # Create split view: Options (Left), Plot (Right)
     col_opts, col_plot = st.columns([1, 3])
 
@@ -76,10 +81,11 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
              st.caption("Individual splitting handled by Facet selection")
 
         st.markdown("---")
+
+    with col_plot:
         if st.button("Generate Plot", type="primary", key="btn_scatter"):
             st.session_state.scatter_generated = True
 
-    with col_plot:
         if st.session_state.get('scatter_generated'):
             from glow.plotting import scatter, plots as main_plots
             importlib.reload(scatter)
@@ -97,13 +103,42 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
 
             with st.spinner("Generating plots..."):
                 try:
+                    # Apply Gates (Filtering + Scaling)
+                    all_applied_gates = local_gates + analysis_gates_to_apply
+                    
+                    filtered_df, processed_gates = apply_gates_to_dataframe(
+                        filtered_experiment.data, 
+                        all_applied_gates, 
+                        experiment_metadata=getattr(filtered_experiment, 'metadata', None), 
+                        show_raw=st.session_state.get('plot_show_raw_vals', False)
+                    )
+                    
+                    if filtered_df.empty:
+                        st.warning("No events remain after applying gates. Please adjust your gates.")
+                        return
+
+                    if scale == 'log':
+                        # Check for positive values to avoid matplotlib crash
+                        x_ok = (filtered_df[x_channel] > 0).any()
+                        y_ok = (filtered_df[y_channel] > 0).any()
+                        if not x_ok or not y_ok:
+                            st.warning(f"Data has no positive values in {x_channel} or {y_channel}, and therefore cannot be log-scaled. Consider switching to Linear or Logicle scale, or adjusting gates.")
+                            return
+
+                    if processed_gates:
+                        st.write(f"Applying {len(processed_gates)} filters...")
+
+                    # Create temp experiment for backend
+                    plot_experiment = copy.copy(filtered_experiment)
+                    plot_experiment.data = filtered_df
+
                     if show_merged:
                         if not show_trend:
                             st.subheader("Merged Plot")
 
                         if backend == "Matplotlib":
                             res = main_plots.plot_2d_scatter(
-                                filtered_experiment,
+                                plot_experiment,
                                 x_channel=x_channel,
                                 y_channel=y_channel,
                                 hue=hue_var,
@@ -151,7 +186,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 st.warning("Trend lines not yet supported in Plotly mode. Using standard scatter.")
 
                             fig = scatter.plot_2d_scatter_plotly(
-                                filtered_experiment,
+                                plot_experiment,
                                 x_channel=x_channel,
                                 y_channel=y_channel,
                                 hue=hue_var,
@@ -171,7 +206,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                         groups = sorted(filtered_experiment.data[hue_var].unique())
                         cols = st.columns(2)
                         for i, group in enumerate(groups):
-                            sub_exp = plots.filter_experiment(filtered_experiment, hue_var, [group])
+                            sub_exp = plots.filter_experiment(plot_experiment, hue_var, [group])
                             with cols[i % 2]:
                                 fig = main_plots.plot_2d_scatter(
                                     sub_exp,

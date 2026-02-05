@@ -3,9 +3,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import importlib
 import io
+import copy
 import warnings
 from glow.plotting import utils, categorical
 from glow.canvas.functions import add_plot_to_canvas
+from .gating_component import render_gating_component, apply_gates_to_dataframe
 
 def download_btn(fig, key):
     buf = io.BytesIO()
@@ -25,6 +27,16 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     """
     Renders UI and plot logic for Bar Plot.
     """
+    # --- Gating Logic ---
+    # Sync old state if exists
+    if 'bar_gates' in st.session_state and 'bar_plot_local_gates' not in st.session_state:
+            st.session_state['bar_plot_local_gates'] = st.session_state.bar_gates
+    
+    local_gates, analysis_gates_to_apply = render_gating_component(filtered_experiment, channels, key_prefix="bar_plot")
+    
+    # Sync back for legacy access
+    st.session_state.bar_gates = local_gates 
+
     # Create split view: Options (Left), Plot (Right)
     col_opts, col_plot = st.columns([1, 3])
 
@@ -82,177 +94,8 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         
         selected_channel = st.selectbox("Output Channel (Y-axis)", channels)
         
-        correction_method = st.selectbox(
-            "Visual Significance Method",
-            ["t-test", "Bonferroni Correction", "FDR (Benjamini-Hochberg)"],
-            help="Selects how p-values are adjusted for multiple comparisons."
-        )
-
-        # Map friendly name to backend key
-        corr_map = {
-            "t-test": "t-test",
-            "Bonferroni Correction": "bonferroni",
-            "FDR (Benjamini-Hochberg)": "fdr_bh"
-        }
-        selected_correction = corr_map[correction_method]
-
-
-        # --- Gating Logic ---
-        st.markdown("#### Gating (Optional)")
-
-        # NEW: Import Analysis Gates
-        analysis_gates_to_apply = []
-        if ('positive_gates' in st.session_state and st.session_state.positive_gates) or \
-           ('cells' in filtered_experiment.data.columns) or ('singlets' in filtered_experiment.data.columns):
-
-            with st.expander("Import Gates from Analysis Tab"):
-                st.info("You can choose to apply gates defined in the Analysis tab to this plot.")
-
-                # 1. Fundamental Gates (if present)
-                built_in_options = []
-                if 'cells' in filtered_experiment.data.columns:
-                    built_in_options.append("Pre-Gate: Live Cells")
-                if 'singlets' in filtered_experiment.data.columns:
-                    built_in_options.append("Pre-Gate: Singlets")
-
-                # 2. Positive Gates from Analysis
-                pos_gate_labels = [g['label'] for g in st.session_state.get('positive_gates', [])]
-
-                gate_options = built_in_options + pos_gate_labels
-                selected_analysis_labels = st.multiselect("Select Analysis Gates to Apply", options=gate_options, default=built_in_options)
-
-                # Map selected labels back to gate objects
-                def resolve_gate_chain(labels_to_res):
-                    to_apply = []
-                    seen_labels = set()
-
-                    # Use a queue-like approach to find all parents
-                    remaining = list(labels_to_res)
-                    while remaining:
-                        lbl = remaining.pop(0)
-                        if lbl in seen_labels:
-                            continue
-
-                        found = False
-                        # 1. Check Built-ins
-                        if lbl == "Pre-Gate: Live Cells":
-                            to_apply.append({'channel': 'cells', 'threshold': 0.5, 'label': lbl})
-                            seen_labels.add(lbl)
-                            found = True
-                        elif lbl == "Pre-Gate: Singlets":
-                            to_apply.append({'channel': 'singlets', 'threshold': 0.5, 'label': lbl})
-                            seen_labels.add(lbl)
-                            # Singlets implies Live Cells
-                            if "Pre-Gate: Live Cells" not in seen_labels:
-                                remaining.append("Pre-Gate: Live Cells")
-                            found = True
-
-                        # 2. Check Positive Gates
-                        if not found:
-                            for g in st.session_state.get('positive_gates', []):
-                                if g['label'] == lbl:
-                                    to_apply.append(g)
-                                    seen_labels.add(lbl)
-                                    # Check for Parent
-                                    p = g.get('parent')
-                                    if p and p != "Singlets":
-                                        if p not in seen_labels:
-                                            remaining.append(p)
-                                    elif p == "Singlets":
-                                        if "Pre-Gate: Singlets" not in seen_labels:
-                                            remaining.append("Pre-Gate: Singlets")
-                                        found = True
-                                        break # Found this label's object
-                    return to_apply
-
-                analysis_gates_to_apply = resolve_gate_chain(selected_analysis_labels)
-
-        if 'bar_gates' not in st.session_state:
-            st.session_state.bar_gates = []
-
-        with st.expander("Active Local Gates", expanded=True):
-            if not st.session_state.bar_gates:
-                st.info("No local gates defined for this plot.")
-            else:
-                for i, gate in enumerate(st.session_state.bar_gates):
-                    gc1, gc2 = st.columns([4, 1])
-                    with gc1:
-                        th = gate['threshold']
-                        st.write(f"**Local Gate {i+1}**: {gate['channel']} ({th[0]:.2f} - {th[1]:.2f})")
-                    with gc2:
-                        if st.button("🗑️", key=f"del_gate_{i}"):
-                            st.session_state.bar_gates.pop(i)
-                            st.rerun()
-
-        with st.expander("Add New Local Gate"):
-            importlib.reload(utils)
-
-            # Suggest a different channel for marker if possible
-            default_marker_idx = 0
-            if len(channels) > 1 and channels[0] == selected_channel:
-                default_marker_idx = 1
-            new_gate_channel = st.selectbox("Marker Channel for New Local Gate", channels, index=default_marker_idx)
-
-            # --- Two-Dot Range Selection Linked with Raw Score ---
-
-            # Initialize Temporary State for the "New" gate being configured
-            if 'new_gate_range_p' not in st.session_state:
-                st.session_state['new_gate_range_p'] = (95.0, 99.9)
-
-            # Define Callbacks
-            def on_new_slider_change():
-                p_min, p_max = st.session_state['new_gate_range_p']
-                try:
-                    v_min = utils.get_percentile_threshold(filtered_experiment.data, new_gate_channel, p_min)
-                    v_max = utils.get_percentile_threshold(filtered_experiment.data, new_gate_channel, p_max)
-                    st.session_state['new_gate_raw_min'] = float(v_min)
-                    st.session_state['new_gate_raw_max'] = float(v_max)
-                except Exception:
-                    pass
-
-            def on_new_raw_change():
-                v_min = st.session_state['new_gate_raw_min']
-                v_max = st.session_state['new_gate_raw_max']
-                try:
-                    p_min = utils.get_percentile_of_value(filtered_experiment.data, new_gate_channel, v_min)
-                    p_max = utils.get_percentile_of_value(filtered_experiment.data, new_gate_channel, v_max)
-                    p_min = max(0.0, min(100.0, p_min))
-                    p_max = max(0.0, min(100.0, p_max))
-                    if p_min > p_max:
-                        p_min, p_max = p_max, p_min
-                    st.session_state['new_gate_range_p'] = (p_min, p_max)
-                except Exception:
-                    pass
-
-            # Handle Channel Change
-            if 'last_new_gate_channel' not in st.session_state:
-                st.session_state.last_new_gate_channel = new_gate_channel
-
-            if st.session_state.last_new_gate_channel != new_gate_channel:
-                 st.session_state.last_new_gate_channel = new_gate_channel
-                 on_new_slider_change()
-
-            if 'new_gate_raw_min' not in st.session_state:
-                on_new_slider_change()
-
-            st.markdown("**Percentile Range**")
-            st.slider("Percentile", 0.0, 100.0, key='new_gate_range_p', on_change=on_new_slider_change, step=0.1)
-
-            st.markdown(f"**Value Range** ({new_gate_channel})")
-            rc1, rc2 = st.columns(2)
-            with rc1:
-                st.number_input("Min", key='new_gate_raw_min', on_change=on_new_raw_change)
-            with rc2:
-                st.number_input("Max", key='new_gate_raw_max', on_change=on_new_raw_change)
-
-            if st.button("Add This Gate", type="secondary"):
-                st.session_state.bar_gates.append({
-                    'channel': new_gate_channel,
-                    'threshold': (st.session_state['new_gate_raw_min'], st.session_state['new_gate_raw_max'])
-                })
-                st.success(f"Added gate on {new_gate_channel}")
-                st.rerun()
-
+        # Default to t-test (uncorrected)
+        selected_correction = "t-test"
 
         # --- Comparisons ---
         comparisons = []
@@ -267,12 +110,17 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 if len(vis_groups) >= 2:
                     g1 = st.selectbox("Group 1", vis_groups, key="g1")
                     g2 = st.selectbox("Group 2", vis_groups, key="g2")
+                    
+                    def add_pair_callback():
+                        p1 = st.session_state.get('g1')
+                        p2 = st.session_state.get('g2')
+                        if p1 and p2:
+                            new_pair = (p1, p2)
+                            if new_pair not in st.session_state.bar_comparisons and p1 != p2:
+                                st.session_state.bar_comparisons.append(new_pair)
 
-                    if st.button("Add Pair"):
-                        # Avoid duplicates
-                        pair = (g1, g2)
-                        if pair not in st.session_state.bar_comparisons and g1 != g2:
-                            st.session_state.bar_comparisons.append(pair)
+                    if st.button("Add Pair", on_click=add_pair_callback):
+                        pass
 
                 if st.session_state.bar_comparisons:
                     # Sanitize old session state data (remove labels if present)
@@ -286,24 +134,59 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     # Show as a table
                     comp_df = pd.DataFrame(st.session_state.bar_comparisons, columns=["Group 1", "Group 2"])
                     st.dataframe(comp_df, hide_index=True, width="stretch")
-
-                    if st.button("Clear Comparisons"):
+                    
+                    def clear_comps_callback():
                         st.session_state.bar_comparisons = []
 
+                    if st.button("Clear Comparisons", on_click=clear_comps_callback):
+                        pass
+
                 comparisons = st.session_state.bar_comparisons
+            
+            # --- Correction Logic inside Comparisons Section ---
+            st.markdown("###### Significance Correction")
+            
+            # Calculate state
+            num_comps = len(st.session_state.get('bar_comparisons', []))
+            is_correction_disabled = num_comps < 2
+            
+            if is_correction_disabled:
+                 correction_options = ["t-test (None)"]
+            else:
+                 correction_options = ["Bonferroni Correction", "FDR (Benjamini-Hochberg)"]
+            
+            c_method = st.selectbox(
+                "Method",
+                correction_options,
+                disabled=is_correction_disabled,
+                help="Applies multiple testing correction to p-values. Requires at least 2 comparisons.",
+                key="multi_corr_method"
+            )
+            
+            if is_correction_disabled:
+                 st.caption("Correction disabled (Define ≥2 comparisons).")
+                 selected_correction = "t-test"
+            else:
+                 if "Bonferroni" in c_method:
+                     selected_correction = "bonferroni"
+                 elif "FDR" in c_method:
+                     selected_correction = "fdr_bh"
+                 else:
+                     selected_correction = "t-test"
 
         # --- Style Settings ---
         st.markdown("#### Style Settings")
         
         # Stacked options to avoid squeezing
-        show_dist = st.checkbox("Show Distributions", value=True)
-        use_bars = st.checkbox("Plot as Bars", value=False, help="Draw bars indicating the mean instead of just lines.")
-        log_scale = st.checkbox("Log Scale Y-Axis", value=True)
+        # Keys added to persist state across reruns (e.g. when adding gates)
+        show_dist = st.checkbox("Show Distributions", value=True, key="bar_style_show_dist")
+        use_bars = st.checkbox("Plot as Bars", value=False, help="Draw bars indicating the mean instead of just lines.", key="bar_style_use_bars")
+        log_scale = st.checkbox("Log Scale Y-Axis", value=True, key="bar_style_log_scale")
 
-        font_size = st.number_input("Font Size", min_value=6, max_value=30, value=12)
-        step_fraction = st.slider("Bracket Spacing", 0.05, 0.30, 0.15, 0.01, help="Vertical distance between significance brackets.")
+        font_size = st.number_input("Font Size", min_value=6, max_value=30, value=12, key="bar_style_font_size")
+        step_fraction = st.slider("Bracket Spacing", 0.05, 0.30, 0.10, 0.01, help="Vertical distance between significance brackets.", key="bar_style_spacing")
         
-        error_bar_type = st.selectbox("Error Bar", ["SEM", "SD", "None"], index=0)
+        error_bar_type = st.selectbox("Error Bar", ["SEM", "SD", "None"], index=0, key="bar_style_error_bar")
         error_bar_val = error_bar_type.lower() if error_bar_type != "None" else None
 
         # Auto-detect Replicate Column
@@ -326,10 +209,10 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         st.info(f"Using {event_count:,} events for plotting.")
 
 
+    with col_plot:
         if st.button("Generate Plot", type="primary", key="btn_bar"):
             st.session_state.bar_generated = True
 
-    with col_plot:
         if st.session_state.get('bar_generated'):
             # reload to get latest backend changes
             importlib.reload(utils)
@@ -337,23 +220,35 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
             with st.spinner("Generating plots..."):
                 try:
-                    # Combine local gates and selected analysis gates
-                    all_applied_gates = st.session_state.bar_gates + analysis_gates_to_apply
+                    # --- Gating Application ---
+                    all_applied_gates = local_gates + analysis_gates_to_apply
+                    
+                    # Apply Gates (Filtering + Scaling)
+                    filtered_df, processed_gates = apply_gates_to_dataframe(
+                        filtered_experiment.data, 
+                        all_applied_gates, 
+                        experiment_metadata=getattr(filtered_experiment, 'metadata', None), 
+                        show_raw=st.session_state.get('plot_show_raw_vals', False)
+                    )
+                    
+                    if filtered_df.empty:
+                        st.warning("No events remain after applying gates. Please adjust your gates.")
+                        return
 
-                    # Normalize gates for backend compatibility (e.g. Range gates from Analysis)
-                    normalized_gates = []
-                    for g in all_applied_gates:
-                        ng = g.copy()
-                        # Fix Range Gate (Analysis uses min/max, Backend uses threshold tuple)
-                        if ng.get('type') == 'range' and 'min' in ng and 'max' in ng:
-                             ng['threshold'] = (ng['min'], ng['max'])
-                        normalized_gates.append(ng)
+                    if log_scale:
+                         if not (filtered_df[selected_channel] > 0).any():
+                              st.warning(f"Data has no positive values in {selected_channel}, and therefore cannot be log-scaled. Uncheck Log Scale or adjust gates.")
+                              return
 
-                    if normalized_gates:
-                        st.write(f"Applying {len(normalized_gates)} filters...")
+                    if processed_gates:
+                        st.write(f"Applying {len(processed_gates)} filters...")
+
+                    # Create temp experiment for backend
+                    plot_experiment = copy.copy(filtered_experiment)
+                    plot_experiment.data = filtered_df
 
                     fig = categorical.plot_means_with_significance(
-                        filtered_experiment,
+                        plot_experiment,
                         channel=selected_channel,
                         statistic='mean', # Always mean
                         group_by=hue_var,
@@ -367,7 +262,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                         use_bars=use_bars,
                         font_size=font_size,
                         bracket_spacing=step_fraction,
-                        gates=normalized_gates,
+                        gates=[], # Gates are already applied
                         error_bar=error_bar_val if error_bar_val else "ci" # Default if None
                     )
                     st.pyplot(fig)
@@ -381,5 +276,61 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     # Close figure to free memory, unless it was stored as a direct reference in Canvas
                     if not getattr(fig, '_glow_is_direct_ref', False):
                         plt.close(fig)
+
+                    # --- Export CSV Logic ---
+                    st.divider()
+                    st.markdown("#### Export Stats")
+                    
+                    # Calculate applied gate strings using processed gates
+                    gate_descriptions = []
+                    for gate in processed_gates:
+                         ch = gate.get('channel')
+                         th = gate.get('threshold')
+                         # Check direction? apply_gates_to_dataframe might have stripped it, or not?
+                         # It returns original dict with potentially modified threshold
+                         if isinstance(th, (tuple, list)) and len(th) == 2:
+                             gate_descriptions.append(f"{ch} {th[0]:.1f}-{th[1]:.1f}") 
+                         else:
+                             # Simplified description
+                             gate_descriptions.append(f"{ch} > {th:.1f}" if gate.get('direction') == 'positive' else f"{ch} < {th:.1f}")
+                    
+                    gates_applied_str = "; ".join(gate_descriptions) if gate_descriptions else "None"
+                    
+                    # 2. Determine Grouping Columns
+                    # Priority: Sample, Experiment, Replicate
+                    group_candidates = ['Sample', 'Experiment_Name', 'Experiment Name', replicate_col]
+                    actual_group_cols = [c for c in group_candidates if c and c in filtered_df.columns]
+                    
+                    # Ensure hue_var is included if it's grouping the bars
+                    if hue_var and hue_var in filtered_df.columns and hue_var not in actual_group_cols:
+                        actual_group_cols.append(hue_var)
+                        
+                    # Remove duplicates while preserving order
+                    actual_group_cols = list(dict.fromkeys(actual_group_cols))
+                    
+                    if actual_group_cols:
+                        # compute mean
+                        summary_df = filtered_df.groupby(actual_group_cols)[selected_channel].mean().reset_index()
+                        summary_df.rename(columns={selected_channel: f"Mean_{selected_channel}"}, inplace=True)
+                        
+                        # Add metadata
+                        summary_df['Gates_Applied'] = gates_applied_str
+                        
+                        # Reorder Columns: Group keys, then Mean, then Gates
+                        final_cols = actual_group_cols + [f"Mean_{selected_channel}", "Gates_Applied"]
+                        summary_df = summary_df[final_cols]
+                        
+                        # Export
+                        csv_data = summary_df.to_csv(index=False)
+                        st.download_button(
+                            label="Download Mean Values (CSV)",
+                            data=csv_data,
+                            file_name=f"bar_stats_{selected_channel}.csv",
+                            mime="text/csv",
+                            help="Export the mean values of the plotted bars."
+                        )
+                    else:
+                        st.warning("Could not determine grouping columns for export.")
+
                 except Exception as e:
                     st.error(f"Error: {e}")

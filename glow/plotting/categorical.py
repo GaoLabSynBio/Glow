@@ -244,19 +244,30 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
             else:
                 yerr = err_val
 
+        # Determine Bar/Line Color based on Fluorophore
+        # Blue/Violet: TagBFP, Pacific Blue, etc. (#64B5F6 - Soft Blue)
+        # Red/Orange: mCherry, PE, APC, etc. (#E57373 - Soft Red)
+        # Green (Default): GFP, YFP, etc. (#74C476 - Muted Green)
+        
+        c_upper = channel.upper()
+        if any(x in c_upper for x in ['BFP', 'TAGBFP', 'PACIFIC', 'DAPI', 'BV421', 'V450', 'SB436']):
+             main_color = '#64B5F6'
+        elif any(x in c_upper for x in ['MCHERRY', 'MSCARLET', 'RFP', 'DSRED', 'PE', 'APC', 'AF647', 'CY5', 'TDTO']):
+             main_color = '#E57373'
+        else:
+             main_color = '#74C476'
+
         if use_bars:
             # Draw Bar
-            # Use 'muted' green or user requested style
-            bar_color = '#74C476' # Muted Green
             # If show_distribution is True, maybe make bar more transparent or narrower
             bar_alpha = 0.5 if show_distribution else 0.9
-            ax.bar(x_idx, plot_mean_val, width=0.6, color=bar_color, edgecolor='black', linewidth=1.5, zorder=0, alpha=bar_alpha) # zorder=0 to be behind dots
+            ax.bar(x_idx, plot_mean_val, width=0.6, color=main_color, edgecolor='black', linewidth=1.5, zorder=0, alpha=bar_alpha) # zorder=0 to be behind dots
 
             if yerr is not None:
                 ax.errorbar(x_idx, plot_mean_val, yerr=yerr, fmt='none', ecolor='black', capsize=10, elinewidth=2.0, zorder=20)
         else:
             # Standard Line
-            ax.hlines(y=plot_mean_val, xmin=x_idx-0.3, xmax=x_idx+0.3, colors='green', linewidth=2, zorder=15, alpha=0.8)
+            ax.hlines(y=plot_mean_val, xmin=x_idx-0.3, xmax=x_idx+0.3, colors=main_color, linewidth=2, zorder=15, alpha=0.8)
 
 
     # 4. Significance Brackets
@@ -385,7 +396,12 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
             x1, x2 = res['x1'], res['x2']
             
             # Apply step
-            current_y += step_val
+            # If Distribution is plotted, move the first bracket closer to data
+            this_step = step_val
+            if i == 0 and show_distribution:
+                 this_step = step_val * 0.4
+            
+            current_y += this_step
             
             # Leg height is fraction of step
             h = step_val * 0.25

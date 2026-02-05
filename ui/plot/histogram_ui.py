@@ -1,9 +1,11 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import importlib
+import copy
 import warnings
 from glow.plotting import plots
 from glow.canvas.functions import add_plot_to_canvas
+from .gating_component import render_gating_component, apply_gates_to_dataframe
 import io
 
 def download_btn(fig, key):
@@ -24,6 +26,9 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
     """
     Renders UI and plot logic for 1D Histogram.
     """
+    # --- Gating (Unified Component) ---
+    local_gates, analysis_gates_to_apply = render_gating_component(filtered_experiment, channels, key_prefix="hist_plot")
+
     # Create split view: Options (Left), Plot (Right)
     col_opts, col_plot = st.columns([1, 3])
 
@@ -98,11 +103,12 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
              legend_font_size = st.number_input("Legend Font Size", min_value=5, max_value=20, value=10, step=1)
 
         st.markdown("---")
-        if st.button("Generate Plot", type="primary", key="btn_hist"):
-            st.session_state.hist_generated = True
 
     # --- RIGHT COLUMN: Plot Display ---
     with col_plot:
+        if st.button("Generate Plot", type="primary", key="btn_hist"):
+            st.session_state.hist_generated = True
+
         if st.session_state.get('hist_generated'):
             # Reload plots module
             from glow.plotting import histogram, plots as main_plots
@@ -111,11 +117,38 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
 
             with st.spinner("Generating plots..."):
                 try:
+                    # Apply Gates (Filtering + Scaling)
+                    all_applied_gates = local_gates + analysis_gates_to_apply
+                    
+                    filtered_df, processed_gates = apply_gates_to_dataframe(
+                        filtered_experiment.data, 
+                        all_applied_gates, 
+                        experiment_metadata=getattr(filtered_experiment, 'metadata', None), 
+                        show_raw=st.session_state.get('plot_show_raw_vals', False)
+                    )
+                    
+                    if filtered_df.empty:
+                        st.warning("No events remain after applying gates. Please adjust your gates.")
+                        return
+
+                    if scale == 'log':
+                        # Check for positive values
+                        if not (filtered_df[selected_channel] > 0).any():
+                             st.warning(f"Data has no positive values in {selected_channel}, and therefore cannot be log-scaled. Use Linear or Logicle, or adjust gates.")
+                             return
+
+                    if processed_gates:
+                        st.write(f"Applying {len(processed_gates)} filters...")
+
+                    # Create temp experiment
+                    plot_experiment = copy.copy(filtered_experiment)
+                    plot_experiment.data = filtered_df
+
                     # Merged Plot
                     if show_merged:
                         st.subheader("Merged Plot")
                         fig = main_plots.plot_1d_histogram(
-                            filtered_experiment,
+                            plot_experiment,
                             channel=selected_channel,
                             hue=hue_var,
                             scale=scale,
@@ -142,14 +175,14 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                     # Individual Plots
                     if show_individual and hue_var:
                         st.subheader("Individual Plots")
-                        groups = sorted(filtered_experiment.data[hue_var].unique())
+                        groups = sorted(plot_experiment.data[hue_var].unique())
 
                         import seaborn as sns
                         palette = sns.color_palette("bright", len(groups))
 
                         cols = st.columns(2)
                         for i, group in enumerate(groups):
-                            sub_exp = plots.filter_experiment(filtered_experiment, hue_var, [group])
+                            sub_exp = plots.filter_experiment(plot_experiment, hue_var, [group])
                             with cols[i % 2]:
                                 fig = main_plots.plot_1d_histogram(
                                     sub_exp,
