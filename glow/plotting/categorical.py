@@ -64,9 +64,16 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
     # Filter groups to only those present in data
     unique_groups = [g for g in unique_groups if g in df[group_by].values]
 
-    # Adjust width based on whether we are showing distributions
-    width_per_group = 1.5 if show_distribution else 0.8
-    fig, ax = plt.subplots(figsize=(max(5, len(unique_groups)*width_per_group), 6 if show_distribution else 5))
+    # Adjust width to be consistent across modes
+    width_per_group = 1.2
+    
+    # Calculate desired width but clamp to 15 inches (approx 1500px) to fit in screen
+    calc_width = max(3, len(unique_groups)*width_per_group)
+    final_width = min(15, calc_width)
+    
+    # Consistent height for both modes
+    final_height = 4.5
+    fig, ax = plt.subplots(figsize=(final_width, final_height))
 
     # If log_scale and data is large, we should log transform the data for plotting
     # so that the KDE (violin shape) is calculated on log-space (Gaussian-like)
@@ -343,6 +350,25 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
         adjusted_p = adjust_pvalues(raw_p, method=correction_method)
 
         # 3. Draw Brackets
+        
+        # Simplified Bracket Spacing Logic
+        # bracket_spacing comes from slider (0.05 to 0.30, default 0.15)
+        # We want this to represent a fraction of "Typical Plot Height".
+        
+        step_val = 0
+        if log_scale:
+            # In Log Scale, typical visual height is 4-5 decades.
+            # 0.15 * 4 = 0.6 decades per step. This is quite responding.
+            # If user wants smaller steps, they slide to 0.05 -> 0.2 decades.
+            TYPICAL_LOG_HEIGHT = 5.0 
+            step_val = TYPICAL_LOG_HEIGHT * bracket_spacing
+        else:
+            # In Linear Scale, height depends on data max.
+            # We assume the plot goes from 0 to max_data.
+            # If max_data is 1000, step is 150.
+            ref_height = max_data if max_data > 0 else 1.0
+            step_val = ref_height * bracket_spacing
+
         for i, res in enumerate(comparison_results):
             p_adj = adjusted_p[i]
             fc = res['fc']
@@ -357,28 +383,12 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
 
             # Draw
             x1, x2 = res['x1'], res['x2']
-
-            # User Request: "More far away from each other" -> Increase step size
-            step_fraction = bracket_spacing
-
-            # Calculate range for step
-            if show_distribution:
-                 y_min_val = plot_df[transformed_channel].min() if log_scale else plot_df[channel].min()
-                 y_range = max_data - y_min_val
-            else:
-                 # Estimate range from data points visible
-                 # If all_ymax was calculated earlier, we can reuse
-                 y_range = 1 # fallback
-                 if 'all_ymax' in locals() and all_ymax:
-                     y_min = min(all_ymax)
-                     y_range = max_data - y_min
-
-            step = y_range * step_fraction
-            if step == 0:
-                step = 0.5
-
-            current_y += step
-            h = step * 0.2
+            
+            # Apply step
+            current_y += step_val
+            
+            # Leg height is fraction of step
+            h = step_val * 0.25
 
             ax.plot([x1, x1, x2, x2], [current_y, current_y+h, current_y+h, current_y], lw=1, c='black')
             ax.text((x1+x2)/2, current_y + h, label, ha='center', va='bottom', fontsize=font_size)
@@ -388,6 +398,11 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.tick_params(axis='both', labelsize=font_size)
+
+    # Manual Box/Bar Plot requires explicit x-ticks setup since we plotted at integer indices
+    if not show_distribution:
+        ax.set_xticks(range(len(unique_groups)))
+        ax.set_xticklabels([str(g) for g in unique_groups])
 
     # Label Formatting
     clean_channel = channel.replace("-A", "")
@@ -416,9 +431,9 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
             if new_max < current_y_max:
                  new_max += 1
 
-            # Also set min? Matplotlib usually handles min okay, but usually we want at least 1 or 2 decades view
-            # Let's just enforce max for now as requested
-            ax.set_ylim(top=new_max)
+            # User Request: Ensure Y-axis starts at 10^0 (0 in log space) for cleaner baseline
+            # This is especially important when use_bars=False (dots only) to avoid zooming in too much on high values
+            ax.set_ylim(bottom=0, top=new_max)
 
         def log_formatter_int(x, pos):
              return f"$10^{{{int(round(x))}}}$"
