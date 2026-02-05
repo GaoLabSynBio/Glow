@@ -160,6 +160,12 @@ def render_canvas_tab():
                         # Update Axis Labels/Title Colors if needed? Usually we just color data.
 
                         for collection in ax.collections:
+                            # Skip PolyCollections (like fill_between/ridgelines) to preserve their specific facecolors
+                            # Importing here to assume matplotlib is available if we have a fig
+                            from matplotlib.collections import PolyCollection
+                            if isinstance(collection, PolyCollection):
+                                continue
+
                             # Only apply to PathCollections (Scatter) which have sizes
                             if hasattr(collection, "get_sizes") and hasattr(collection, "set_sizes"):
                                 # Check if we stored original sizes

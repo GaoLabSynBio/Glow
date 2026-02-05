@@ -847,32 +847,59 @@ def render_analysis_tab():
                                                      if len(nums) >= 3:
                                                          # Normalize 0-255 to 0-1
                                                          r, g, b = nums[0]/255.0, nums[1]/255.0, nums[2]/255.0
-                                                         if len(nums) >= 4:
-                                                             color = (r, g, b, nums[3]) # Alpha is usually 0-1 already in css rgba? No, usually 0-1. But let's assume standard css rgba.
-                                                             # Plotly might return alpha.
-                                                         else:
-                                                             color = (r, g, b)
+                                                         # Force RGB tuple to ensure no alpha compounding issues with fill_between
+                                                         color = (r, g, b)
                                                  except:
                                                      pass
 
-                                             mpl_ax.plot(x_domain, y_vals, color=color, label=s, linewidth=2, zorder=10)
+                                             if use_ridgeline:
+                                                 # Ridgeline Logic: Normalize and Offset
+                                                 y_norm = y_vals
+                                                 if np.max(y_norm) > 0:
+                                                     y_norm = y_norm / np.max(y_norm)
+                                                 
+                                                 base_y = i * ridgeline_offset
+                                                 y_shifted = y_norm + base_y
 
-                                             # Isolate fill to catch specific errors
-                                             try:
-                                                 mpl_ax.fill_between(x_domain, y_vals, y2=0, color=color, alpha=0.5, zorder=5)
-                                             except Exception as e:
-                                                 st.warning(f"Fill error for {s}: {e}")
+                                                 # Fill comes first (for legend label logic)
+                                                 # Use zorder to manage stacking (higher index on top or bottom?)
+                                                 # Let's stack naturally
+                                                 # Use explicit facecolor and alpha to guarantee visibility
+                                                 mpl_ax.fill_between(x_domain, y_shifted, y2=base_y, facecolor=color, alpha=0.6, zorder=10+i, label=s)
+                                                 # Outline in black/dark on top of fill
+                                                 mpl_ax.plot(x_domain, y_shifted, color='black', linewidth=1, zorder=10+i+0.1)
+
+                                             else:
+                                                 # Standard Overlay
+                                                 mpl_ax.plot(x_domain, y_vals, color=color, label=s, linewidth=2, zorder=10)
+                                                 try:
+                                                     mpl_ax.fill_between(x_domain, y_vals, y2=0, color=color, alpha=0.3, zorder=5)
+                                                 except Exception as e:
+                                                     st.warning(f"Fill error for {s}: {e}")
+
                                          except Exception as e:
                                              st.warning(f"Plot error for {s}: {e}")
                                              continue
 
                                  if use_log:
                                      mpl_ax.set_xscale('log')
+                                 
+                                 if use_ridgeline:
+                                     # Remove ticks and labels for cleaner ridgeline
+                                     mpl_ax.set_yticks([])
+                                     mpl_ax.set_yticklabels([])
+                                     mpl_ax.set_ylabel("") # Remove 'Sample' label too
+                                     
+                                     mpl_ax.set_title(f"Ridgeline Plot: {selected_channel} (Subset: {parent_gate})", pad=40)
+                                     # Adjust y-limit to show top plot
+                                     total_height = (len(selected_samples) - 1) * ridgeline_offset + 1.2
+                                     mpl_ax.set_ylim(bottom=0, top=total_height)
+                                 else:
+                                     mpl_ax.set_title(f"Density Plot: {selected_channel} (Subset: {parent_gate})", pad=40)
+                                     mpl_ax.set_ylabel("Density")
+                                     mpl_ax.set_ylim(bottom=0)
 
-                                 mpl_ax.set_title(f"Density Plot: {selected_channel} (Subset: {parent_gate})")
                                  mpl_ax.set_xlabel(selected_channel)
-                                 mpl_ax.set_ylabel("Density")
-                                 mpl_ax.set_ylim(bottom=0)
                                  mpl_ax.spines['top'].set_visible(False)
                                  mpl_ax.spines['right'].set_visible(False)
 
@@ -891,7 +918,8 @@ def render_analysis_tab():
                                      else:
                                          mpl_ax.axvspan(curr_val_for_line, x_domain[-1], color=shade_color, alpha=0.1, zorder=1)
 
-                                 mpl_ax.legend()
+                                 # Moves legend outside and above plot
+                                 mpl_ax.legend(bbox_to_anchor=(0., 1.02), loc='lower left', ncol=1, borderaxespad=0., frameon=False)
                                  mpl_fig.tight_layout()
 
                                  add_plot_to_canvas(mpl_fig, f"Density Plot: {selected_channel} (Subset: {parent_gate})")
