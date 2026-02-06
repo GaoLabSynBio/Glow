@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 import importlib
 import copy
 import warnings
+import plotly.graph_objects as go
+import plotly.express as px
+import numpy as np
+from scipy.stats import gaussian_kde
 from glow.plotting import plots
 from glow.canvas.functions import add_plot_to_canvas
 from .gating_component import render_gating_component, apply_gates_to_dataframe
@@ -62,13 +66,25 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
         # Histogram specific settings
         st.markdown("---")
         st.markdown("**Rendering Options**")
+
+        viz_mode = st.radio(
+            "Visualization Style", 
+            ["Ridgeline (Overlay)", "Standard (Matplotlib)"], 
+            index=0,
+            help="Ridgeline: Interactive overlaid plots (like Analysis tab). Standard: Stacked separate plots."
+        )
+
+        ridgeline_offset = 0.5
+        if viz_mode == "Ridgeline (Overlay)":
+             ridgeline_offset = st.slider("Overlay Offset", 0.0, 2.0, 0.5, 0.1)
+
         smooth_sigma = st.slider(
-            "Smoothing (0 = none)",
+            "Smoothing (Standard only)",
             min_value=0.0,
             max_value=10.0,
             value=2.0,
             step=0.2,
-            help="Controls smoothing strength of the histogram curve. Higher values = smoother curve."
+            help="Controls smoothing strength of the histogram curve (Matplotlib mode). Higher values = smoother curve."
         )
 
         normalization_mode = "total"
@@ -147,30 +163,137 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                     # Merged Plot
                     if show_merged:
                         st.subheader("Merged Plot")
-                        fig = main_plots.plot_1d_histogram(
-                            plot_experiment,
-                            channel=selected_channel,
-                            hue=hue_var,
-                            scale=scale,
-                            legend_cols=legend_columns,
-                            legend_font_size=legend_font_size,
-                            smooth_sigma=smooth_sigma,
-                            normalization=normalization_mode,
-                            show_yaxis=show_yaxis
-                        )
-                        with warnings.catch_warnings():
-                            warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
-                            st.pyplot(fig)
 
-                        download_btn(fig, "hist_merged")
+                        if viz_mode == "Ridgeline (Overlay)":
+                            try:
+                                # --- Plotly Ridgeline Logic ---
+                                fig = go.Figure()
+                                
+                                plot_data = plot_experiment.data
+                                groups = sorted(plot_data[hue_var].unique()) if hue_var and hue_var in plot_data.columns else ["All Events"]
+                                
+                                if len(groups) > 1:
+                                    colors = px.colors.sample_colorscale("Viridis", np.linspace(0, 1, len(groups)))
+                                else:
+                                    colors = ["#636EFA"]
 
-                        canvas_title = f"Histogram: {selected_channel} by {hue_var}" if hue_var else f"Histogram: {selected_channel}"
-                        if st.button("Add Merged Plot to Canvas", key="add_merged_hist_to_canvas"):
-                            if add_plot_to_canvas(fig, canvas_title):
-                                st.success("Plot added to canvas!")
+                                all_vals = plot_data[selected_channel].values
+                                all_vals = all_vals[~np.isnan(all_vals)]
+                                use_log = (scale == 'log')
+                                
+                                # Domain Calculation
+                                if use_log:
+                                    valid_vals = all_vals[all_vals > 0]
+                                    if len(valid_vals) == 0:
+                                        x_min, x_max = 0.1, 100
+                                    else:
+                                        x_min, x_max = np.percentile(valid_vals, 0.1), np.percentile(valid_vals, 99.9)
+                                        if x_min <= 0: x_min = min(valid_vals) # Should not happen due to filter
+                                    
+                                    # Fallback if range is 0
+                                    if x_min >= x_max: x_max = x_min * 10
+                                    
+                                    x_log_domain = np.linspace(np.log10(x_min), np.log10(x_max), 200)
+                                    x_domain = np.power(10, x_log_domain)
+                                else:
+                                    if len(all_vals) > 0:
+                                        x_min, x_max = np.percentile(all_vals, 0.1), np.percentile(all_vals, 99.9)
+                                    else:
+                                        x_min, x_max = 0, 1
+                                    
+                                    if x_min >= x_max: x_max = x_min + 1.0
+                                    pad = (x_max - x_min) * 0.1
+                                    x_domain = np.linspace(x_min - pad, x_max + pad, 200)
 
-                        if not getattr(fig, '_glow_is_direct_ref', False):
-                            plt.close(fig)
+                                for i, group in enumerate(groups):
+                                    if hue_var and hue_var in plot_data.columns:
+                                        g_vals = plot_data[plot_data[hue_var] == group][selected_channel].values
+                                    else:
+                                        g_vals = all_vals
+                                    
+                                    g_vals = g_vals[~np.isnan(g_vals)]
+                                    if len(g_vals) < 2: continue
+                                    
+                                    try:
+                                        if use_log:
+                                            g_vals = g_vals[g_vals > 0]
+                                            if len(g_vals) < 2: continue
+                                            kde = gaussian_kde(np.log10(g_vals))
+                                            y_vals = kde(np.log10(x_domain))
+                                        else:
+                                            kde = gaussian_kde(g_vals)
+                                            y_vals = kde(x_domain)
+                                        
+                                        # Normalize
+                                        if np.max(y_vals) > 0:
+                                            y_vals = y_vals / np.max(y_vals)
+                                        
+                                        # Offset
+                                        y_plotted = y_vals + (i * ridgeline_offset)
+                                        
+                                        # Color
+                                        c = colors[i % len(colors)]
+                                        
+                                        fig.add_trace(go.Scatter(
+                                            x=x_domain, y=y_plotted, 
+                                            mode='lines', 
+                                            line=dict(color=c, width=1), 
+                                            name=str(group), 
+                                            fill='tozeroy', 
+                                            opacity=0.6,
+                                            hovertemplate=f"<b>{group}</b><br>x: %{{x}}<br>Density: %{{y}}<extra></extra>"
+                                        ))
+                                    except Exception:
+                                        continue
+
+                                fig.update_layout(
+                                    xaxis_type="log" if use_log else "linear",
+                                    title=f"Ridgeline: {selected_channel} by {hue_var}" if hue_var else None,
+                                    height=max(400, 100 + len(groups) * 20),
+                                    template="plotly_white",
+                                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                                    margin=dict(l=20, r=20, t=40, b=20)
+                                )
+                                if not show_yaxis:
+                                    fig.update_yaxes(showticklabels=False, title=None)
+
+                                st.plotly_chart(fig, use_container_width=True)
+
+                                # Canvas Button
+                                canvas_title = f"Ridgeline: {selected_channel} by {hue_var}" if hue_var else f"{selected_channel}"
+                                if st.button("Add Merged Plot to Canvas", key="add_merged_ridgeline_to_canvas"):
+                                    if add_plot_to_canvas(fig, canvas_title):
+                                        st.success("Plot added to canvas!")
+
+                            except Exception as e:
+                                st.error(f"Error generating Ridgeline plot: {e}")
+
+                        else:
+                            # Standard Matplotlib Logic
+                            fig = main_plots.plot_1d_histogram(
+                                plot_experiment,
+                                channel=selected_channel,
+                                hue=hue_var,
+                                scale=scale,
+                                legend_cols=legend_columns,
+                                legend_font_size=legend_font_size,
+                                smooth_sigma=smooth_sigma,
+                                normalization=normalization_mode,
+                                show_yaxis=show_yaxis
+                            )
+                            with warnings.catch_warnings():
+                                warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
+                                st.pyplot(fig)
+
+                            download_btn(fig, "hist_merged")
+
+                            canvas_title = f"Histogram: {selected_channel} by {hue_var}" if hue_var else f"Histogram: {selected_channel}"
+                            if st.button("Add Merged Plot to Canvas", key="add_merged_hist_to_canvas"):
+                                if add_plot_to_canvas(fig, canvas_title):
+                                    st.success("Plot added to canvas!")
+
+                            if not getattr(fig, '_glow_is_direct_ref', False):
+                                plt.close(fig)
 
                     # Individual Plots
                     if show_individual and hue_var:
