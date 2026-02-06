@@ -174,7 +174,8 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
         def add_gate_callback(channel, g_key, r_min_key, r_max_key):
              st.session_state[g_key].append({
                 'channel': channel,
-                'threshold': (st.session_state[r_min_key], st.session_state[r_max_key])
+                'threshold': (st.session_state[r_min_key], st.session_state[r_max_key]),
+                'is_data_units': True  # Mark this gate as being in data units already
             })
         
         if st.button(
@@ -218,8 +219,9 @@ def apply_gates_to_dataframe(df, gates, experiment_metadata=None, show_raw=False
         # Gates on 'cells'/'singlets' are never scaled (they are masks/probability 0-1)
         # Gates on Fluorophores/Scatter are scaled if data is scaled
         is_mask_gate = pg.get('channel') in ['cells', 'singlets', 'time', 'Time']
+        is_data_units = pg.get('is_data_units', False)
         
-        if is_scaled and not is_mask_gate and pg.get('channel') in scalable_channels:
+        if is_scaled and not is_mask_gate and not is_data_units and pg.get('channel') in scalable_channels:
              if 'threshold' in pg:
                 th = pg['threshold']
                 if isinstance(th, (list, tuple)) and len(th) == 2:
