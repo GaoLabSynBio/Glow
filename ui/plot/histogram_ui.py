@@ -1,5 +1,6 @@
 import streamlit as st
 import matplotlib.pyplot as plt
+import pandas as pd
 import importlib
 import copy
 import warnings
@@ -55,13 +56,8 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
             hue_var = found_col
             st.info(f"Grouping by: {hue_var}")
         else:
-            compare_by = st.selectbox(
-                "Color/Group By",
-                ["None"] + conditions,
-                index=0 if not conditions else 1,
-                help="Select attribute for coloring/grouping histograms"
-            )
-            hue_var = None if compare_by == "None" else compare_by
+             # Default to "None" for rendering options purposes (will be overridden by "Configuration" column selection)
+             hue_var = None
 
         # Histogram specific settings
         st.markdown("---")
@@ -69,22 +65,22 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
 
         viz_mode = st.radio(
             "Visualization Style", 
-            ["Ridgeline (Overlay)", "Standard (Matplotlib)"], 
+            ["Ridgeline (Matplotlib)", "Ridgeline (Overlay)", "Standard (Matplotlib)"], 
             index=0,
-            help="Ridgeline: Interactive overlaid plots (like Analysis tab). Standard: Stacked separate plots."
+            help="Ridgeline: Overlaid plots. Standard: Stacked separate plots."
         )
 
         ridgeline_offset = 0.5
-        if viz_mode == "Ridgeline (Overlay)":
-             ridgeline_offset = st.slider("Overlay Offset", 0.0, 2.0, 0.5, 0.1)
+        if "Ridgeline" in viz_mode:
+            default_offset = 0.8 if viz_mode == "Ridgeline (Matplotlib)" else 0.5
+            ridgeline_offset = st.slider("Overlay Offset", 0.0, 2.0, default_offset, 0.1)
 
         smooth_sigma = st.slider(
-            "Smoothing (Standard only)",
+            "Smoothing (Matplotlib only)",
             min_value=0.0,
             max_value=10.0,
-            value=2.0,
-            step=0.2,
-            help="Controls smoothing strength of the histogram curve (Matplotlib mode). Higher values = smoother curve."
+            value=0.5,
+            step=0.5
         )
 
         normalization_mode = "total"
@@ -107,21 +103,70 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
 
         legend_columns = None
         legend_font_size = 10
-        if hue_var:
-             # Legend Column Customization
-             st.markdown("**Legend Configuration**")
-             extra_meta = [c for c in conditions if c != hue_var]
-             avail_cols = [hue_var] + extra_meta + ["Mean", "Median", "Count"]
-
-             # Default: hue_var + Mean
-             default_cols = [hue_var, "Mean"]
-             legend_columns = st.multiselect("Legend Columns", avail_cols, default=default_cols)
-             legend_font_size = st.number_input("Legend Font Size", min_value=5, max_value=20, value=10, step=1)
-
-        st.markdown("---")
+        # Legend configuration moved to col_plot (Configuration section) but variables needed for matplotlib call
+        # Initialize defaults here, will be overwritten if hue_var is active
+        viz_stats = []
 
     # --- RIGHT COLUMN: Plot Display ---
     with col_plot:
+
+        # --- Configuration Section (Right above Generate Plot) ---
+        st.markdown("#### Configuration")
+        
+        # 1. Group By Selection
+        # Re-implement Group By logic here
+        # If hue_var was pre-determined by defaults (found_col), use it as index
+        # Otherwise use defaults
+        group_opts = ["None"] + conditions
+        default_idx = 0
+        if hue_var and hue_var in group_opts:
+             default_idx = group_opts.index(hue_var)
+        elif len(conditions) > 0:
+             default_idx = 1 # Default to first condition if available
+        
+        compare_by = st.selectbox(
+            "Color/Group By",
+            group_opts,
+            index=default_idx,
+            help="Select attribute for coloring/grouping histograms"
+        )
+        hue_var = None if compare_by == "None" else compare_by
+
+        # 2. Legend / Stats Configuration
+        if hue_var:
+             st.markdown("**Legend & Statistics**")
+             c_leg1, c_leg2 = st.columns(2)
+             
+             with c_leg1:
+                 # Metadata Cols (Grouping info)
+                 # Default include grouping var + any other non-varying cols (heuristic?)
+                 # For simplicity default to just the Group By variable
+                 avail_meta = [hue_var] + [c for c in conditions if c != hue_var]
+                 legend_meta_cols = st.multiselect(
+                     "Metadata Columns", 
+                     avail_meta, 
+                     default=[hue_var],
+                     help="Columns identifying the sample groups in the legend table."
+                 )
+                 
+             with c_leg2:
+                 # Statistics Cols
+                 avail_stats = ["Mean", "Median", "Count"]
+                 legend_stats_cols = st.multiselect(
+                     "Statistics", 
+                     avail_stats, 
+                     default=["Mean", "Count"],
+                     help="Statistical metrics to display for each group."
+                 )
+            
+             legend_columns = legend_meta_cols + legend_stats_cols
+             viz_stats = legend_stats_cols # Store for manual table generation if needed
+
+             # Font Size (Matplotlib only currently, but could apply to HTML table CSS)
+             legend_font_size = st.number_input("Legend Font Size", min_value=5, max_value=20, value=10, step=1)
+        
+        st.write("") # Spacer
+
         if st.button("Generate Plot", type="primary", key="btn_hist"):
             st.session_state.hist_generated = True
 
@@ -172,10 +217,17 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                 plot_data = plot_experiment.data
                                 groups = sorted(plot_data[hue_var].unique()) if hue_var and hue_var in plot_data.columns else ["All Events"]
                                 
+                                import seaborn as sns
+                                import matplotlib.colors as mc
+
                                 if len(groups) > 1:
-                                    colors = px.colors.sample_colorscale("Viridis", np.linspace(0, 1, len(groups)))
+                                    # Match Matplotlib Logic: sns.color_palette("bright", n_groups)
+                                    # Convert to Hex for Plotly
+                                    palette = sns.color_palette("bright", len(groups))
+                                    colors = [mc.to_hex(c) for c in palette]
                                 else:
-                                    colors = ["#636EFA"]
+                                    # Single color fallback (bright blueish from palette or default)
+                                    colors = [mc.to_hex(sns.color_palette("bright", 1)[0])]
 
                                 all_vals = plot_data[selected_channel].values
                                 all_vals = all_vals[~np.isnan(all_vals)]
@@ -228,28 +280,67 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                         if np.max(y_vals) > 0:
                                             y_vals = y_vals / np.max(y_vals)
                                         
-                                        # Offset
-                                        y_plotted = y_vals + (i * ridgeline_offset)
+                                        # Base and Offset
+                                        base_y = i * ridgeline_offset
+                                        y_plotted = y_vals + base_y
                                         
                                         # Color
                                         c = colors[i % len(colors)]
                                         
+                                        # Create filled area (Pseudo-Ridgeline)
+                                        # We use 'toself' with a closed polygon to fill relative to the baseline (base_y)
+                                        x_poly = np.concatenate([x_domain, x_domain[::-1]])
+                                        y_poly = np.concatenate([y_plotted, np.full_like(y_plotted, base_y)])
+
                                         fig.add_trace(go.Scatter(
-                                            x=x_domain, y=y_plotted, 
-                                            mode='lines', 
-                                            line=dict(color=c, width=1), 
-                                            name=str(group), 
-                                            fill='tozeroy', 
-                                            opacity=0.6,
+                                            x=x_poly,
+                                            y=y_poly,
+                                            fill='toself',
+                                            mode='lines',
+                                            line=dict(color='white', width=0.1), # Invisible boundary for fill
+                                            fillcolor=c,
+                                            name=str(group),
+                                            opacity=0.7,
                                             hovertemplate=f"<b>{group}</b><br>x: %{{x}}<br>Density: %{{y}}<extra></extra>"
+                                        ))
+                                        
+                                        # Add Line on top for clarity (Black Outline)
+                                        fig.add_trace(go.Scatter(
+                                            x=x_domain, 
+                                            y=y_plotted, 
+                                            mode='lines', 
+                                            line=dict(color='black', width=1.0), 
+                                            showlegend=False,
+                                            hoverinfo='skip'
                                         ))
                                     except Exception:
                                         continue
+                                
+                                # Scale Height based on Offset to prevent squeezing
+                                # Base height per plot (e.g. 50px) + Extra for stacking
+                                # If offset is large, we need much more height.
+                                # Total Height ~= (N_Groups * Offset * Scale_Factor) + Base_Per_Plot
+                                
+                                # Heuristic: Start with 300px base.
+                                # Add 30px per group if offset is small.
+                                # If offset is large (>0.5), we are stacking high.
+                                # Max value of y is roughly 1.0 per plot.
+                                # Total Y range is roughly 1.0 + (N-1)*offset.
+                                
+                                # To keep "visual height" of 1.0 unit constant (say 100 pixels),
+                                # Total Pixels = (1.0 + (len(groups)-1)*ridgeline_offset) * 100
+                                
+                                unit_height_px = 150 # Height for one histogram (normalized 0-1)
+                                total_y_units = 1.0 + max(0, (len(groups) - 1)) * ridgeline_offset
+                                calc_height = int(total_y_units * unit_height_px)
+                                
+                                # Clamp sensible limits
+                                calc_height = max(400, min(calc_height, 2000))
 
                                 fig.update_layout(
                                     xaxis_type="log" if use_log else "linear",
                                     title=f"Ridgeline: {selected_channel} by {hue_var}" if hue_var else None,
-                                    height=max(400, 100 + len(groups) * 20),
+                                    height=calc_height,
                                     template="plotly_white",
                                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                                     margin=dict(l=20, r=20, t=40, b=20)
@@ -258,6 +349,61 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                     fig.update_yaxes(showticklabels=False, title=None)
 
                                 st.plotly_chart(fig, use_container_width=True)
+                                
+                                # --- Separate Legend Table for Ridgeline ---
+                                if hue_var and len(groups) > 0:
+                                     # Calculate stats for the table
+                                     table_data = []
+                                     for idx, g in enumerate(groups):
+                                         # Get subset
+                                         sub_df = plot_data[plot_data[hue_var] == g]
+                                         row = {}
+                                         
+                                         # Color indicator (can't easily do block in st.dataframe, maybe just use text or st.color_picker disabled?)
+                                         # We'll just show the data
+                                         
+                                         # Metadata Cols
+                                         # Re-use legend_meta_cols from config if available (need to ensure scope)
+                                         # The variables legend_meta_cols and legend_stats_cols were defined in the Configuration block above
+                                         # which is in the same scope (function body).
+                                         
+                                         # However, Streamlit reruns might clear locals if not careful, but this is all one run.
+                                         # We reconstructed legend_columns = meta + stats
+                                         
+                                         # Let's iterate legend_columns to build the row
+                                         if legend_columns:
+                                              for col in legend_columns:
+                                                   if col == "Mean":
+                                                        vals = sub_df[selected_channel]
+                                                        # Log scale aware stats? existing logic uses geometric mean if log
+                                                        # Let's stick to standard arithmetic mean for simplicity or match matplotlib
+                                                        # Matplotlib logic: if log_scale, geometric mean.
+                                                        v = vals[vals > 0] if scale == 'log' else vals
+                                                        if scale == 'log':
+                                                             val = np.exp(np.log(v).mean()) if len(v) > 0 else 0
+                                                        else:
+                                                             val = v.mean()
+                                                        row["Mean"] = f"{val:.2f}"
+                                                   
+                                                   elif col == "Median":
+                                                        row["Median"] = f"{sub_df[selected_channel].median():.2f}"
+                                                   
+                                                   elif col == "Count":
+                                                        row["Count"] = len(sub_df)
+                                                   
+                                                   elif col == hue_var:
+                                                        row[col] = g
+                                                   
+                                                   elif col in sub_df.columns:
+                                                        us = sub_df[col].unique()
+                                                        row[col] = str(us[0]) if len(us) == 1 else "Mixed"
+                                                   else:
+                                                        row[col] = "-"
+                                              table_data.append(row)
+                                     
+                                     if table_data:
+                                          st.markdown("##### Statistics")
+                                          st.dataframe(pd.DataFrame(table_data), hide_index=True, use_container_width=True)
 
                                 # Canvas Button
                                 canvas_title = f"Ridgeline: {selected_channel} by {hue_var}" if hue_var else f"{selected_channel}"
@@ -268,9 +414,43 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                             except Exception as e:
                                 st.error(f"Error generating Ridgeline plot: {e}")
 
+                        elif viz_mode == "Ridgeline (Matplotlib)":
+                            # New Matplotlib Ridgeline Implementation
+                            try:
+                                fig, stats = histogram.plot_ridgeline_matplotlib(
+                                    plot_experiment,
+                                    channel=selected_channel,
+                                    hue=hue_var,
+                                    scale=scale,
+                                    offset=ridgeline_offset,
+                                    smooth_sigma=smooth_sigma,
+                                    normalization=normalization_mode,
+                                    show_yaxis=show_yaxis,
+                                    legend_cols=legend_columns
+                                )
+                                with warnings.catch_warnings():
+                                    warnings.filterwarnings("ignore", category=UserWarning)
+                                    # Explicitly disable container width scaling to respect calculated figsize
+                                    st.pyplot(fig, use_container_width=False)
+                                
+                                if stats:
+                                    st.markdown("#### Statistics")
+                                    st.dataframe(pd.DataFrame(stats))
+
+                                download_btn(fig, "hist_ridge_mpl")
+
+                                canvas_title = f"Ridgeline (Mpl): {selected_channel}"
+                                if st.button("Add Merged Plot to Canvas", key="add_mpl_ridge_canvas"):
+                                    if add_plot_to_canvas(fig, canvas_title):
+                                        st.success("Plot added to canvas!")
+                                
+                                plt.close(fig)
+                            except Exception as e:
+                                st.error(f"Error generating Matplotlib Ridgeline: {e}")
+
                         else:
                             # Standard Matplotlib Logic
-                            fig = main_plots.plot_1d_histogram(
+                            fig, stats = main_plots.plot_1d_histogram(
                                 plot_experiment,
                                 channel=selected_channel,
                                 hue=hue_var,
@@ -284,6 +464,10 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                             with warnings.catch_warnings():
                                 warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
                                 st.pyplot(fig)
+
+                            if stats:
+                                st.markdown("#### Statistics")
+                                st.dataframe(pd.DataFrame(stats))
 
                             download_btn(fig, "hist_merged")
 
@@ -307,7 +491,7 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                         for i, group in enumerate(groups):
                             sub_exp = plots.filter_experiment(plot_experiment, hue_var, [group])
                             with cols[i % 2]:
-                                fig = main_plots.plot_1d_histogram(
+                                fig, _ = main_plots.plot_1d_histogram(
                                     sub_exp,
                                     channel=selected_channel,
                                     hue=None,
