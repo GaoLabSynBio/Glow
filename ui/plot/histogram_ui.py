@@ -267,10 +267,11 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                 if use_log:
                                     valid_vals = all_vals[all_vals > 0]
                                     if len(valid_vals) == 0:
-                                        x_min, x_max = 0.1, 100
+                                        x_min, x_max = 1.0, 100
                                     else:
                                         x_min, x_max = np.percentile(valid_vals, 0.1), np.percentile(valid_vals, 99.9)
                                         if x_min <= 0: x_min = min(valid_vals) # Should not happen due to filter
+                                        if x_min < 1.0: x_min = 1.0 # Enforce min 10^0
                                     
                                     # Fallback if range is 0
                                     if x_min >= x_max: x_max = x_min * 10

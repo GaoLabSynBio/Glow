@@ -2991,9 +2991,13 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                         # Prevention for bugs where internal temp columns were saved as channels
                                         # We initialize them as False so that reconstruction doesn't crash on KeyError
+                                        # Also ensure metadata exists, otherwise Cytoflow might raise KeyError during ops
                                         for internal_col in ['_temp_singlet_mask_auto', '_temp_singlet_mask_manual', '_temp_live_mask_manual', '_temp_live_mask_contour']:
                                             if internal_col not in full_exp.data.columns:
                                                 full_exp.data[internal_col] = False
+                                                full_exp.metadata[internal_col] = {'type': 'condition'}
+                                            elif internal_col not in full_exp.metadata:
+                                                full_exp.metadata[internal_col] = {'type': 'condition'}
 
                                         # Standardize Metadata
                                         full_exp.data['cells'] = False

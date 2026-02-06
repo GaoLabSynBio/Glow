@@ -287,7 +287,8 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
             z, mask = get_point_density(x_vals, y_vals, log_x=(xscale=='log'), log_y=(yscale=='log'))
             x_vals = x_vals[mask]
             y_vals = y_vals[mask]
-            z = z[mask] # 0..1
+            # z is already filtered to match mask by get_point_density, so we don't apply mask to it again.
+            # z = z[mask] <- This was the bug
 
             # Sort by density so high density dots are on top
             sort_idx = np.argsort(z)

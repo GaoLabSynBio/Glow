@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import zipfile
 import io
 from glow.compensation.manager import CompensationManager
+from glow.utils import detect_and_scale_high_res
 
 def get_running_mean(df, x_col, y_col, window=1000):
     try:
@@ -121,6 +122,14 @@ def render_compensation_tab():
         return
 
     exp = st.session_state.base_experiment
+    
+    # High-Res Detection & Auto-Scaling
+    try:
+        if detect_and_scale_high_res(exp):
+            st.success("High-resolution data detected. Auto-scaled values by factor 10,000 for correct processing.")
+    except Exception as e:
+        st.warning(f"Auto-scaling high-res data failed: {e}")
+
     df = exp.data
 
     # 1. Setup Panel

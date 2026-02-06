@@ -196,9 +196,14 @@ def plot_1d_histogram(
         valid_data = df[df[channel] > 0][channel]
         if len(valid_data) > 0:
             x_min = 10**(np.floor(np.log10(valid_data.min())))
+            
+            # User Request: Minimal x axis value should be 10^0 = 1.0
+            if x_min < 1.0:
+                x_min = 1.0
+            
             x_max = 10**(np.ceil(np.log10(valid_data.max())))
         else:
-            x_min, x_max = 0.1, 1000
+            x_min, x_max = 1.0, 1000 # Default fallback >= 1.0
     else:
         x_min = df[channel].min()
         x_max = df[channel].max()
@@ -433,9 +438,14 @@ def plot_ridgeline_matplotlib(
         valid_data = df[df[channel] > 0][channel]
         if len(valid_data) > 0:
             x_min = 10**(np.floor(np.log10(valid_data.min())))
+            
+            # User Request: Minimal x axis value should be 10^0 = 1.0
+            if x_min < 1.0:
+                x_min = 1.0
+                
             x_max = 10**(np.ceil(np.log10(valid_data.max())))
         else:
-            x_min, x_max = 0.1, 1000
+            x_min, x_max = 1.0, 1000 # Default fallback >= 1.0
     else:
         x_min = df[channel].min()
         x_max = df[channel].max()
