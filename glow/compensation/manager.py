@@ -12,36 +12,13 @@ class CompensationManager:
 
     def compute_spillover_matrix(self, experiment, unstained_spec, controls_spec, channels):
         """
-        Compute pairwise spillover using Median Ratio.
-        This reimplements cytoflow.BleedthroughLinearOp estimation logic adaptation for
-        in-memory experiments where control files are not reloadable.
-
-        Args:
-            experiment: The Cytoflow Experiment object (containing all data including controls)
-            unstained_spec: Dict identifying unstained sample.
-            controls_spec: Dict mapping channel to sample spec.
-            channels: List of channels to compensate.
-
-        Returns:
-            pd.DataFrame: Spillover matrix (row=source, col=detector)
+        Compute pairwise spillover using standard Median Ratio method.
+        Robustly determines Positive and Negative populations for slope calculation.
         """
         # Initialize identity matrix
         matrix = pd.DataFrame(np.eye(len(channels)), index=channels, columns=channels)
 
-        # We need the unstained control for background subtraction?
-        # Cytoflow BleedthroughLinearOp does NOT explicitly subtract Unstained unless
-        # an AutofluorescenceOp was applied previously in the history.
-        # However, curve_fit with intercept=0 assumes background is 0.
-        # If we don't subtract background, and background is non-zero, slope will be biased.
-        # Cytoflow docs say: "The module can also estimate... spillover... usually after correcting for autofluorescence".
-        # If we stick to pure BleedthroughLinearOp logic, we just fit the slope on the raw control data?
-        # But if raw data has offset, slope is wrong.
-        # Let's subtract the Median Unstained Intensity from the Control Data before fitting.
-        # This is a safe hybrid approach.
-
-        # 1. Get Unstained Stats for Background Subtraction
-        # Required for correct slope estimation via fit-through-origin
-        # If available, this provides the "Negative" anchor (0,0 point)
+        # Retrieve Unstained Reference (if available) as a fallback negative
         unstained_medians = None
         if unstained_spec:
             try:
@@ -51,10 +28,9 @@ class CompensationManager:
             except Exception:
                 logger.warning("Could not calculate background from unstained control.")
 
-        # Store baseline for application phase
-        # This is critical for data with high offsets (e.g. 10^4) to prevent "overcompensation"
-        # where the offset itself is compensated down.
-        self.baseline = unstained_medians
+        # Baseline is NOT stored or used for correction in standard mode 
+        # to strictly follow standard compensation math (Raw * InvMatrix).
+        self.baseline = None 
 
         for from_channel in channels:
             if from_channel not in controls_spec:
@@ -71,61 +47,28 @@ class CompensationManager:
             # Work on a copy
             tube_data = tube_data.copy()
 
-            # METHOD: Median Ratio with Dynamic Negative Reference
-            # Overcompensation often occurs when "Unstained" background is lower than the actual
-            # autofluorescence of the single-stain tube (e.g. different cells, different prep).
-            # To be robust, we preferentially use the INTERNAL negative population of the control tube.
-
-            # 1. Analyze Distributions
-            # Calculate percentiles to find dynamic range
-            q_lo = tube_data[from_channel].quantile(0.20)
-            q_hi = tube_data[from_channel].quantile(0.95)
-
-
-            # Logic: Prefer Internal Negative to account for tube-specific autofluorescence.
-            # Only fall back to Unstained if the tube appears to be "All Positive" (Internal Low is very bright)
-            # or if the tube has no events.
-
+            # METHOD: Standard Median Ratio
+            # Slope = (Pos_Signal - Neg_Signal) / (Pos_Primary - Neg_Primary)
+            
+            # 1. Determine Negative Reference
+            # Priority: Internal Negative (bottom 10%) > Unstained Control
+            q_lo = tube_data[from_channel].quantile(0.10)
+            neg_subset = tube_data[tube_data[from_channel] <= q_lo]
+            
             neg_medians = None
-
-            lower_subset = tube_data[tube_data[from_channel] <= q_lo]
-
-            # Can we find a valid internal negative?
-            if len(lower_subset) > 10:
-                internal_neg = lower_subset[channels].median()
-
-                if unstained_medians is not None:
-                    # Comparison check
-                    # Ratio of Internal Low / Unstained
-                    # 1.0 = Match
-                    # 1.2 = Slight AF shift (Common) -> Should use Internal
-                    # 10.0 = Likely Positive (Beads) -> Should use Unstained
-
-                    # We use a permissive threshold (e.g. 5.0) to allow for significant AF variation
-                    # without triggering the "All Positive" fallback.
-                    # This is key to fixing the overcompensation artifact caused by subtracting
-                    # a too-low Unstained baseline from a higher-AF tube.
-
-                    # Safe-guard for zero-div
-                    denom = unstained_medians[from_channel] if unstained_medians[from_channel] > 1 else 1.0
-                    ratio = internal_neg[from_channel] / denom
-
-                    if ratio < 5.0:
-                        neg_medians = internal_neg
-                    else:
-                        logger.info(f"Control {from_channel}: Internal Low is {ratio:.1f}x brighter than Unstained. Assuming all-positive. Using Unstained.")
-                        neg_medians = unstained_medians
-                else:
-                    neg_medians = internal_neg
+            if len(neg_subset) > 50:
+                # Use internal negative if sufficient events exist
+                neg_medians = neg_subset[channels].median()
+            elif unstained_medians is not None:
+                # Fallback to unstained if tube is "all positive" (e.g. bright beads)
+                neg_medians = unstained_medians
             else:
-                 neg_medians = unstained_medians
-
-            if neg_medians is None:
-                # Fallback purely
+                 # Last resort: minimums
                  neg_medians = tube_data[channels].min()
 
-            # 2. Determine Positive Population (P)
-            # Take top 5%
+            # 2. Determine Positive Population
+            # Top 2% (robust max)
+            q_hi = tube_data[from_channel].quantile(0.98)
             pos_subset = tube_data[tube_data[from_channel] >= q_hi]
 
             if len(pos_subset) < 10:
@@ -139,7 +82,7 @@ class CompensationManager:
             delta_primary = pos_medians[from_channel] - neg_medians[from_channel]
 
             if delta_primary <= 1.0:
-                 # Avoid div zero
+                 # Primary signal too weak or invalid
                  continue
 
             for to_channel in channels:
@@ -148,14 +91,16 @@ class CompensationManager:
                     continue
 
                 delta_secondary = pos_medians[to_channel] - neg_medians[to_channel]
-
-                # Robustness: If secondary delta is negative (Pos < Neg), it implies No Spillover (or noise).
-                # Clamp to 0.
+                
+                # Standard compensation calculates the ratio of the fluorescence in the detector channel
+                # to the fluorescence in the primary channel.
+                # If delta_secondary is negative, it implies the positive population is dimmer than 
+                # the negative/unstained in this channel, which is physically impossible for spillover 
+                # (unless noise). We clamp to 0.
                 if delta_secondary < 0:
                     delta_secondary = 0
 
                 slope = delta_secondary / delta_primary
-
                 matrix.loc[from_channel, to_channel] = slope
 
         self.spillover_matrix = matrix
@@ -182,8 +127,8 @@ class CompensationManager:
 
     def apply_compensation(self, df, channels, rename=True):
         """
-        Apply compensation to dataframe using the computed matrix.
-        Corrects for baseline offset if available.
+        Apply compensation to dataframe using valid standard matrix multiplication.
+        Assumes data is already properly scaled.
         """
         comp_matrix = self.get_compensation_matrix()
         if comp_matrix is None:
@@ -191,50 +136,12 @@ class CompensationManager:
 
         # Only extract selected channels
         raw_data = df[channels].values
-
-        # Baseline Correction Strategy:
-        # If we have a known background/offset (self.baseline) which is high (e.g. 10^4),
-        # we must subtract it before applying the matrix, otherwise the offset itself (10^4)
-        # gets "compensated", causing values to drop significantly below the baseline level.
-        # Logic:
-        # 1. Delta = Raw - Baseline
-        # 2. CompDelta = Delta * InvMatrix
-        # 3. Final = CompDelta + Baseline
-
-        if self.baseline is not None:
-            try:
-                # Ensure we have baseline values for all requested channels
-                # Re-index to match 'channels' list order
-                missing = [c for c in channels if c not in self.baseline.index]
-                if missing:
-                    raise KeyError(f"Baseline missing for channels: {missing}")
-
-                b_vec = self.baseline[channels].values
-
-                # Check for NaNs
-                if np.isnan(b_vec).any():
-                     raise ValueError("Baseline contains NaNs")
-
-                logger.info(f"Applying baseline correction. Vector: {b_vec}")
-
-                # Subtract Baseline
-                data_for_comp = raw_data - b_vec
-
-                # Apply Matrix
-                comp_data = data_for_comp.dot(comp_matrix.values)
-
-                # Add Baseline Back
-                compensated_data = comp_data + b_vec
-
-            except Exception as e:
-                logger.error(f"Baseline correction failed: {e}. Falling back to standard compensation.")
-                print(f"ERROR: Baseline correction failed: {e}") # Print to visible console
-                compensated_data = raw_data.dot(comp_matrix.values)
-        else:
-            logger.warning("No baseline available for correction. Using standard compensation (risk of overcompensation).")
-            print("WARNING: No baseline available. using standard compensation.")
-            # Fallback to standard
-            compensated_data = raw_data.dot(comp_matrix.values)
+        
+        # Standard Compensation: Data * Inverse(Spillover)
+        # Any negative values resulting from Matrix Inverse applied to data with offsets
+        # are mathematically correct in the context of compensation algebra.
+        # Visualization should handle them (e.g. Biexponential/Logicle).
+        compensated_data = raw_data.dot(comp_matrix.values)
 
         comp_df = df.copy()
         for i, ch in enumerate(channels):
