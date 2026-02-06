@@ -165,6 +165,36 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
              # Font Size (Matplotlib only currently, but could apply to HTML table CSS)
              legend_font_size = st.number_input("Legend Font Size", min_value=5, max_value=20, value=10, step=1)
         
+        replicate_col_selection = None
+        show_replicates = False
+        if viz_mode == "Ridgeline (Matplotlib)":
+             show_replicates = st.checkbox("Show Replicates", value=False, help="Overlay individual replicates (e.g. files) on the same ridge.")
+             if show_replicates:
+                 # Attempt to identify potential replicate columns
+                 # Use 'conditions' plus search for "filename" or "Experiment Name" if not present
+                 options = list(conditions)
+                 
+                 # Add other likely columns if they exist in the dataframe columns (checking filtered_experiment.data)
+                 # Note: This runs before "Generate Plot", so we access the base data
+                 candidates = ["replicate", "Replicate", "Experiment Name", "Experiment_Name", "filename", "File", "file", "Sample", "sample"]
+                 existing_cols = set(filtered_experiment.data.columns)
+                 
+                 for c in candidates:
+                     if c in existing_cols and c not in options:
+                         options.append(c)
+                 
+                 if options:
+                    # Default selection logic: Prioritize candidates order (e.g. replicate > Experiment Name)
+                    default_idx = 0
+                    for c in candidates:
+                        if c in options:
+                            default_idx = options.index(c)
+                            break
+
+                    replicate_col_selection = st.selectbox("Replicate Identifier", options, index=default_idx)
+                 else:
+                    st.warning("No suitable columns found to identify replicates.")
+        
         st.write("") # Spacer
 
         if st.button("Generate Plot", type="primary", key="btn_hist"):
@@ -426,7 +456,9 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                     smooth_sigma=smooth_sigma,
                                     normalization=normalization_mode,
                                     show_yaxis=show_yaxis,
-                                    legend_cols=legend_columns
+                                    legend_cols=legend_columns,
+                                    show_replicates=show_replicates,
+                                    replicate_col=replicate_col_selection
                                 )
                                 with warnings.catch_warnings():
                                     warnings.filterwarnings("ignore", category=UserWarning)

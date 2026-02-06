@@ -330,6 +330,8 @@ def plot_ridgeline_matplotlib(
     normalization: str = "total",
     show_yaxis: bool = False,
     legend_cols=None,
+    show_replicates: bool = False,
+    replicate_col: str = None,
 ):
     """
     Generates a Single-Axis Ridgeline Plot (Matplotlib) with adjustable offset.
@@ -438,6 +440,8 @@ def plot_ridgeline_matplotlib(
         x_min = df[channel].min()
         x_max = df[channel].max()
 
+    # Cached curves is now a list of lists of (x, y) tuples. 
+    # Structure: cached_curves[group_index] -> [ (x1,y1), (x2,y2), ... ]
     cached_curves = []
     y_max_global = 0.0
 
@@ -448,22 +452,36 @@ def plot_ridgeline_matplotlib(
         else:
              subset = df # No hue
 
-        x, y = _histogram_curve(subset[channel].values, bins=bins, log_scale=log_scale)
-        if x.size == 0:
-            cached_curves.append((np.array([]), np.array([])))
-            continue
+        group_curves = [] # List of (x,y)
+        
+        # Determine separate datasets to compute curves for (Replicates vs Aggregated)
+        sub_datasets = []
+        if show_replicates and replicate_col and replicate_col in subset.columns:
+             # Find unique replicates
+             reps = subset[replicate_col].unique()
+             for r in reps:
+                  sub_datasets.append(subset[subset[replicate_col] == r])
+        else:
+             sub_datasets.append(subset)
+        
+        for ds in sub_datasets:
+            x, y = _histogram_curve(ds[channel].values, bins=bins, log_scale=log_scale)
+            if x.size == 0:
+                continue
 
-        if norm == "total":
-            s = y.sum()
-            y = y / s if s > 0 else y
-        elif norm == "modal":
-            m = y.max()
-            y = y / m if m > 0 else y
+            if norm == "total":
+                s = y.sum()
+                y = y / s if s > 0 else y
+            elif norm == "modal":
+                m = y.max()
+                y = y / m if m > 0 else y
 
-        y = _smooth_1d(y, smooth_sigma)
-        cached_curves.append((x, y))
-        if y.size > 0:
-            y_max_global = max(y_max_global, float(np.nanmax(y)))
+            y = _smooth_1d(y, smooth_sigma)
+            if y.size > 0:
+                 group_curves.append((x, y))
+                 y_max_global = max(y_max_global, float(np.nanmax(y)))
+        
+        cached_curves.append(group_curves)
 
     if y_max_global <= 0:
         return fig, []
@@ -478,7 +496,7 @@ def plot_ridgeline_matplotlib(
 
     for i in range(n_groups):
         group = groups[i]
-        x, y = cached_curves[i]
+        curves_list = cached_curves[i] # This is a list of (x,y)
         c = palette[i] if n_groups > 1 else palette[0]
         
         # Base Y position
@@ -488,17 +506,70 @@ def plot_ridgeline_matplotlib(
         label_text = str(group) if group is not None else "All"
         yticklabels.append(label_text)
         
-        if x.size > 0:
-            # Shift Y
-            y_shifted = y + base_y
-            
-            # zorder: Lower Y (Front) -> Higher Z
-            z = (n_groups - i) * 2 
-            
-            # Fill
-            ax.fill_between(x, base_y, y_shifted, color=c, alpha=0.6, zorder=z)
-            # Outline
-            ax.plot(x, y_shifted, color=c, linewidth=2.0, zorder=z+1)
+        # zorder: Lower Y (Front) -> Higher Z
+        # We start z at high value for top plot.
+        # Actually in Painter's algo with fill, we draw from back to front usually?
+        # But here we are using fill_between, overlapping.
+        # If we draw top one first (i=0, base_y=high), then draw next (i=1, base_y=lower), 
+        # the next one might overlap the top one's bottom.
+        # Wait, usually we want the "Front" (Lower Y) to cover the "Back" (Higher Y).
+        # So we should draw Higher Y first (Back) -> Lower Y last (Front).
+        # i=0 is the Top (Higher Y). i=N is Bottom (Lower Y).
+        # So we should draw loop i=0 first, then i=1.
+        # BUT zorder overrides draw order.
+        # We want Bottom one (i=N-1) to have HIGHER zorder than Top one (i=0) so it covers the "feet" of the top one?
+        # Standard Ridgeline: The one in 'front' (lower on screen) covers the ones behind it.
+        # So i (index) increases -> goes down screen -> should be on top.
+        # So z should increase with i.
+        
+        # Current code was: z = (n_groups - i) * 2. 
+        # If i=0 (Top): z = N*2 (High Z).
+        # If i=N (Bottom): z = 0 (Low Z).
+        # This puts the TOP curve ON TOP of the bottom curve.
+        # If the Top curve has a long tail going down, it will cover the peak of the curve below it.
+        # Usually Ridgeline is the opposite: Bottom curves cover the tails of Top curves.
+        # Let's fix this logic while we are here if it was wrong, or keep consistency.
+        # "First sample on top" was requested. 
+        # Usually Ridgelines look like mountains. The closer mountain (lower) covers the further one (higher).
+        # So Lower Y (Higher Index) should have Higher Z.
+        z_group = (i + 1) * 2 # i=0 -> 2. i=N -> Higher.
+        
+        # Wait, the user specifically asked "Change order... first sample on top".
+        # If I draw Bottom (Last Sample) ON TOP of Top (First Sample), then the Last Sample is "In Front".
+        # Okay, I will stick to what seems to be the standard "Mountain" view z-ordering.
+        # i increases -> Y decreases -> appearing "closer" -> Higher Z.
+        
+        # User explicitly requested: "make sure the histograms at the bottom are overlaid on top of histograms above it."
+        # i=0 (Top, High Y). i=N-1 (Bottom, Low Y).
+        # We want Bottom to cover Top. So Z should increase with i.
+        z_group = i * 2 + 2 
+
+        
+        # Plot each replicate
+        # If multiple replicates, they share the z_group but maybe we tweak slightly or use alpha?
+        # If we just overlay them, order doesn't matter much between replicates of same group.
+        
+        for k, (x, y) in enumerate(curves_list):
+            if x.size > 0:
+                y_shifted = y + base_y
+                
+                is_replicate_view = (show_replicates and len(curves_list) > 1)
+                
+                # If showing replicates, use lower alpha for fill so we can see density
+                # User request: Lower opacity (including outline) to better visualize replicates
+                fill_alpha = 0.25 if is_replicate_view else 0.6
+                
+                # User request: Reduce outline width by 1 for both (was 2.0 -> now 1.0)
+                gw = 1.0 
+                
+                # If replicate view, also lower outline alpha to match
+                # Standard view outline is usually solid (alpha=1.0)
+                outline_alpha = 0.6 if is_replicate_view else 1.0
+
+                # Fill
+                ax.fill_between(x, base_y, y_shifted, color=c, alpha=fill_alpha, zorder=z_group)
+                # Outline
+                ax.plot(x, y_shifted, color=c, linewidth=gw, alpha=outline_alpha, zorder=z_group+1)
 
         # Baseline
         ax.axhline(base_y, color='gray', linewidth=0.5, alpha=0.3, zorder=-1)
