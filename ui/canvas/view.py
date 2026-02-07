@@ -38,6 +38,99 @@ def _has_density_scatter(fig):
     return False
 
 
+def _extract_categorical_scatter(fig):
+    """
+    Extract categorical scatter collections from a matplotlib figure.
+    
+    These are PathCollections with:
+    - No array data (single color per collection)
+    - A label (from legend)
+    
+    Returns list of dicts: [{"name": str, "original_color": color, "collection": PathCollection}]
+    """
+    categories = []
+    
+    for ax in fig.axes:
+        # Get legend handles and labels if available
+        legend = ax.get_legend()
+        legend_map = {}
+        if legend:
+            try:
+                handles = legend.legend_handles
+                texts = legend.get_texts()
+                for handle, text in zip(handles, texts):
+                    legend_map[id(handle)] = text.get_text()
+            except AttributeError:
+                try:
+                    handles = legend.legendHandles
+                    texts = legend.get_texts()
+                    for handle, text in zip(handles, texts):
+                        legend_map[id(handle)] = text.get_text()
+                except Exception:
+                    pass
+        
+        for coll in ax.collections:
+            if isinstance(coll, PathCollection):
+                arr = coll.get_array()
+                # Skip density plots (have array data)
+                if arr is not None and len(arr) > 1:
+                    continue
+                
+                # Get label - try legend first, then label property
+                label = legend_map.get(id(coll), None)
+                if not label:
+                    label = coll.get_label()
+                
+                # Skip if no meaningful label or internal matplotlib label
+                if not label or label.startswith('_'):
+                    continue
+                
+                # Get the color
+                facecolors = coll.get_facecolor()
+                if len(facecolors) > 0:
+                    color = facecolors[0]  # First color (should be uniform for categorical)
+                    
+                    categories.append({
+                        "name": label,
+                        "original_color": color,
+                        "collection": coll
+                    })
+    
+    return categories
+
+
+def _has_categorical_scatter(fig):
+    """Check if a figure has categorical scatter plots (multiple PathCollections with labels)."""
+    return len(_extract_categorical_scatter(fig)) > 0
+
+
+def _apply_mpl_category_colors(fig, category_colors):
+    """
+    Apply custom colors to categorical scatter collections in a matplotlib figure.
+    
+    Args:
+        fig: matplotlib Figure
+        category_colors: dict mapping category name to hex color
+    """
+    if not category_colors:
+        return
+    
+    categories = _extract_categorical_scatter(fig)
+    
+    for cat_info in categories:
+        cat_name = cat_info["name"]
+        if cat_name in category_colors:
+            new_color = category_colors[cat_name]
+            collection = cat_info["collection"]
+            try:
+                # Set the facecolor for the scatter collection
+                collection.set_facecolor(new_color)
+                # Also update edgecolor if it was originally the same
+                collection.set_edgecolor(new_color)
+            except Exception:
+                pass
+
+
 def _is_closed_polygon_line(line):
     """
     Check if a Line2D is a closed polygon (gate boundary, not a trend line).
@@ -479,32 +572,68 @@ def render_canvas_tab():
                     del plot_data["settings"]["override_line_color_en"]
 
                 # ============================================================
-                # Sample Color Customization (for histograms, bar plots, and 
-                # trend lines in facet plots)
+                # Sample Color Customization (for histograms, bar plots, 
+                # trend lines in facet plots, and categorical scatter)
                 # ============================================================
                 if plot_data.get("type") == "matplotlib":
                     f = plot_data["fig"]
                     has_density = _has_density_scatter(f)
                     has_lines = _has_colorable_lines(f)
+                    has_categorical = _has_categorical_scatter(f)
                     
-                    # For facet plots (density + lines), extract lines only
-                    # For pure histograms/bar plots, extract everything
-                    if has_density and has_lines:
+                    # Determine what to show
+                    colorable_samples = []
+                    section_title = "Sample Colors"
+                    
+                    if has_categorical:
+                        # Categorical scatter plot (like Singlet/Doublet)
+                        # Show category colors
+                        categorical_samples = _extract_categorical_scatter(f)
+                        section_title = "Category Colors"
+                        
+                        if categorical_samples:
+                            st.markdown("---")
+                            st.markdown(f"**{section_title}**")
+                            
+                            # Initialize category_colors in settings if not present
+                            if "mpl_category_colors" not in plot_data["settings"]:
+                                plot_data["settings"]["mpl_category_colors"] = {}
+                            
+                            mpl_cat_colors = plot_data["settings"]["mpl_category_colors"]
+                            
+                            for cat_info in categorical_samples:
+                                cat_name = cat_info["name"]
+                                original_color = cat_info["original_color"]
+                                
+                                # Get current color (either customized or original)
+                                current_hex = mpl_cat_colors.get(cat_name, _color_to_hex(original_color))
+                                
+                                col_name, col_picker = st.columns([2, 1])
+                                with col_name:
+                                    st.text(cat_name)
+                                with col_picker:
+                                    new_color = st.color_picker(
+                                        "Color",
+                                        value=current_hex,
+                                        key=f"mplcat_{plot_id}_{cat_name}",
+                                        label_visibility="collapsed"
+                                    )
+                                    if new_color != current_hex:
+                                        mpl_cat_colors[cat_name] = new_color
+                    
+                    elif has_density and has_lines:
                         # Facet plot: show line colors only
                         colorable_samples = _extract_colorable_samples(f, lines_only=True)
+                        section_title = "Trend Line Colors"
                     elif not has_density:
                         # Pure histogram or bar plot
                         colorable_samples = _extract_colorable_samples(f, lines_only=False)
-                    else:
-                        # Pure density plot - no sample colors
-                        colorable_samples = []
+                        section_title = "Sample Colors"
                     
-                    if colorable_samples:
+                    # Show sample/line colors if applicable (non-categorical)
+                    if colorable_samples and not has_categorical:
                         st.markdown("---")
-                        if has_density and has_lines:
-                            st.markdown("**Trend Line Colors**")
-                        else:
-                            st.markdown("**Sample Colors**")
+                        st.markdown(f"**{section_title}**")
                         
                         # Initialize sample_colors in settings if not present
                         if "sample_colors" not in plot_data["settings"]:
@@ -644,6 +773,11 @@ def render_canvas_tab():
                     sample_colors = settings.get("sample_colors", {})
                     if sample_colors:
                         _apply_sample_colors(fig, sample_colors)
+                    
+                    # Apply custom matplotlib category colors (for categorical scatter)
+                    mpl_cat_colors = settings.get("mpl_category_colors", {})
+                    if mpl_cat_colors:
+                        _apply_mpl_category_colors(fig, mpl_cat_colors)
 
                     # Force redraw after all modifications to ensure artists are updated
                     # This is critical for proper rendering of polygons/fills on log scale after resizing
