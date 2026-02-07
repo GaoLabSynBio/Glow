@@ -107,6 +107,7 @@ def _has_categorical_scatter(fig):
 def _apply_mpl_category_colors(fig, category_colors):
     """
     Apply custom colors to categorical scatter collections in a matplotlib figure.
+    Also updates the legend to match.
     
     Args:
         fig: matplotlib Figure
@@ -127,6 +128,37 @@ def _apply_mpl_category_colors(fig, category_colors):
                 collection.set_facecolor(new_color)
                 # Also update edgecolor if it was originally the same
                 collection.set_edgecolor(new_color)
+            except Exception:
+                pass
+    
+    # Update legend colors to match
+    for ax in fig.axes:
+        legend = ax.get_legend()
+        if legend:
+            try:
+                # Get legend handles and texts
+                try:
+                    handles = legend.legend_handles
+                except AttributeError:
+                    handles = legend.legendHandles
+                texts = legend.get_texts()
+                
+                for handle, text in zip(handles, texts):
+                    label = text.get_text()
+                    if label in category_colors:
+                        new_color = category_colors[label]
+                        # Update the legend handle color
+                        if hasattr(handle, 'set_facecolor'):
+                            handle.set_facecolor(new_color)
+                        if hasattr(handle, 'set_edgecolor'):
+                            handle.set_edgecolor(new_color)
+                        if hasattr(handle, 'set_color'):
+                            handle.set_color(new_color)
+                        # For PathCollection legend handles
+                        if hasattr(handle, 'set_facecolors'):
+                            handle.set_facecolors(new_color)
+                        if hasattr(handle, 'set_edgecolors'):
+                            handle.set_edgecolors(new_color)
             except Exception:
                 pass
 
