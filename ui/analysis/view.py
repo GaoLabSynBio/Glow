@@ -260,28 +260,35 @@ def render_analysis_tab():
                                         pass
 
                             # Add Threshold/Range Line
+                            # Gates are stored in Standard (Scaled) Units.
+                            # Adjust gate values only if we are displaying Raw Data (apply_scaling=False).
                             if g.get('type') == 'range':
                                  t_min, t_max = g.get('min'), g.get('max')
-                                 if apply_scaling:
-                                     t_min /= scaling_factor
-                                     t_max /= scaling_factor
+                                 if not apply_scaling:
+                                     t_min *= scaling_factor
+                                     t_max *= scaling_factor
+                                 
                                  fig_g.add_vrect(x0=t_min, x1=t_max, fillcolor="green", opacity=0.1, layer="below", line_width=0)
                                  fig_g.add_vline(x=t_min, line_dash="dash", line_color="green")
                                  fig_g.add_vline(x=t_max, line_dash="dash", line_color="green")
                             else:
                                  thr = g['threshold']
-                                 if apply_scaling:
-                                     thr /= scaling_factor
+                                 if not apply_scaling:
+                                     thr *= scaling_factor
+                                 
                                  is_pos = (g.get('direction', 'positive') == 'positive')
                                  color_line = "green" if is_pos else "red"
                                  fig_g.add_vline(x=thr, line_dash="dash", line_color=color_line, line_width=2)
 
                                  # Shading
                                  # Approximate simplifying shading
+                                 dom_min = min(d_dom) if len(d_dom)>0 else 0
+                                 dom_max = max(d_dom) if len(d_dom)>0 else 1
+                                 
                                  if is_pos:
-                                     fig_g.add_vrect(x0=thr, x1=max(d_dom), fillcolor="green", opacity=0.1, layer="below", line_width=0)
+                                     fig_g.add_vrect(x0=thr, x1=dom_max, fillcolor="green", opacity=0.1, layer="below", line_width=0)
                                  else:
-                                     fig_g.add_vrect(x0=min(d_dom), x1=thr, fillcolor="red", opacity=0.1, layer="below", line_width=0)
+                                     fig_g.add_vrect(x0=dom_min, x1=thr, fillcolor="red", opacity=0.1, layer="below", line_width=0)
 
                             fig_g.update_layout(
                                 margin=dict(l=0, r=0, t=20, b=0),
@@ -969,13 +976,18 @@ def render_analysis_tab():
                                      'samples': selected_samples # Persist the samples used for visualization
                                  }
 
-                                 # Apply Scaling Back to Raw for gate storage if Needed
+                                 # Apply Scaling Logic for Storage
+                                 # Goal: Always store gates in Dataframe Units (Scaled).
+                                 # If apply_scaling is True (Plot is Scaled), input is already Scaled. Do nothing.
+                                 # If apply_scaling is False (Plot is Raw), input is Raw. Divide by factor.
                                  final_threshold = curr_threshold
-                                 if apply_scaling and scaling_factor != 1.0:
+                                 if not apply_scaling and scaling_factor != 1.0:
                                      if isinstance(curr_threshold, (list, tuple, np.ndarray)):
-                                         final_threshold = [float(x) * scaling_factor for x in curr_threshold]
+                                         final_threshold = [float(x) / scaling_factor for x in curr_threshold]
                                      else:
-                                         final_threshold = float(curr_threshold) * scaling_factor
+                                         final_threshold = float(curr_threshold) / scaling_factor
+                                 # If apply_scaling is True, we assume the user defined the gate on the Scaled plot,
+                                 # so the value is already in the correct domain for the dataframe.
 
                                  if is_range and isinstance(final_threshold, (list, tuple, np.ndarray)) and len(final_threshold) >= 2:
                                       new_gate['min'] = final_threshold[0]
@@ -1312,9 +1324,11 @@ def render_analysis_tab():
 
                                  final_tx = curr_tx
                                  final_ty = curr_ty
-                                 if apply_scaling and scaling_factor != 1.0:
-                                     final_tx *= scaling_factor
-                                     final_ty *= scaling_factor
+                                 # Standardize to Scaled Units
+                                 # If not apply_scaling (Raw), divide by factor.
+                                 if not apply_scaling and scaling_factor != 1.0:
+                                     final_tx /= scaling_factor
+                                     final_ty /= scaling_factor
 
                                  new_g = {
                                      'type': 'quadrant',
@@ -1605,11 +1619,12 @@ def render_analysis_tab():
                                   lbl = f"{parent_gate} -> {sel_x}:{sel_y} Poly" if parent_gate!='Singlets' else f"{sel_x}:{sel_y} Poly"
 
                                   final_verts = verts
-                                  if apply_scaling and scaling_factor != 1.0:
+                                  # Standardize to Scaled Units
+                                  if not apply_scaling and scaling_factor != 1.0:
                                       final_verts = []
                                       for v in verts:
                                           # v is [x, y] list
-                                          final_verts.append([v[0] * scaling_factor, v[1] * scaling_factor])
+                                          final_verts.append([v[0] / scaling_factor, v[1] / scaling_factor])
 
                                   new_g = {
                                       'type': 'polygon',

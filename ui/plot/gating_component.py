@@ -1,7 +1,7 @@
 import streamlit as st
 import importlib
 import pandas as pd
-from glow.plotting import utils
+from glow.plotting import utils, plots
 
 def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
     """
@@ -30,8 +30,8 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
 
             gate_options = built_in_options + pos_gate_labels
             selected_analysis_labels = st.multiselect(
-                "Select Analysis Gates to Apply",
-                options=gate_options,
+                "Select Analysis Gates to Apply", 
+                options=gate_options, 
                 default=built_in_options,
                 key=f"{key_prefix}_analysis_gates_select"
             )
@@ -88,7 +88,7 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
             def del_gate_callback(index_to_del, g_key):
                 if 0 <= index_to_del < len(st.session_state[g_key]):
                     st.session_state[g_key].pop(index_to_del)
-
+            
             for i, gate in enumerate(st.session_state[gate_key]):
                 gc1, gc2 = st.columns([4, 1])
                 with gc1:
@@ -96,9 +96,9 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
                     st.write(f"**Local Gate {i+1}**: {gate['channel']} ({th[0]:.2f} - {th[1]:.2f})")
                 with gc2:
                     st.button(
-                        "🗑️",
-                        key=f"{key_prefix}_del_gate_{i}",
-                        on_click=del_gate_callback,
+                        "🗑️", 
+                        key=f"{key_prefix}_del_gate_{i}", 
+                        on_click=del_gate_callback, 
                         args=(i, gate_key)
                     )
 
@@ -107,16 +107,16 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
 
         # Ensure different new gate channel per plot type if possible to avoid clashes?
         # Actually standard widget keys should be uniqueified by prefix.
-
+        
         # Suggest default
         default_marker_idx = 0
         if len(channels) > 1:
             # Simple heuristic, pick 2nd if available
             default_marker_idx = 1
-
+            
         new_gate_channel = st.selectbox(
-            "Marker Channel for New Local Gate",
-            channels,
+            "Marker Channel for New Local Gate", 
+            channels, 
             index=default_marker_idx,
             key=f"{key_prefix}_new_gate_channel_select"
         )
@@ -147,8 +147,7 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
                 p_max = utils.get_percentile_of_value(filtered_experiment.data, new_gate_channel, v_max)
                 p_min = max(0.0, min(100.0, p_min))
                 p_max = max(0.0, min(100.0, p_max))
-                if p_min > p_max:
-                    p_min, p_max = p_max, p_min
+                if p_min > p_max: p_min, p_max = p_max, p_min
                 st.session_state[range_p_key] = (p_min, p_max)
             except Exception:
                 pass
@@ -159,9 +158,9 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
 
         st.markdown("**Percentile Range**")
         st.slider(
-            "Percentile", 0.0, 100.0,
-            key=range_p_key,
-            on_change=on_new_slider_change,
+            "Percentile", 0.0, 100.0, 
+            key=range_p_key, 
+            on_change=on_new_slider_change, 
             step=0.1
         )
 
@@ -178,12 +177,12 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
                 'threshold': (st.session_state[r_min_key], st.session_state[r_max_key]),
                 'is_data_units': True  # Mark this gate as being in data units already
             })
-
+        
         if st.button(
-            "Add This Gate",
-            type="secondary",
+            "Add This Gate", 
+            type="secondary", 
             key=f"{key_prefix}_add_gate_btn",
-            on_click=add_gate_callback,
+            on_click=add_gate_callback, 
             args=(new_gate_channel, gate_key, raw_min_key, raw_max_key)
         ):
             st.success(f"Added gate on {new_gate_channel}")
@@ -197,59 +196,135 @@ def apply_gates_to_dataframe(df, gates, experiment_metadata=None, show_raw=False
     Handles scaling correction if experiment_metadata indicates high-res data.
     """
     plot_df = df.copy()
-
-    # 1. Determine Scaling Logic
+    
+    # 1. Determine Data Scaling State
     scaling_factor = 1.0
-    is_scaled = False
+    is_data_scaled = False
+    
     if experiment_metadata and experiment_metadata.get('is_high_res', False):
-        if not show_raw:
-            scaling_factor = experiment_metadata.get('scaling_factor', 10000.0)
-            is_scaled = True
+         scaling_factor = experiment_metadata.get('scaling_factor', 10000.0)
+         
+         # Determine Data State
+         # In Glow, if 'is_high_res' is True, the data is loaded and immediately Scaled in place (utils.py).
+         # Therefore, the DataFrame is physically Scaled.
+         # We prioritize the 'is_scaled' flag if present, but default to True if 'is_high_res' is set,
+         # because standard Glow workflow enforces scaling.
+         is_data_scaled = experiment_metadata.get('is_scaled', True)
 
     # 2. Process and Apply Gates
-    scalable_channels = [c for c in plot_df.columns if pd.api.types.is_numeric_dtype(plot_df[c])]
-    # Or rely on passed channels, but we don't have them here easily.
-    # Using simple numeric check + exclusion of masks.
-
+    from glow.gating.geometry import points_in_polygon
+    
     processed_gates = []
-
+    
     for g in gates:
         pg = g.copy()
+        
+        is_mask_gate = pg.get('channel') in ['cells', 'singlets', 'time', 'Time', 'Is_Live', 'Is_Singlet']
+        if pg.get('type') in ['quadrant', 'polygon']: is_mask_gate = False
+        
+        is_data_units = pg.get('is_data_units', False) # True for Local Gates (always match data)
 
-        # Scale Thresholds if needed
-        # Gates on 'cells'/'singlets' are never scaled (they are masks/probability 0-1)
-        # Gates on Fluorophores/Scatter are scaled if data is scaled
-        is_mask_gate = pg.get('channel') in ['cells', 'singlets', 'time', 'Time']
-        is_data_units = pg.get('is_data_units', False)
+        # Scaling Logic:
+        # Assumption/Requirement: Gates passed from Analysis/External are ALWAYS Raw Values.
+        # Data State: Can be Scaled (is_data_scaled=True) or Raw (is_data_scaled=False).
+        
+        # Logic:
+        # 1. If Gate is Local (is_data_units=True) -> No Scaling (It's already in plot units).
+        # 2. If Gate is Mask -> No Scaling.
+        # 3. If Data is Scaled -> Scale Gate DOWN (Raw -> Scaled) to match Data.
+        # 4. If Data is Raw -> Scale Gate NONE (Raw -> Raw) to match Data.
+        
+        correction_factor = 1.0
+        
+        if not is_data_units and not is_mask_gate:
+            if is_data_scaled:
+                 # Data is Scaled (0-100), Gate is Raw (0-1M).
+                 # Scale Gate DOWN.
+                 correction_factor = 1.0 / scaling_factor
+            else:
+                 # Data is Raw (0-1M), Gate is Raw (0-1M).
+                 # No Scaling.
+                 correction_factor = 1.0
 
-        if is_scaled and not is_mask_gate and not is_data_units and pg.get('channel') in scalable_channels:
-             if 'threshold' in pg:
-                th = pg['threshold']
-                if isinstance(th, (list, tuple)) and len(th) == 2:
-                    pg['threshold'] = (th[0]/scaling_factor, th[1]/scaling_factor)
-                elif isinstance(th, (int, float)):
-                    pg['threshold'] = th / scaling_factor
-             if 'min' in pg:
-                 pg['min'] = pg['min'] / scaling_factor
-             if 'max' in pg:
-                 pg['max'] = pg['max'] / scaling_factor
-
+        if correction_factor != 1.0:
+             # Apply Correction
+             if pg.get('type') == 'quadrant':
+                  pg['threshold_x'] = float(pg.get('threshold_x', 0)) * correction_factor
+                  pg['threshold_y'] = float(pg.get('threshold_y', 0)) * correction_factor
+             
+             elif pg.get('type') == 'polygon':
+                   verts = pg.get('vertices', [])
+                   pg['vertices'] = [[v[0]*correction_factor, v[1]*correction_factor] for v in verts]
+             
+             else:
+                  # 1D Logic 
+                  th = pg.get('threshold')
+                  if isinstance(th, (list, tuple)) and len(th) == 2:
+                      pg['threshold'] = (th[0]*correction_factor, th[1]*correction_factor)
+                  elif isinstance(th, (int, float)):
+                      pg['threshold'] = th * correction_factor
+                  
+                  if 'min' in pg and pg['min'] is not None: pg['min'] *= correction_factor
+                  if 'max' in pg and pg['max'] is not None: pg['max'] *= correction_factor
+        
         processed_gates.append(pg)
 
     # 3. Filtering Loop
     for gate in processed_gates:
-        ch = gate.get('channel')
-        th = gate.get('threshold')
+        g_type = gate.get('type')
+        
+        if g_type == 'quadrant':
+             ch_x = gate['channel_x']
+             ch_y = gate['channel_y']
+             th_x = gate['threshold_x']
+             th_y = gate['threshold_y']
+             quads = gate.get('quadrant', [])
+             if isinstance(quads, str): quads = [quads]
+             
+             if ch_x in plot_df.columns and ch_y in plot_df.columns:
+                 mask = pd.Series(False, index=plot_df.index)
+                 sub_df = plot_df[[ch_x, ch_y]]
+                 
+                 for q in quads:
+                     m = None
+                     if q == '++':
+                         m = (sub_df[ch_x] > th_x) & (sub_df[ch_y] > th_y)
+                     elif q == '+-':
+                         m = (sub_df[ch_x] > th_x) & (sub_df[ch_y] <= th_y)
+                     elif q == '-+':
+                         m = (sub_df[ch_x] <= th_x) & (sub_df[ch_y] > th_y)
+                     elif q == '--':
+                         m = (sub_df[ch_x] <= th_x) & (sub_df[ch_y] <= th_y)
+                     
+                     if m is not None:
+                         mask |= m
+                 plot_df = plot_df[mask]
 
-        if ch in plot_df.columns and th is not None:
-            if isinstance(th, (tuple, list)) and len(th) == 2:
-                plot_df = plot_df[(plot_df[ch] >= th[0]) & (plot_df[ch] <= th[1])]
-            else:
-                # Directionality
-                direction = gate.get('direction', 'positive')
-                if direction in ['negative', 'Negative (<)']:
-                    plot_df = plot_df[plot_df[ch] < th]
-                else:
-                    plot_df = plot_df[plot_df[ch] > th]
+        elif g_type == 'polygon':
+             ch_x = gate['channel_x']
+             ch_y = gate['channel_y']
+             verts = gate['vertices']
+             
+             if ch_x in plot_df.columns and ch_y in plot_df.columns:
+                 pts = plot_df[[ch_x, ch_y]].values
+                 mask = points_in_polygon(pts, verts)
+                 plot_df = plot_df[mask]
 
+        else:
+            ch = gate.get('channel')
+            th = gate.get('threshold')
+            
+            if ch in plot_df.columns:
+                if isinstance(th, (tuple, list)) and len(th) == 2:
+                    plot_df = plot_df[(plot_df[ch] >= th[0]) & (plot_df[ch] <= th[1])]
+                elif gate.get('min') is not None and gate.get('max') is not None:
+                     plot_df = plot_df[(plot_df[ch] >= gate['min']) & (plot_df[ch] <= gate['max'])]
+                elif th is not None:
+                    # Directionality
+                    direction = gate.get('direction', 'positive')
+                    if direction in ['negative', 'Negative (<)']:
+                        plot_df = plot_df[plot_df[ch] < th]
+                    else:
+                        plot_df = plot_df[plot_df[ch] > th]
+                    
     return plot_df, processed_gates

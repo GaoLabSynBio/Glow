@@ -374,14 +374,24 @@ def calculate_positive_stats_recursive(experiment, gate, defined_gates):
 def get_channel_data_for_samples(experiment, channel, sample_names, parent_gate_name=None, defined_gates=None, apply_scaling=False):
     """
     Retrieve data vectors for the specified channel, filtered by sample names AND parent gating.
-    If apply_scaling is True and experiment metadata indicates high-res data, values are scaled down.
+    Handles high-resolution scaling logic correctly:
+    - If experiment is already scaled (is_scaled=True), and apply_scaling=True -> Return as is.
+    - If experiment is already scaled, and apply_scaling=False -> Multiply by factor (restore raw).
+    - If experiment is NOT scaled, usually return as is.
     """
     df = experiment.data
     data_map = {}
 
-    # Scaling Logic
+    # Check Scaling State
+    is_already_scaled = False
     scaling_factor = 1.0
-    if apply_scaling and hasattr(experiment, 'metadata') and experiment.metadata.get('is_high_res', False):
+    
+    if hasattr(experiment, 'metadata'):
+        is_already_scaled = experiment.metadata.get('is_scaled', False)
+        # Fallback: if is_high_res is True but is_scaled missing, assume it WAS scaled by loader/utils
+        if not is_already_scaled and experiment.metadata.get('is_high_res', False):
+            is_already_scaled = True
+            
         scaling_factor = experiment.metadata.get('scaling_factor', 10000.0)
 
     # ----------------------------------------------------
@@ -431,9 +441,22 @@ def get_channel_data_for_samples(experiment, channel, sample_names, parent_gate_
 
         if s_name in sample_names:
             vals = group[channel].values
-            if scaling_factor != 1.0:
-                 # Ensure float for division
-                 vals = vals.astype(float) / scaling_factor
+            
+            # Application Logic:
+            # We want to return data in the requested domain (Scaled or Raw).
+            # The data in 'vals' is in 'is_already_scaled' domain.
+            
+            if is_already_scaled:
+                if not apply_scaling:
+                    # Requesting Raw from Scaled -> Multiply
+                    vals = vals.astype(float) * scaling_factor
+                # Else: Requesting Scaled from Scaled -> Do Nothing
+            else:
+                 # Data is Raw
+                 if apply_scaling and scaling_factor != 1.0:
+                     # Requesting Scaled from Raw -> Divide (Rare case if auto-scaling is off but requested here)
+                     vals = vals.astype(float) / scaling_factor
+                     
             data_map[s_name] = vals
 
     return data_map
