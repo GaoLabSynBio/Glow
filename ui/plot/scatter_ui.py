@@ -38,16 +38,16 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
 
     with col_opts:
         st.markdown("#### Plot Settings")
-        
+
         # Determine default indices for mCherry (X) and GFP (Y)
         default_x_index = 0
         default_y_index = 1 if len(channels) > 1 else 0
-        
+
         for i, c in enumerate(channels):
             if "mcherry" in c.lower():
                 default_x_index = i
                 break
-        
+
         for i, c in enumerate(channels):
             if "gfp" in c.lower():
                 default_y_index = i
@@ -60,15 +60,17 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
         # Scatter specific settings
         st.markdown("---")
         st.markdown("**Rendering Options**")
-        
+
         show_trend = st.checkbox("Show Trend Line (Moving Mean)", value=True)
-        
+
         c1, c2 = st.columns(2)
         with c1:
              show_dots = st.checkbox("Show Dots (Individual)", value=True)
         with c2:
              show_dots_merged = st.checkbox("Show Dots (Merged)", value=False)
-             
+
+        merged_size = st.slider("Merged Plot Size", min_value=2.0, max_value=8.0, value=3.5, step=0.5, help="Size of the merged comparison plot (width & height).")
+
         show_grid = st.checkbox("Show Grid", value=False)
 
         # Backend Selection
@@ -91,27 +93,27 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
 
     with col_plot:
         st.markdown("#### Grouping Configuration")
-        
+
         # Filter conditions to remove 'cells' and 'singlets'
         filtered_conditions = [c for c in conditions if c not in ["cells", "singlets"]]
-        
+
         # Determine defaults
         default_group_idx = 0
         default_facet_idx = 0
-        
+
         # Candidates for defaults order: Experiment Name > Sample
         candidates = ["Experiment Name", "Experiment_Name", "Sample", "sample"]
-        
+
         # Find best candidate present in filtered conditions
         best_candidate = None
         for c in candidates:
              if c in filtered_conditions:
                  best_candidate = c
                  break
-        
+
         # Group Options
         group_options = ["None"] + filtered_conditions
-        
+
         # Set defaults if candidate found
         if best_candidate:
             if best_candidate in group_options:
@@ -127,18 +129,18 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                 index=default_group_idx
             )
             hue_var = None if compare_by == "None" else compare_by
-        
+
         with gc2:
             facet_by = st.selectbox(
-                "Facet By (Subplots)", 
-                group_options, 
+                "Facet By (Subplots)",
+                group_options,
                 index=default_facet_idx
             )
             facet_var = None if facet_by == "None" else facet_by
-            
+
         if hue_var:
             all_groups = sorted(filtered_experiment.data[hue_var].unique())
-            
+
             # Use columns for layout
             sg1, sg2 = st.columns([3, 1])
             with sg1:
@@ -147,7 +149,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                 st.write("") # Spacer
                 st.write("")
                 manual_order = st.checkbox("Manual Group Order", value=False)
-            
+
             final_order = selected_groups
 
             if manual_order and selected_groups:
@@ -182,14 +184,14 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                 try:
                     # Apply Gates (Filtering + Scaling)
                     all_applied_gates = local_gates + analysis_gates_to_apply
-                    
+
                     filtered_df, processed_gates = apply_gates_to_dataframe(
-                        filtered_experiment.data, 
-                        all_applied_gates, 
-                        experiment_metadata=getattr(filtered_experiment, 'metadata', None), 
+                        filtered_experiment.data,
+                        all_applied_gates,
+                        experiment_metadata=getattr(filtered_experiment, 'metadata', None),
                         show_raw=st.session_state.get('plot_show_raw_vals', False)
                     )
-                    
+
                     if filtered_df.empty:
                         st.warning("No events remain after applying gates. Please adjust your gates.")
                         return
@@ -233,7 +235,9 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 show_trend=show_trend,
                                 show_dots=show_dots,
                                 show_dots_summary=show_dots_merged,
-                                show_grid=show_grid
+                                show_grid=show_grid,
+                                title=base_title,
+                                merged_figsize=(merged_size, merged_size)
                             )
 
                             if isinstance(res, tuple):
@@ -245,29 +249,30 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                      fig_facets, fig_summary = res
 
                                 st.subheader("Merged Comparison")
-                                
-                                # Shrink merged comparison plot to fit to half of the width of the column
-                                c_merge_1, c_merge_2 = st.columns([1, 1])
-                                with c_merge_1:
-                                    st.pyplot(fig_summary, use_container_width=True)
-                                
+
                                 if fig_legend:
-                                    with c_merge_2:
-                                        st.pyplot(fig_legend, use_container_width=False)
-                                
+                                    # Legend on top, scaled proportionally (using a column to restrict width)
+                                    # Use a ratio that creates a reasonable size (e.g., 20-25% of width)
+                                    # This ensures it scales with browser but doesn't fill screen width (which would distort vertical legend)
+                                    lc1, lc2 = st.columns([1.5, 4])
+                                    with lc1:
+                                        st.pyplot(fig_legend, width="content")
+
+                                st.pyplot(fig_summary, width="content")
+
                                 download_btn(fig_summary, "scatter_summary")
                                 if st.button("Add Summary Plot to Canvas", key="add_scatter_summary_to_canvas"):
                                     if add_plot_to_canvas(fig_summary, base_title + " (summary)"):
                                         st.success("Plot added to canvas!")
-                                
+
                                 # Close figures to free memory
                                 if not getattr(fig_summary, '_glow_is_direct_ref', False):
                                     plt.close(fig_summary)
                                 if fig_legend and not getattr(fig_legend, '_glow_is_direct_ref', False):
                                     plt.close(fig_legend)
 
-                                st.subheader("Separate Panels (Detailed)")
-                                st.pyplot(fig_facets, use_container_width=False)
+                                st.subheader("Separate (Detailed) Panels")
+                                st.pyplot(fig_facets, width="content")
                                 download_btn(fig_facets, "scatter_facets")
                                 if st.button("Add Facet Plot to Canvas", key="add_scatter_facets_to_canvas"):
                                     if add_plot_to_canvas(fig_facets, base_title + " (facets)"):
@@ -276,7 +281,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 if not getattr(fig_facets, '_glow_is_direct_ref', False):
                                     plt.close(fig_facets)
                             else:
-                                st.pyplot(res, use_container_width=False)
+                                st.pyplot(res, width="content")
                                 download_btn(res, "scatter_plot")
                                 if st.button("Add Plot to Canvas", key="add_scatter_to_canvas"):
                                     if add_plot_to_canvas(res, base_title):
@@ -323,7 +328,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                     title=f"Experiment: {group}",
                                     figsize=(3, 3)
                                 )
-                                st.pyplot(fig, use_container_width=False)
+                                st.pyplot(fig, width="content")
                                 download_btn(fig, f"scatter_ind_{i}")
                                 if st.button(f"Add \"{group}\" to Canvas", key=f"add_scatter_ind_{i}_to_canvas"):
                                     if add_plot_to_canvas(fig, base_title + f" ({group})"):

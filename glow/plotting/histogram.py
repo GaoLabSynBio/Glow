@@ -172,11 +172,11 @@ def plot_1d_histogram(
                     row_dict[col_key] = "Mixed"
             else:
                 row_dict[col_key] = "-"
-        
+
         # Ensure Hue column is present for mapping/coloring in UI if needed, even if not in legend_cols
         if hue not in row_dict:
             row_dict[hue] = str(g)
-            
+
         stats_data.append(row_dict)
 
     # Layout
@@ -196,11 +196,11 @@ def plot_1d_histogram(
         valid_data = df[df[channel] > 0][channel]
         if len(valid_data) > 0:
             x_min = 10**(np.floor(np.log10(valid_data.min())))
-            
+
             # User Request: Minimal x axis value should be 10^0 = 1.0
             if x_min < 1.0:
                 x_min = 1.0
-            
+
             x_max = 10**(np.ceil(np.log10(valid_data.max())))
         else:
             x_min, x_max = 1.0, 1000 # Default fallback >= 1.0
@@ -278,7 +278,7 @@ def plot_1d_histogram(
             ax.xaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
             # Minor ticks: 2-9 multiples. Use list explicitly
             ax.xaxis.set_minor_locator(LogLocator(base=10.0, subs=[2, 3, 4, 5, 6, 7, 8, 9], numticks=100))
-            
+
             # Formatter: Explicit FuncFormatter for safe x10^z labeling
             def log_10_fmt(x, pos):
                 # Avoid log(0)
@@ -287,7 +287,7 @@ def plot_1d_histogram(
                 if np.isclose(log_val, np.round(log_val)):
                     return f"$10^{{{int(np.round(log_val))}}}$"
                 return ""
-            
+
             ax.xaxis.set_major_formatter(FuncFormatter(log_10_fmt))
             # Force null formatter on minor ticks to ensure no labels appear
             ax.xaxis.set_minor_formatter(NullFormatter())
@@ -303,22 +303,22 @@ def plot_1d_histogram(
         else:
             # Bottom Plot: Show Axis and Ticks
             ax.set_xlabel(channel)
-            
+
             # Major Ticks: Visible, Labeled
             ax.tick_params(axis='x', which='major', bottom=True, direction='out', length=6, width=1.2, colors='black', labelbottom=True, pad=5)
             # Minor Ticks: Visible, Unlabeled. Explicitly force labelbottom=False again
             ax.tick_params(axis='x', which='minor', bottom=True, direction='out', length=3, width=0.8, colors='black', labelbottom=False)
-            
+
             ax.spines['bottom'].set_visible(True)
             ax.spines['bottom'].set_linewidth(1.0)
             ax.spines['bottom'].set_color('black')
-            
+
             # Solid baseline
             ax.axhline(0, color='black', linewidth=1.0)
-            
+
             # Solid baseline
             ax.axhline(0, color='black', linewidth=1.0)
-    
+
     plt.tight_layout()
     return fig, stats_data
 
@@ -336,7 +336,7 @@ def plot_ridgeline_matplotlib(
     show_yaxis: bool = False,
     legend_cols=None,
     show_replicates: bool = False,
-    replicate_col: str = None,
+    replicate_col: str | None = None,
 ):
     """
     Generates a Single-Axis Ridgeline Plot (Matplotlib) with adjustable offset.
@@ -356,7 +356,7 @@ def plot_ridgeline_matplotlib(
 
     groups = sorted(df[hue].unique()) if hue and hue in df.columns else [None]
     n_groups = len(groups)
-    
+
     # If no hue, treat as single group
     if not hue or hue not in df.columns:
         groups = [None]
@@ -410,23 +410,23 @@ def plot_ridgeline_matplotlib(
             row_dict[hue] = str(g)
 
         stats_data.append(row_dict)
-    
+
     # Layout - Single Axis
     plt.rcParams.update({'font.size': 10})
-    
+
     # Height scales with number of groups AND offset to maintain consistent per-group visual height.
     # Total vertical span in units of "one histogram height" is approx 1 + (N-1)*offset.
     # We allocate more inches per unit height + overhead.
     effective_units = 1.0 + max(0, n_groups - 1) * offset
-    
+
     # 2.0 inches base overhead (Axes labels, Tick labels, Title space)
     # 0.8 inches per effective histogram unit height
     # This ensures that if offset increases, total height increases proportionally.
-    calc_height = 2.0 + (effective_units * 0.8) 
-    
+    calc_height = 2.0 + (effective_units * 0.8)
+
     # Ensure min height of 3 inches
     fig, ax = plt.subplots(figsize=(8, max(3, calc_height)))
-    
+
     # Colors
     if n_groups > 1:
         palette = sns.color_palette("bright", n_groups)
@@ -438,11 +438,11 @@ def plot_ridgeline_matplotlib(
         valid_data = df[df[channel] > 0][channel]
         if len(valid_data) > 0:
             x_min = 10**(np.floor(np.log10(valid_data.min())))
-            
+
             # User Request: Minimal x axis value should be 10^0 = 1.0
             if x_min < 1.0:
                 x_min = 1.0
-                
+
             x_max = 10**(np.ceil(np.log10(valid_data.max())))
         else:
             x_min, x_max = 1.0, 1000 # Default fallback >= 1.0
@@ -450,7 +450,7 @@ def plot_ridgeline_matplotlib(
         x_min = df[channel].min()
         x_max = df[channel].max()
 
-    # Cached curves is now a list of lists of (x, y) tuples. 
+    # Cached curves is now a list of lists of (x, y) tuples.
     # Structure: cached_curves[group_index] -> [ (x1,y1), (x2,y2), ... ]
     cached_curves = []
     y_max_global = 0.0
@@ -463,7 +463,7 @@ def plot_ridgeline_matplotlib(
              subset = df # No hue
 
         group_curves = [] # List of (x,y)
-        
+
         # Determine separate datasets to compute curves for (Replicates vs Aggregated)
         sub_datasets = []
         if show_replicates and replicate_col and replicate_col in subset.columns:
@@ -473,7 +473,7 @@ def plot_ridgeline_matplotlib(
                   sub_datasets.append(subset[subset[replicate_col] == r])
         else:
              sub_datasets.append(subset)
-        
+
         for ds in sub_datasets:
             x, y = _histogram_curve(ds[channel].values, bins=bins, log_scale=log_scale)
             if x.size == 0:
@@ -490,7 +490,7 @@ def plot_ridgeline_matplotlib(
             if y.size > 0:
                  group_curves.append((x, y))
                  y_max_global = max(y_max_global, float(np.nanmax(y)))
-        
+
         cached_curves.append(group_curves)
 
     if y_max_global <= 0:
@@ -498,7 +498,7 @@ def plot_ridgeline_matplotlib(
 
     # 2. Determine Offsets
     offset_step = y_max_global * offset
-    
+
     # 3. Plot Loops (Single Axis)
     # Iterate Backwards (Top to Bottom) - Painter's Algorithm
     yticks = []
@@ -508,19 +508,19 @@ def plot_ridgeline_matplotlib(
         group = groups[i]
         curves_list = cached_curves[i] # This is a list of (x,y)
         c = palette[i] if n_groups > 1 else palette[0]
-        
+
         # Base Y position
         # First sample at top, last at bottom
         base_y = (n_groups - 1 - i) * offset_step
         yticks.append(base_y)
         label_text = str(group) if group is not None else "All"
         yticklabels.append(label_text)
-        
+
         # zorder: Lower Y (Front) -> Higher Z
         # We start z at high value for top plot.
         # Actually in Painter's algo with fill, we draw from back to front usually?
         # But here we are using fill_between, overlapping.
-        # If we draw top one first (i=0, base_y=high), then draw next (i=1, base_y=lower), 
+        # If we draw top one first (i=0, base_y=high), then draw next (i=1, base_y=lower),
         # the next one might overlap the top one's bottom.
         # Wait, usually we want the "Front" (Lower Y) to cover the "Back" (Higher Y).
         # So we should draw Higher Y first (Back) -> Lower Y last (Front).
@@ -531,47 +531,47 @@ def plot_ridgeline_matplotlib(
         # Standard Ridgeline: The one in 'front' (lower on screen) covers the ones behind it.
         # So i (index) increases -> goes down screen -> should be on top.
         # So z should increase with i.
-        
-        # Current code was: z = (n_groups - i) * 2. 
+
+        # Current code was: z = (n_groups - i) * 2.
         # If i=0 (Top): z = N*2 (High Z).
         # If i=N (Bottom): z = 0 (Low Z).
         # This puts the TOP curve ON TOP of the bottom curve.
         # If the Top curve has a long tail going down, it will cover the peak of the curve below it.
         # Usually Ridgeline is the opposite: Bottom curves cover the tails of Top curves.
         # Let's fix this logic while we are here if it was wrong, or keep consistency.
-        # "First sample on top" was requested. 
+        # "First sample on top" was requested.
         # Usually Ridgelines look like mountains. The closer mountain (lower) covers the further one (higher).
         # So Lower Y (Higher Index) should have Higher Z.
         z_group = (i + 1) * 2 # i=0 -> 2. i=N -> Higher.
-        
+
         # Wait, the user specifically asked "Change order... first sample on top".
         # If I draw Bottom (Last Sample) ON TOP of Top (First Sample), then the Last Sample is "In Front".
         # Okay, I will stick to what seems to be the standard "Mountain" view z-ordering.
         # i increases -> Y decreases -> appearing "closer" -> Higher Z.
-        
+
         # User explicitly requested: "make sure the histograms at the bottom are overlaid on top of histograms above it."
         # i=0 (Top, High Y). i=N-1 (Bottom, Low Y).
         # We want Bottom to cover Top. So Z should increase with i.
-        z_group = i * 2 + 2 
+        z_group = i * 2 + 2
 
-        
+
         # Plot each replicate
         # If multiple replicates, they share the z_group but maybe we tweak slightly or use alpha?
         # If we just overlay them, order doesn't matter much between replicates of same group.
-        
+
         for k, (x, y) in enumerate(curves_list):
             if x.size > 0:
                 y_shifted = y + base_y
-                
+
                 is_replicate_view = (show_replicates and len(curves_list) > 1)
-                
+
                 # If showing replicates, use lower alpha for fill so we can see density
                 # User request: Lower opacity (including outline) to better visualize replicates
                 fill_alpha = 0.25 if is_replicate_view else 0.6
-                
+
                 # User request: Reduce outline width by 1 for both (was 2.0 -> now 1.0)
-                gw = 1.0 
-                
+                gw = 1.0
+
                 # If replicate view, also lower outline alpha to match
                 # Standard view outline is usually solid (alpha=1.0)
                 outline_alpha = 0.6 if is_replicate_view else 1.0
@@ -585,18 +585,18 @@ def plot_ridgeline_matplotlib(
         ax.axhline(base_y, color='gray', linewidth=0.5, alpha=0.3, zorder=-1)
 
     # 4. Axis Configuration
-    
+
     # Y Axis: Show Group Labels
     ax.set_yticks(yticks)
     ax.set_yticklabels(yticklabels)
     ax.tick_params(axis='y', left=False) # Hide ticks
-    
+
     # Clear Spines
     ax.spines['left'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
     ax.grid(False)
-    
+
     # X Axis Setup
     ax.set_xlim(x_min, x_max)
     # Limit calculation: (N-1)*offset + 1.2*height
@@ -607,29 +607,29 @@ def plot_ridgeline_matplotlib(
         ax.set_xscale('log')
         ax.xaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
         ax.xaxis.set_minor_locator(LogLocator(base=10.0, subs=[2, 3, 4, 5, 6, 7, 8, 9], numticks=100))
-        
+
         def log_10_fmt(x, pos):
             if x <= 0: return ""
             log_val = np.log10(x)
             if np.isclose(log_val, np.round(log_val)):
                 return f"$10^{{{int(np.round(log_val))}}}$"
             return ""
-        
+
         ax.xaxis.set_major_formatter(FuncFormatter(log_10_fmt))
         ax.xaxis.set_minor_formatter(NullFormatter())
-    
+
     ax.set_xlabel(channel)
     ax.spines['bottom'].set_visible(True)
     ax.spines['bottom'].set_color('black')
     ax.spines['bottom'].set_linewidth(1.0)
-    
+
     # Ticks style
     ax.tick_params(axis='x', which='major', bottom=True, direction='out', length=6, width=1.2, colors='black', labelbottom=True, pad=5)
     ax.tick_params(axis='x', which='minor', bottom=True, direction='out', length=3, width=0.8, colors='black', labelbottom=False)
-    
+
     # Add vertical line at left boundary
     ax.axvline(x_min, color='black', linewidth=1.0, zorder=1000)
-    
+
     plt.tight_layout()
     return fig, stats_data
 

@@ -8,11 +8,31 @@ st.set_page_config(page_title="Glow Flow Analysis", page_icon="assets/glow_icon.
 # Add parent directory to path to import pipeline modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# Import tab views
+from gating.view import render_gating_tab
+from analysis.view import render_analysis_tab
+from plot.view import render_plot_tab
+from canvas.view import render_canvas_tab
+from compensation.view import render_compensation_tab
+
+# Custom CSS to set sidebar width to 175px (Fixed, no resizing)
+st.markdown(
+    """
+    <style>
+    section[data-testid="stSidebar"] {
+        min-width: 175px !important;
+        max-width: 175px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 try:
     from glow.data_loading.loader import DataLoader
     from glow.gating.manager import GatingManager
-    import cytoflow
-    CYTOFLOW_AVAILABLE = True
+    import importlib.util
+    CYTOFLOW_AVAILABLE = importlib.util.find_spec("cytoflow") is not None
 except ImportError as e:
     st.error(f"Cytoflow or pipeline modules not found: {e}. Running in Mock Mode.")
     CYTOFLOW_AVAILABLE = False
@@ -24,14 +44,6 @@ try:
     from glow.active_learning.storage import ActiveLearningLogger
 except ImportError:
     ActiveLearningLogger = None
-
-# Import tab views
-from gating.view import render_gating_tab
-from analysis.view import render_analysis_tab
-from plot.view import render_plot_tab
-from canvas.view import render_canvas_tab
-from compensation.view import render_compensation_tab
-from gating.ui_file_loader import clear_experiment_state
 
 col1, col2 = st.columns([1, 2.5], vertical_alignment="center")
 with col1:
@@ -54,7 +66,6 @@ if 'cleanup_done' not in st.session_state and DataLoader:
     # Create necessary dirs if missing
     os.makedirs("data/uploaded_raw", exist_ok=True)
     st.session_state.cleanup_done = True
-
 
 # Sidebar Navigation
 st.sidebar.image("assets/glow_icon.png", width=80)

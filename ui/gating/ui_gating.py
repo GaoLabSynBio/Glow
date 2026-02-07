@@ -241,10 +241,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         st.markdown("#### Plot Settings")
                         scale_opt = st.radio("Scale", ["Linear", "Log"], index=1, horizontal=True, key="csv_scale")
                         is_log = (scale_opt == "Log")
-                        
+
                         drag_tool = st.radio("Interaction", ["Pan", "Box Select"], index=0, horizontal=True, key="csv_interaction_mode")
                         drag_mode = "pan" if drag_tool == "Pan" else "select"
-                        
+
                         cmap_selected = st.selectbox("Colormap", ["Viridis", "Plasma"], index=0, key="csv_cmap")
 
                     # --- Helper for Density Plot ---
@@ -946,7 +946,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             fig_val.data = tuple(val_data)
 
                         if st.session_state.get('developer_mode', False):
-                            col_plots.plotly_chart(fig_val, use_container_width=True)
+                            col_plots.plotly_chart(fig_val, width="stretch")
 
                             # Add to Canvas button for Classification Plot
                             canvas_title_val = f"{gating_method} Classification Validation"
@@ -1010,7 +1010,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     param_str = str(sorted(current_gating_params.items()))
                     param_hash = hashlib.md5(param_str.encode()).hexdigest()
 
-                    selection = col_plots.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points" if drag_mode=="pan" else "box", key=f"live_gating_plot_{param_hash}")
+                    selection = col_plots.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode="points" if drag_mode=="pan" else "box", key=f"live_gating_plot_{param_hash}")
 
                     if st.session_state.get('developer_mode', False):
                         canvas_title = "Live/Dead Gating"
@@ -1422,7 +1422,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                             # Buttons Layout: Apply on top, Text in middle, Undo/Exit below
                             col_top_apply = st.columns(1)[0]
-                            apply_clicked = col_top_apply.button("✅ Apply Manual Gate", type="primary", use_container_width=True, key="apply_live_gate_top")
+                            apply_clicked = col_top_apply.button("✅ Apply Manual Gate", type="primary", width="stretch", key="apply_live_gate_top")
 
                             vertices_text = st.text_area("Polygon Vertices (x, y per line)", current_poly_str, height=150, key="manual_live_verts_input")
 
@@ -1717,7 +1717,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             sukey = f"_singlet_{active_line_singlets}" if active_line_singlets else "_singlet_global"
 
                             col_opts, col_plots = st.columns([1, 3])
-                            
+
                             with col_opts:
                                 st.markdown("#### Settings")
                                 d_x = st.selectbox("Area Channel (X)", d_channels, index=idx_a, key=f"dA{sukey}")
@@ -2164,20 +2164,20 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 def _reject_s_callback():
                                                     st.session_state.doublet_manual_mode = True
 
-                                                clicked_accept = col_sa.button("✅ Accept Singlets", key=f"accept_mlp_{sukey}", disabled=is_gated, use_container_width=True, help=f"Accept for {c_type.upper()}")
-                                                
-                                                col_sr.button("❌ Reject / Manual", key=f"reject_mlp_{ukey}", on_click=_reject_s_callback, disabled=is_gated, use_container_width=True)
+                                                clicked_accept = col_sa.button("✅ Accept Singlets", key=f"accept_mlp_{sukey}", disabled=is_gated, width="stretch", help=f"Accept for {c_type.upper()}")
+
+                                                col_sr.button("❌ Reject / Manual", key=f"reject_mlp_{ukey}", on_click=_reject_s_callback, disabled=is_gated, width="stretch")
 
                                                 canvas_title_s = "Singlet Detection"
                                                 if active_line_singlets:
                                                     canvas_title_s += f" ({active_line_singlets})"
-                                                
-                                                if col_sc.button("Add Plot to Canvas", key=f"add_singlet_mlp_gate_{sukey}", use_container_width=True):
+
+                                                if col_sc.button("Add Plot to Canvas", key=f"add_singlet_mlp_gate_{sukey}", width="stretch"):
                                                     mpl_fig = create_canvas_figure(viz_df, d_x, d_y, canvas_title_s, is_log=d_is_log, color_col="Singlet_Cat", color_map=color_map_singlet)
                                                     add_plot_to_canvas(mpl_fig, canvas_title_s)
                                                     st.success("Plot added to canvas!")
                                                     plt.close(mpl_fig)
-                                            
+
                                             if st.session_state.get('developer_mode', False):
                                                 render_uncertainty_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, model_type="singlet")
                                                 render_labeling_controls(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y, selection, plot_df=viz_df, model_type="singlet")
@@ -2414,11 +2414,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         canvas_title_gmm = "Singlet Gating (GMM)"
                                         if active_line_singlets:
                                             canvas_title_gmm += f" ({active_line_singlets})"
-                                        
+
                                         with col_plots:
                                             # Fixed: Render the plot inside the column
-                                            st.plotly_chart(fig_d, use_container_width=True, key=f"singlet_gmm_plot_{ukey}")
-                                            
+                                            st.plotly_chart(fig_d, width="stretch", key=f"singlet_gmm_plot_{ukey}")
+
                                             st.divider() # Separate controls
                                             col_da, col_dr, col_dc = st.columns([1, 1, 1])
 
@@ -2862,14 +2862,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 keep_ch = list(st.session_state.selected_channels)
                                                 to_drop = [c for c in all_ch if c not in keep_ch]
                                                 cols_to_drop = [c for c in to_drop if c in df_export.columns]
-                                                
+
                                                 # --- PROTECT METADATA & MANUALLY ADDED COLUMNS ---
-                                                # Explicitly prevent metadata-like columns from being dropped, 
+                                                # Explicitly prevent metadata-like columns from being dropped,
                                                 # even if they were classified as "channels" (e.g. numeric info).
-                                                protected_names = ["experiment_name", "experiment name", "replicate", "replicates", 
-                                                                   "cell_line", "cell line", "sample", "timepoint", "concentration", 
+                                                protected_names = ["experiment_name", "experiment name", "replicate", "replicates",
+                                                                   "cell_line", "cell line", "sample", "timepoint", "concentration",
                                                                    "condition", "dose", "treatment", "strain", "genotype", "group"]
-                                                
+
                                                 # Include explicit conditions from the Experiment object
                                                 if hasattr(st.session_state.base_experiment, 'conditions'):
                                                     for cond_name in st.session_state.base_experiment.conditions.keys():
@@ -2903,19 +2903,19 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
                                                 # Inject Metadata header
                                                 csv_content = df_export.to_csv(index=False)
-                                                
+
                                                 meta_parts = []
-                                                
+
                                                 # 1. High Res Info
                                                 if hasattr(st.session_state.base_experiment, 'metadata') and st.session_state.base_experiment.metadata.get('is_high_res'):
                                                     scaling_f = st.session_state.base_experiment.metadata.get('scaling_factor', 10000.0)
                                                     meta_parts.append(f"is_high_res=True")
                                                     meta_parts.append(f"scaling_factor={scaling_f}")
-                                                
+
                                                 # 2. Condition Columns (Manual & Auto)
                                                 # Gather all columns that should be treated as conditions
                                                 condition_cols = set()
-                                                
+
                                                 # 2a. From Experiment Definition
                                                 if hasattr(st.session_state.base_experiment, 'conditions'):
                                                     # Cytoflow conditions dict or list
@@ -2924,15 +2924,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                         condition_cols.update(cond_iter.keys())
                                                     else:
                                                         condition_cols.update(cond_iter)
-                                                
+
                                                 # 2b. Known Metadata Columns if present in DF
-                                                known_meta = ["Experiment_Name", "Replicate", "Cell_Line", "Sample", 
-                                                              "Timepoint", "Concentration", "Condition", "Dose", 
+                                                known_meta = ["Experiment_Name", "Replicate", "Cell_Line", "Sample",
+                                                              "Timepoint", "Concentration", "Condition", "Dose",
                                                               "Treatment", "Group", "Genotype"]
                                                 for km in known_meta:
                                                     if km in df_export.columns:
                                                         condition_cols.add(km)
-                                                
+
                                                 # Filter to only what exists in the exported DF
                                                 final_conditions = [c for c in condition_cols if c in df_export.columns]
                                                 if final_conditions:
@@ -2943,7 +2943,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 if meta_parts:
                                                     header_line = f"# GlowMetadata: {', '.join(meta_parts)}\n"
                                                     csv_content = header_line + csv_content
-                                                
+
                                                 zf.writestr(csv_name, csv_content)
 
                                             st.session_state.final_csv_export = buf.getvalue()

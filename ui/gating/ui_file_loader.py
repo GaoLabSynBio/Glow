@@ -4,6 +4,45 @@ import re
 import pandas as pd
 from .ui_metadata import render_metadata_upload_section
 
+def auto_format_replicates(df):
+    """
+    Auto-formats the Replicate column to 'ExperimentName_N'
+    where N is the 1-based index of the replicate for that experiment.
+    """
+    # Ensure columns exist
+    if "Experiment_Name" not in df.columns:
+        return df
+
+    # Track counts for each experiment name
+    exp_counts = {}
+
+    # We iterate by index to preserve order
+    for idx in df.index:
+        # Get Experiment Name safely
+        exp_val = df.at[idx, "Experiment_Name"]
+        if pd.isna(exp_val):
+            exp_name = ""
+        else:
+            exp_name = str(exp_val).strip()
+
+        if not exp_name or exp_name.lower() == "nan":
+            continue
+
+        # Increment count
+        if exp_name not in exp_counts:
+            exp_counts[exp_name] = 0
+        exp_counts[exp_name] += 1
+
+        # Format: ExperimentName_1, ExperimentName_2, etc.
+        # Ensure Replicate column exists (created implicitly if not, but safe to check)
+        if "Replicate" not in df.columns:
+             df["Replicate"] = ""
+
+        # Assign new formatted value
+        df.at[idx, "Replicate"] = f"{exp_name}_{exp_counts[exp_name]}"
+
+    return df
+
 # Helper for Cell Line Detection
 def detect_cell_line_from_path(path):
     if not path:
@@ -25,7 +64,7 @@ class MockExperiment:
     def __init__(self, data, metadata=None):
         self.data = data
         self.metadata = metadata if metadata else {}
-        
+
         # Determine explicit condition columns from Metadata if available
         explicit_conditions = []
         if 'conditions' in self.metadata and self.metadata['conditions']:
@@ -38,23 +77,23 @@ class MockExperiment:
         # Columns that should ALWAYS be treated as Metadata (Conditions), never Channels
         # even if they are numeric.
         force_condition_cols = [
-            'cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate', 
+            'cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate',
             'Sample', 'sample', 'Experiment_Name', 'Experiment Name', 'experiment_name',
             'Replicate', 'replicate', 'Timepoint', 'timepoint', 'Time', 'time',
             'Cell_Line', 'CellLine', 'cell_line', 'Concentration', 'concentration', 'Dose', 'dose',
             'Treatment', 'treatment', 'Condition', 'condition', 'Group', 'group', 'Genotype', 'genotype'
         ]
-        
+
         # Combine forced and explicit
         # normalize explicit to matching columns
         all_metadata_cols = set(force_condition_cols)
         for ec in explicit_conditions:
             if ec in data.columns:
                 all_metadata_cols.add(ec)
-        
+
         # Infer channels (numeric columns not in exclusion list)
         self.channels = [c for c in data.columns if c not in all_metadata_cols and pd.api.types.is_numeric_dtype(data[c])]
-        
+
         # Preserve metadata columns as conditions for plotting and filtering
         # Anything that is NOT a channel is a condition. A column cannot be both.
         # This automatically captures numeric columns that were forced out of channels list.
@@ -114,19 +153,19 @@ def parse_csv_with_metadata(file_obj, **kwargs):
     """
     meta = {}
     is_metadata_line = False
-    
+
     # Try reading first line if seekable
     try:
         if hasattr(file_obj, 'seek') and hasattr(file_obj, 'readline'):
              pos = file_obj.tell()
              line = file_obj.readline()
-             
+
              # Decode bytes if needed
              if isinstance(line, bytes):
                  line_str = line.decode('utf-8', errors='ignore')
              else:
                  line_str = line
-                 
+
              if line_str and line_str.startswith("# GlowMetadata:"):
                  is_metadata_line = True
                  content = line_str.replace("# GlowMetadata:", "").strip()
@@ -141,22 +180,22 @@ def parse_csv_with_metadata(file_obj, **kwargs):
                          elif key == "scaling_factor":
                              try:
                                  meta[key] = float(val)
-                             except:
+                             except Exception:
                                  pass
                          elif key == "conditions":
                              meta['conditions'] = val.split('|')
-             
+
              # If NOT metadata, we must reset
              if not is_metadata_line:
                  file_obj.seek(pos)
              # If IT IS metadata, we leave the pointer ADVANCED so read_csv skips the header line
-    except Exception as e:
+    except Exception:
         # Fallback: try to reset and just read
         try:
             file_obj.seek(0)
-        except:
+        except Exception:
             pass
-            
+
     # Read Data
     df = pd.read_csv(file_obj, **kwargs)
     return df, meta
@@ -283,7 +322,8 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     st.subheader("Metadata Editing")
 
                     if 'working_df_dir' not in st.session_state:
-                         st.session_state.working_df_dir = pd.DataFrame(st.session_state.preview_meta)
+                         df_init = pd.DataFrame(st.session_state.preview_meta)
+                         st.session_state.working_df_dir = auto_format_replicates(df_init)
 
                     # Sync back to preview_meta so upload uses current state
                     if 'working_df_dir' in st.session_state:
@@ -376,18 +416,8 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     # 1. First, SAVE ANY PENDING DATA if any button was clicked
                     if add_col_btn or update_view_btn or confirm_dir:
                          if edited_df is not None:
-                              # Auto-populate Replicate if Experiment Name changed and Replicate did not
-                              old_df = st.session_state.working_df_dir
-                              if "Experiment_Name" in edited_df.columns and "Replicate" in edited_df.columns:
-                                   for idx in edited_df.index:
-                                        if idx in old_df.index:
-                                             new_exp = str(edited_df.at[idx, "Experiment_Name"])
-                                             old_exp = str(old_df.at[idx, "Experiment_Name"]) if "Experiment_Name" in old_df.columns else ""
-                                             new_rep = str(edited_df.at[idx, "Replicate"])
-                                             old_rep = str(old_df.at[idx, "Replicate"]) if "Replicate" in old_df.columns else ""
-
-                                             if new_exp != old_exp and new_rep == old_rep:
-                                                  edited_df.at[idx, "Replicate"] = new_exp
+                              # Auto-format Replicates
+                              edited_df = auto_format_replicates(edited_df)
 
                               st.session_state.working_df_dir.update(edited_df)
 
@@ -475,7 +505,8 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                 if st.session_state.preview_meta:
                     st.subheader("Metadata Editing")
                     if 'working_df' not in st.session_state:
-                         st.session_state.working_df = pd.DataFrame(st.session_state.preview_meta)
+                         df_init = pd.DataFrame(st.session_state.preview_meta)
+                         st.session_state.working_df = auto_format_replicates(df_init)
 
                     # Sync back to preview_meta so upload uses current state
                     if 'working_df' in st.session_state:
@@ -556,18 +587,8 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     # 1. First, SAVE ANY PENDING DATA
                     if add_col_btn or update_view_btn or confirm_upload:
                          if edited_df is not None:
-                              # Auto-populate Replicate if Experiment Name changed and Replicate did not
-                              old_df = st.session_state.working_df
-                              if "Experiment_Name" in edited_df.columns and "Replicate" in edited_df.columns:
-                                   for idx in edited_df.index:
-                                        if idx in old_df.index:
-                                             new_exp = str(edited_df.at[idx, "Experiment_Name"])
-                                             old_exp = str(old_df.at[idx, "Experiment_Name"]) if "Experiment_Name" in old_df.columns else ""
-                                             new_rep = str(edited_df.at[idx, "Replicate"])
-                                             old_rep = str(old_df.at[idx, "Replicate"]) if "Replicate" in old_df.columns else ""
-
-                                             if new_exp != old_exp and new_rep == old_rep:
-                                                  edited_df.at[idx, "Replicate"] = new_exp
+                              # Auto-format Replicates
+                              edited_df = auto_format_replicates(edited_df)
 
                               st.session_state.working_df.update(edited_df)
 

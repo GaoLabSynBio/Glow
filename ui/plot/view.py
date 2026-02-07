@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import copy
 from glow.plotting import plots
 from .base import render_data_selection
@@ -32,7 +31,7 @@ def render_plot_tab():
     if hasattr(experiment, 'metadata') and experiment.metadata.get('is_high_res', False):
          st.warning("High-resolution data detected. Data logic is scaled by default (1/10000).")
          use_raw = st.toggle("Show Raw Values (Unscaled)", value=False, key="plot_show_raw_vals")
-         
+
          if not use_raw:
              scaling_factor = experiment.metadata.get('scaling_factor', 10000.0)
              # Create a safe copy for modification
@@ -46,9 +45,9 @@ def render_plot_tab():
              # Perform Scaling on Channels Only (Fluorophores + Scatter)
              # Instead of excluding specific metadata columns, we target declared channels.
              # This ensures metadata like 'Experiment_Name' or 'Replicate' are never scaled.
-             
+
              target_cols = []
-             
+
              # Get declared channels (measurements)
              # We prefer the explicit .channels property if available (Cytoflow or MockExperiment)
              try:
@@ -56,11 +55,11 @@ def render_plot_tab():
                      declared_channels = list(filtered_experiment.channels)
                  else:
                      declared_channels = plots.get_channels(filtered_experiment)
-             except:
+             except Exception:
                  declared_channels = []
 
              # Extra safety: explicitly exclude Time if it appears in channels
-             STRICT_EXCLUDE_TIME = ['Time', 'time', 'Time (ms)', 'Time (s)'] 
+             STRICT_EXCLUDE_TIME = ['Time', 'time', 'Time (ms)', 'Time (s)']
 
              for c in declared_channels:
                  if c in filtered_experiment.data.columns and c not in STRICT_EXCLUDE_TIME:
@@ -125,7 +124,7 @@ def render_plot_tab():
     facet_var = None
 
     # Scale is now handled inside individual UIs, default placeholder here
-    scale = 'log' 
+    scale = 'log'
 
     # 4. Delegate to specific sub-modules
     if plot_type == "1D Histogram":

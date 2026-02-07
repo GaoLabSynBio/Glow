@@ -15,21 +15,21 @@ def calc_log_limits(data_series):
     # Filter valid positive values
     valid = data_series[data_series > 0]
     if len(valid) == 0:
-        return None, None
-        
+        return None
+
     min_val = valid.min()
     # floor log10
     base_exponent = np.floor(np.log10(min_val))
-    
+
     # "minimal 10^0"
     final_exponent = max(0, base_exponent)
-    
+
     low = 10**final_exponent
     high = 10**(final_exponent + 5)
-    
+
     return low, high
 
-def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_col=None, hue_col=None, xscale='log', yscale='log', batch_size=1000, show_dots=True, show_dots_summary=None, show_grid=False):
+def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_col=None, hue_col=None, xscale='log', yscale='log', batch_size=1000, show_dots=True, show_dots_summary=None, show_grid=False, merged_figsize=(5, 5)):
     """
     Plots a row of 2D plots (one per facet).
     Overlays running means:
@@ -37,6 +37,12 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
     - Ghost lines for other facets (faint, for comparison).
     Adapted from user provided 'annotate_2d_density_with_running_mean'.
     """
+    # Heuristic for legend scaling based on summary figure size (fixed 5x5 currently)
+    # If we want it to be "dynamic", we assume 5x5 is the "standard" size.
+    # Legend is separate.
+    legend_font_size = 14
+    legend_marker_scale = 1.5
+
     if show_dots_summary is None:
         show_dots_summary = show_dots
 
@@ -61,11 +67,18 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
         facets = ["All Data"]
 
     n_facets = len(facets)
+
+    max_cols = 5
+    n_cols = min(n_facets, max_cols)
+    n_rows = (n_facets + n_cols - 1) // n_cols
+
     # Use constrained_layout or tight_layout
     # Defaut to 300px (3 inches) for individual plots
-    fig, axs = plt.subplots(1, n_facets, figsize=(3 * n_facets, 3), constrained_layout=True, sharex=True, sharey=True)
+    fig, axs = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3 * n_rows), constrained_layout=True, sharex=True, sharey=True)
 
-    if n_facets == 1:
+    if n_rows * n_cols > 1:
+        axs = axs.flatten()
+    else:
         axs = [axs]
 
     # 2. Determine Hues (Lines within each facet)
@@ -81,14 +94,14 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
     # Color Palette per Color Category: Distinct Hues, Excluding Greens
     n_needed = len(unique_colors) if len(unique_colors) > 0 else 1
-    
+
     # Generate a large pool to pick from (HUSL for perceptual uniformity)
     n_pool = max(50, n_needed * 5)
-    pool_palette = sns.color_palette("husl", n_pool) 
-    
+    pool_palette = sns.color_palette("husl", n_pool)
+
     valid_colors = []
     for c in pool_palette:
-        h, l, s = colorsys.rgb_to_hls(*c)
+        h, b, s = colorsys.rgb_to_hls(*c)
         valid_colors.append(c)
 
     # Select indices maximizing distance
@@ -106,13 +119,13 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
     else:
         selection = sns.color_palette("bright", n_needed)
 
-    # Apply brightness/saturation tweaks 
+    # Apply brightness/saturation tweaks
     for c in selection:
-         h, l, s = colorsys.rgb_to_hls(*c)
+         h, b, s = colorsys.rgb_to_hls(*c)
          # Slightly brighten and ensure high saturation as requested
-         new_l = min(0.85, max(0.5, l * 1.1)) 
+         new_l = min(0.85, max(0.5, b * 1.1))
          # Increase saturation slightly but cap at 1.0
-         new_s = min(1.0, max(0.6, s * 1.2)) 
+         new_s = min(1.0, max(0.6, s * 1.2))
          safe_palette.append(colorsys.hls_to_rgb(h, new_l, new_s))
 
     color_map = {h: safe_palette[i] for i, h in enumerate(unique_colors)}
@@ -152,7 +165,7 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
             else:
                 # Treat as single group
                 replicate_subgroups.append(("All", exp_subset))
-            
+
             # Determine base color and label based on hue_col
             if hue_col and hue_col in df.columns:
                 h_val = exp_subset[hue_col].iloc[0]
@@ -169,11 +182,11 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
                 if len(subset_df) < (batch_size // 5):
                     continue
-                
+
                 # Calculate Color Variation (Lightness Shift)
                 final_color = base_color
                 label = base_label
-                
+
                 if n_reps > 1:
                     label = f"{base_label} (Rep {rep_name})"
                     try:
@@ -214,7 +227,7 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
     # 4. Pre-calculate Summary Traces (For Merged Plot - Pooled Replicates)
     summary_traces = []
-    
+
     summary_group_col = hue_col if hue_col else exp_col
     # If no hue and no experiment column found? Rare, but default to whole DF
     if not summary_group_col:
@@ -222,18 +235,18 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
     else:
         # Sort to ensure consistent color mapping
         sum_groups = sorted(df[summary_group_col].unique())
-        
+
     for g_val in sum_groups:
         if g_val is None:
             g_df = df
         else:
             g_df = df[df[summary_group_col] == g_val]
-        
+
         if len(g_df) < (batch_size // 5):
             continue
-        
+
         if hue_col:
-            base_color = color_map.get(g_val, 'black') 
+            base_color = color_map.get(g_val, 'black')
         else:
             # When grouping by experiment (no Hue), assign distinct colors cyclically from safe palette
             if safe_palette and sum_groups:
@@ -243,15 +256,15 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
         # Calculate Rolling Mean on POOLED data (all replicates)
         g_df_sorted = g_df.sort_values(by=x_channel)
-        
+
         eff_batch = batch_size
         if len(g_df_sorted) < eff_batch:
             eff_batch = max(5, int(len(g_df_sorted) * 0.1))
-        
+
         roller = g_df_sorted.rolling(window=eff_batch, min_periods=eff_batch//2, center=True)
         roll_x = roller[x_channel].mean()
         roll_y = roller[y_channel].mean()
-        
+
         summary_traces.append({
             'x': roll_x,
             'y': roll_y,
@@ -262,6 +275,10 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
     # 4. Plotting Loop
     for i, ax in enumerate(axs):
+        if i >= n_facets:
+            ax.set_visible(False)
+            continue
+
         current_facet = facets[i]
         ax.set_title(str(current_facet))
 
@@ -313,17 +330,27 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
         # Axis scales/labels
         if xscale == 'log':
             ax.set_xscale('log')
-            if x_lims: ax.set_xlim(x_lims)
+            if x_lims:
+                ax.set_xlim(x_lims)
         if yscale == 'log':
             ax.set_yscale('log')
-            if y_lims: ax.set_ylim(y_lims)
-        ax.set_xlabel(x_channel)
+            if y_lims:
+                ax.set_ylim(y_lims)
+
+        # Only show xlabel on bottom-most plot in column (handle ragged grid)
+        if i + n_cols >= n_facets:
+            ax.set_xlabel(x_channel)
+            ax.tick_params(labelbottom=True)
+
+        # Only show ylabel on left-most plot in row
+        if i % n_cols == 0:
+            ax.set_ylabel(y_channel)
 
 
     # 5. Create Separate Summary Figure
     # Default to 500px (5 inches) for merged plot
-    fig_summary, ax_sum = plt.subplots(figsize=(5, 5))
-    ax_sum.set_title("Merged Comparison")
+    fig_summary, ax_sum = plt.subplots(figsize=merged_figsize)
+    ax_sum.set_title("Merged")
 
     if show_dots_summary:
          # For summary, maybe just sample randomly from everything?
@@ -360,7 +387,7 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
     # De-duplicate legend to show unique Hues or group names
     handles, labels = ax_sum.get_legend_handles_labels()
-    
+
     legend_args = None
     legend_kwargs = {}
 
@@ -378,27 +405,32 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
                   seen.add(base_l)
         if clean_handles:
              legend_args = (clean_handles, clean_labels)
-             legend_kwargs = {'title': hue_col, 'loc': 'center left', 'fontsize': 'small'}
+             legend_kwargs = {'title': hue_col, 'loc': 'center left', 'fontsize': legend_font_size, 'markerscale': legend_marker_scale}
     else:
         by_label = dict(zip(labels, handles))
         if by_label:
             legend_args = (by_label.values(), by_label.keys())
-            legend_kwargs = {'loc': 'center left', 'fontsize': 'small'}
+            legend_kwargs = {'loc': 'center left', 'fontsize': legend_font_size, 'markerscale': legend_marker_scale}
 
     # Separate Legend Figure
     fig_legend = None
     if legend_args:
         # Create a separate figure for the legend
-        # Shrink size significantly (approx half width/height logic)
+        # Scale figure size based on font/marker scale?
+        # Default font size is ~10pt. If user sets 5, box should shrink.
+        scale_factor = (legend_font_size / 10.0) * legend_marker_scale
+
         n_items = len(legend_args[0])
-        fig_h = max(1.0, n_items * 0.2)
-        fig_legend = plt.figure(figsize=(1.5, fig_h))
+        fig_h = max(1.0, n_items * 0.2 * scale_factor)
+        fig_w = 1.5 * scale_factor
+
+        fig_legend = plt.figure(figsize=(fig_w, fig_h))
         fig_legend.patch.set_alpha(0.0)
-        
-        # Enforce smaller font for compact legend
-        legend_kwargs['fontsize'] = 'x-small'
+
+        # Enforce fontsize
+        legend_kwargs['fontsize'] = legend_font_size
         if 'title_fontsize' not in legend_kwargs:
-             legend_kwargs['title_fontsize'] = 'x-small'
+             legend_kwargs['title_fontsize'] = legend_font_size
 
         # Use fig.legend to place it centered or filling the figure
         # We put it at center of figure
@@ -406,10 +438,12 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
     if xscale == 'log':
         ax_sum.set_xscale('log')
-        if x_lims: ax_sum.set_xlim(x_lims)
+        if x_lims:
+            ax_sum.set_xlim(x_lims)
     if yscale == 'log':
         ax_sum.set_yscale('log')
-        if y_lims: ax_sum.set_ylim(y_lims)
+        if y_lims:
+            ax_sum.set_ylim(y_lims)
     ax_sum.set_xlabel(x_channel)
     ax_sum.set_ylabel(y_channel)
 
@@ -418,7 +452,7 @@ def plot_2d_density_with_running_means(experiment, x_channel, y_channel, facet_c
 
     return fig, fig_summary, fig_legend
 
-def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xscale='log', yscale='log', show_trend=False, show_dots=True, show_dots_summary=None, show_grid=False, title=None, figsize=(4, 4)):
+def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xscale='log', yscale='log', show_trend=False, show_dots=True, show_dots_summary=None, show_grid=False, title=None, figsize=(4, 4), merged_figsize=(5, 5)):
     """
     Wrapper decision maker for 2D plots.
     """
@@ -434,7 +468,8 @@ def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xsca
             batch_size=1000,
             show_dots=show_dots,
             show_dots_summary=show_dots_summary,
-            show_grid=show_grid
+            show_grid=show_grid,
+            merged_figsize=merged_figsize
         )
 
     # Otherwise standard scatter
@@ -453,11 +488,13 @@ def plot_2d_scatter(experiment, x_channel, y_channel, hue=None, facet=None, xsca
     if log_x:
         ax.set_xscale('log')
         x_lims = calc_log_limits(df[x_channel])
-        if x_lims: ax.set_xlim(x_lims)
+        if x_lims:
+            ax.set_xlim(x_lims)
     if log_y:
         ax.set_yscale('log')
         y_lims = calc_log_limits(df[y_channel])
-        if y_lims: ax.set_ylim(y_lims)
+        if y_lims:
+            ax.set_ylim(y_lims)
 
     if title:
         ax.set_title(title)

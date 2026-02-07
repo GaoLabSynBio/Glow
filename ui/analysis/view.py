@@ -446,7 +446,7 @@ def render_analysis_tab():
                 st.markdown("#### Hist Parameters")
                 # Use a key to prevent reset issues, though usually fine
                 selected_channel = st.selectbox("Select X-Axis Channel", valid_channels, key="analysis_channel_select")
-            
+
             if selected_channel:
                 # B. Sample Selection for Visualization
                 sample_list = full_df['Sample'].unique().tolist()
@@ -474,7 +474,7 @@ def render_analysis_tab():
                         st.markdown("#### Axis & Overlay")
                         use_log = st.checkbox("Log Scale Plot", value=True)
                         use_ridgeline = st.checkbox("Ridgeline Mode", value=True)
-                        
+
                         ridgeline_offset = 0.6
                         if use_ridgeline:
                              ridgeline_offset = st.slider("Offset", 0.1, 2.0, 0.6, 0.1)
@@ -824,7 +824,7 @@ def render_analysis_tab():
                         # Enable box selection
                         # Add unique KEY to prevent state leakage
                         with col_plots:
-                             st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
+                             st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
 
                              _, col_add = st.columns([3, 1])
                              if col_add.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
@@ -865,7 +865,7 @@ def render_analysis_tab():
                                                          r, g, b = nums[0]/255.0, nums[1]/255.0, nums[2]/255.0
                                                          # Force RGB tuple to ensure no alpha compounding issues with fill_between
                                                          color = (r, g, b)
-                                                 except:
+                                                 except Exception:
                                                      pass
 
                                              if use_ridgeline:
@@ -873,7 +873,7 @@ def render_analysis_tab():
                                                  y_norm = y_vals
                                                  if np.max(y_norm) > 0:
                                                      y_norm = y_norm / np.max(y_norm)
-                                                 
+
                                                  base_y = i * ridgeline_offset
                                                  y_shifted = y_norm + base_y
 
@@ -899,13 +899,13 @@ def render_analysis_tab():
 
                                  if use_log:
                                      mpl_ax.set_xscale('log')
-                                 
+
                                  if use_ridgeline:
                                      # Remove ticks and labels for cleaner ridgeline
                                      mpl_ax.set_yticks([])
                                      mpl_ax.set_yticklabels([])
                                      mpl_ax.set_ylabel("") # Remove 'Sample' label too
-                                     
+
                                      mpl_ax.set_title(f"Ridgeline Plot: {selected_channel} (Subset: {parent_gate})", pad=40)
                                      # Adjust y-limit to show top plot
                                      total_height = (len(selected_samples) - 1) * ridgeline_offset + 1.2
@@ -1088,14 +1088,14 @@ def render_analysis_tab():
                                      # Histogram-based density (use logicle for negative-safe transform)
                                      dx_calc = logicle_transform(arr_x) if use_log else arr_x
                                      dy_calc = logicle_transform(arr_y) if use_log else arr_y
-                                     
+
                                      # Calculate density using percentile range to avoid outlier squeeze
                                      rx = [np.percentile(dx_calc, 0.5), np.percentile(dx_calc, 99.5)]
                                      ry = [np.percentile(dy_calc, 0.5), np.percentile(dy_calc, 99.5)]
-                                     
+
                                      # Improved Density Resolution: More bins + Gaussian Smoothing
                                      H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=300, range=[rx, ry])
-                                     H = gaussian_filter(H, sigma=2) 
+                                     H = gaussian_filter(H, sigma=2)
 
                                      # Digitize needs to handle full range, values outside will clip to edge bins
                                      x_bins = np.digitize(dx_calc, xedges) - 1
@@ -1309,7 +1309,7 @@ def render_analysis_tab():
                                      lbl_suffix = f"{sel_x}/{sel_y} Combined"
 
                                  lbl = f"{parent_gate} -> {lbl_suffix}" if parent_gate!='Singlets' else lbl_suffix
-                                 
+
                                  final_tx = curr_tx
                                  final_ty = curr_ty
                                  if apply_scaling and scaling_factor != 1.0:
@@ -1343,7 +1343,7 @@ def render_analysis_tab():
                 sel_x = st.selectbox("X Channel", valid_channels, key="poly_x")
                 idx_y = 1 if len(valid_channels) > 1 else 0
                 sel_y = st.selectbox("Y Channel", valid_channels, index=idx_y, key="poly_y")
-                
+
                 sample_list = full_df['Sample'].unique().tolist()
                 def_samp = [sample_list[0]] if sample_list else []
                 sel_samps = st.multiselect("Samples", sample_list, default=def_samp, key="poly_samp")
@@ -1375,7 +1375,7 @@ def render_analysis_tab():
                         st.markdown("#### Settings")
                         use_log = st.checkbox("Log Scale", value=True, key="poly_log")
                         show_density = st.checkbox("Show Density", value=True, key="poly_density")
-                    
+
                     if use_log:
                         pos_mask = (arr_x > 0) & (arr_y > 0)
                         arr_x_p = arr_x[pos_mask]
@@ -1436,14 +1436,14 @@ def render_analysis_tab():
                                 # Histogram-based density (use logicle for negative-safe transform)
                                 dx_calc = logicle_transform(arr_x) if use_log else arr_x
                                 dy_calc = logicle_transform(arr_y) if use_log else arr_y
-                                
+
                                 # Calculate density using percentile range
                                 rx = [np.percentile(dx_calc, 0.5), np.percentile(dx_calc, 99.5)]
                                 ry = [np.percentile(dy_calc, 0.5), np.percentile(dy_calc, 99.5)]
-                                
+
                                 # Improved Density Resolution: More bins + Gaussian Smoothing
                                 H, xedges, yedges = np.histogram2d(dx_calc, dy_calc, bins=300, range=[rx, ry])
-                                H = gaussian_filter(H, sigma=2) 
+                                H = gaussian_filter(H, sigma=2)
 
                                 x_bins = np.digitize(dx_calc, xedges) - 1
                                 y_bins = np.digitize(dy_calc, yedges) - 1
@@ -1468,7 +1468,7 @@ def render_analysis_tab():
                             plot_x = plot_x[sort_idx]
                             plot_y = plot_y[sort_idx]
                             plot_density = plot_density[sort_idx]
-                            
+
                             marker_dict = dict(
                                 size=6,
                                 opacity=0.5,
@@ -1603,7 +1603,7 @@ def render_analysis_tab():
                         if len(verts) >= 3:
                              if st.button("Create Gate"):
                                   lbl = f"{parent_gate} -> {sel_x}:{sel_y} Poly" if parent_gate!='Singlets' else f"{sel_x}:{sel_y} Poly"
-                                  
+
                                   final_verts = verts
                                   if apply_scaling and scaling_factor != 1.0:
                                       final_verts = []

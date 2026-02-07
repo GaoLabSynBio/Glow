@@ -31,11 +31,11 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     # Sync old state if exists
     if 'bar_gates' in st.session_state and 'bar_plot_local_gates' not in st.session_state:
             st.session_state['bar_plot_local_gates'] = st.session_state.bar_gates
-    
+
     local_gates, analysis_gates_to_apply = render_gating_component(filtered_experiment, channels, key_prefix="bar_plot")
-    
+
     # Sync back for legacy access
-    st.session_state.bar_gates = local_gates 
+    st.session_state.bar_gates = local_gates
 
     # Create split view: Options (Left), Plot (Right)
     col_opts, col_plot = st.columns([1, 3])
@@ -62,20 +62,20 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
             st.info(f"Grouping by **{hue_var}**")
         else:
             hue_var = st.selectbox("Group By (X-Axis)", conditions)
-        
+
         if hue_var:
             all_groups = sorted(filtered_experiment.data[hue_var].unique())
-            
+
             # Use columns for layout in wider area
             gc1, gc2 = st.columns([3, 1])
-            
-            with gc1: 
+
+            with gc1:
                 selected_groups = st.multiselect("Select Groups to Plot", all_groups, default=all_groups)
             with gc2:
                 st.write("") # Spacer to align checkbox
                 st.write("")
                 manual_order = st.checkbox("Manual Group Order", value=False)
-            
+
             final_order = selected_groups
 
             if manual_order and selected_groups:
@@ -91,9 +91,9 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     with col_opts:
         # --- Channel & Statistics (Stacked vertically, no columns to squeeze) ---
         st.markdown("#### Plot Settings")
-        
+
         selected_channel = st.selectbox("Output Channel (Y-axis)", channels)
-        
+
         # Default to t-test (uncorrected)
         selected_correction = "t-test"
 
@@ -108,9 +108,9 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 # Stacked UI for narrow column
                 vis_groups = sorted(selected_groups)
                 if len(vis_groups) >= 2:
-                    g1 = st.selectbox("Group 1", vis_groups, key="g1")
-                    g2 = st.selectbox("Group 2", vis_groups, key="g2")
-                    
+                    st.selectbox("Group 1", vis_groups, key="g1")
+                    st.selectbox("Group 2", vis_groups, key="g2")
+
                     def add_pair_callback():
                         p1 = st.session_state.get('g1')
                         p2 = st.session_state.get('g2')
@@ -134,7 +134,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     # Show as a table
                     comp_df = pd.DataFrame(st.session_state.bar_comparisons, columns=["Group 1", "Group 2"])
                     st.dataframe(comp_df, hide_index=True, width="stretch")
-                    
+
                     def clear_comps_callback():
                         st.session_state.bar_comparisons = []
 
@@ -142,19 +142,19 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                         pass
 
                 comparisons = st.session_state.bar_comparisons
-            
+
             # --- Correction Logic inside Comparisons Section ---
             st.markdown("###### Significance Correction")
-            
+
             # Calculate state
             num_comps = len(st.session_state.get('bar_comparisons', []))
             is_correction_disabled = num_comps < 2
-            
+
             if is_correction_disabled:
                  correction_options = ["t-test (None)"]
             else:
                  correction_options = ["Bonferroni Correction", "FDR (Benjamini-Hochberg)"]
-            
+
             c_method = st.selectbox(
                 "Method",
                 correction_options,
@@ -162,7 +162,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 help="Applies multiple testing correction to p-values. Requires at least 2 comparisons.",
                 key="multi_corr_method"
             )
-            
+
             if is_correction_disabled:
                  st.caption("Correction disabled (Define ≥2 comparisons).")
                  selected_correction = "t-test"
@@ -176,7 +176,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
         # --- Style Settings ---
         st.markdown("#### Style Settings")
-        
+
         # Stacked options to avoid squeezing
         # Keys added to persist state across reruns (e.g. when adding gates)
         show_dist = st.checkbox("Show Distributions", value=True, key="bar_style_show_dist")
@@ -185,7 +185,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
         font_size = st.number_input("Font Size", min_value=6, max_value=30, value=12, key="bar_style_font_size")
         step_fraction = st.slider("Bracket Spacing", 0.05, 0.30, 0.10, 0.01, help="Vertical distance between significance brackets.", key="bar_style_spacing")
-        
+
         error_bar_type = st.selectbox("Error Bar", ["SEM", "SD", "None"], index=0, key="bar_style_error_bar")
         error_bar_val = error_bar_type.lower() if error_bar_type != "None" else None
 
@@ -222,15 +222,15 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                 try:
                     # --- Gating Application ---
                     all_applied_gates = local_gates + analysis_gates_to_apply
-                    
+
                     # Apply Gates (Filtering + Scaling)
                     filtered_df, processed_gates = apply_gates_to_dataframe(
-                        filtered_experiment.data, 
-                        all_applied_gates, 
-                        experiment_metadata=getattr(filtered_experiment, 'metadata', None), 
+                        filtered_experiment.data,
+                        all_applied_gates,
+                        experiment_metadata=getattr(filtered_experiment, 'metadata', None),
                         show_raw=st.session_state.get('plot_show_raw_vals', False)
                     )
-                    
+
                     if filtered_df.empty:
                         st.warning("No events remain after applying gates. Please adjust your gates.")
                         return
@@ -280,7 +280,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     # --- Export CSV Logic ---
                     st.divider()
                     st.markdown("#### Export Stats")
-                    
+
                     # Calculate applied gate strings using processed gates
                     gate_descriptions = []
                     for gate in processed_gates:
@@ -289,37 +289,37 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                          # Check direction? apply_gates_to_dataframe might have stripped it, or not?
                          # It returns original dict with potentially modified threshold
                          if isinstance(th, (tuple, list)) and len(th) == 2:
-                             gate_descriptions.append(f"{ch} {th[0]:.1f}-{th[1]:.1f}") 
+                             gate_descriptions.append(f"{ch} {th[0]:.1f}-{th[1]:.1f}")
                          else:
                              # Simplified description
                              gate_descriptions.append(f"{ch} > {th:.1f}" if gate.get('direction') == 'positive' else f"{ch} < {th:.1f}")
-                    
+
                     gates_applied_str = "; ".join(gate_descriptions) if gate_descriptions else "None"
-                    
+
                     # 2. Determine Grouping Columns
                     # Priority: Sample, Experiment, Replicate
                     group_candidates = ['Sample', 'Experiment_Name', 'Experiment Name', replicate_col]
                     actual_group_cols = [c for c in group_candidates if c and c in filtered_df.columns]
-                    
+
                     # Ensure hue_var is included if it's grouping the bars
                     if hue_var and hue_var in filtered_df.columns and hue_var not in actual_group_cols:
                         actual_group_cols.append(hue_var)
-                        
+
                     # Remove duplicates while preserving order
                     actual_group_cols = list(dict.fromkeys(actual_group_cols))
-                    
+
                     if actual_group_cols:
                         # compute mean
                         summary_df = filtered_df.groupby(actual_group_cols)[selected_channel].mean().reset_index()
                         summary_df.rename(columns={selected_channel: f"Mean_{selected_channel}"}, inplace=True)
-                        
+
                         # Add metadata
                         summary_df['Gates_Applied'] = gates_applied_str
-                        
+
                         # Reorder Columns: Group keys, then Mean, then Gates
                         final_cols = actual_group_cols + [f"Mean_{selected_channel}", "Gates_Applied"]
                         summary_df = summary_df[final_cols]
-                        
+
                         # Export
                         csv_data = summary_df.to_csv(index=False)
                         st.download_button(

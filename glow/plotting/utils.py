@@ -3,6 +3,7 @@ import numpy as np
 from scipy import stats
 from typing import Any, cast
 import importlib.util
+from glow.utils import safe_log10
 try:
     import statsmodels.stats.multitest as mt
 except ImportError:
@@ -69,37 +70,38 @@ def filter_experiment(experiment, condition, values):
     except Exception:
         # Fallback to a simple container
         class SimpleExp:
-            def __init__(self, d, orig=None): 
+            def __init__(self, d, orig=None):
                 self.data = d
                 self._orig = orig
-            
+
             @property
-            def channels(self): 
+            def channels(self):
                 # Try to inherit from original experiment to ensure consistency
                 if self._orig and hasattr(self._orig, 'channels'):
                     return [c for c in self._orig.channels if c in self.data.columns]
-                    
+
                 # Robust fallback: Numeric but NOT Boolean (excludes flags like 'cells')
                 # Also exclude common metadata names explicitly in case they are numeric (e.g. Replicates)
                 excludes = ['cells', 'singlets', 'Is_Live', 'Is_Singlet', 'LiveGate', 'SingletGate',
                             'Replicate', 'replicate', 'Experiment_Name', 'Experiment Name', 'Time', 'time',
                             'Concentration', 'Timepoint', 'Group', 'group']
-                            
-                return [c for c in self.data.columns if pd.api.types.is_numeric_dtype(self.data[c]) 
+
+                return [c for c in self.data.columns if pd.api.types.is_numeric_dtype(self.data[c])
                         and not pd.api.types.is_bool_dtype(self.data[c])
                         and c not in excludes]
 
             @property
-            def conditions(self): 
+            def conditions(self):
                 # Try to inherit
                 if self._orig and hasattr(self._orig, 'conditions'):
                     return self._orig.conditions
-                    
-                return {c: "category" for c in self.data.columns if c not in self.channels}
-                
-        return SimpleExp(subset_df, orig=experiment)
 
-from glow.utils import safe_log10
+                return {c: "category" for c in self.data.columns if c not in self.channels}
+
+            def clone(self):
+                return SimpleExp(self.data.copy(), orig=self._orig)
+
+        return SimpleExp(subset_df, orig=experiment)
 
 def get_point_density(x, y, bins=100, log_x=False, log_y=False):
     """
@@ -110,7 +112,7 @@ def get_point_density(x, y, bins=100, log_x=False, log_y=False):
     # We use safe checking via safe_log10 implicitly if we wanted, but to keep logic similar:
     # If we use safe_log10, it returns NaNs for <= 0.
     # But we want to filter them out for histogram2d.
-    
+
     # Original logic explicitly removed delicate values.
     # Let's keep the explicit filter as it's efficient for histogram2d which needs clean data.
     if log_x:

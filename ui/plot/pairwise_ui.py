@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-import copy
 from typing import Literal, cast
 from glow.canvas.functions import add_plot_to_canvas
 from .gating_component import render_gating_component, apply_gates_to_dataframe
@@ -15,7 +14,7 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
     local_gates, analysis_gates_to_apply = render_gating_component(experiment, channels, key_prefix="pairwise_plot")
 
     col_opts, col_plot = st.columns([1, 3])
-    
+
     with col_opts:
         st.markdown("### Configuration")
 
@@ -37,7 +36,7 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
             hue_options.append("Sample")
 
         selected_hue = st.selectbox("Group/Color", hue_options, index=0)
-        
+
         # Scale Selector
         scale = st.selectbox("Scale", ["log", "linear"], index=0, help="Axis scale transformation.")
 
@@ -71,7 +70,7 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
         # Logic Process (Between columns or inside one? Better inside plot column or conditional)
         if st.session_state.get('run_pairwise_gen'):
             st.session_state.run_pairwise_gen = False
-            
+
             if len(selected_channels) < 2:
                 st.error("Please select at least 2 channels.")
                 if plot_key in st.session_state:
@@ -81,14 +80,14 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
                     try:
                         # Apply Gates (Filtering + Scaling)
                         all_applied_gates = local_gates + analysis_gates_to_apply
-                        
+
                         filtered_df, processed_gates = apply_gates_to_dataframe(
-                            experiment.data, 
-                            all_applied_gates, 
-                            experiment_metadata=getattr(experiment, 'metadata', None), 
+                            experiment.data,
+                            all_applied_gates,
+                            experiment_metadata=getattr(experiment, 'metadata', None),
                             show_raw=st.session_state.get('plot_show_raw_vals', False)
                         )
-                        
+
                         if filtered_df.empty:
                             st.warning("No events remain after applying gates. Please adjust your gates.")
                             # Stop execution of the plot generation block
@@ -98,7 +97,7 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
 
                         if processed_gates:
                             st.write(f"Applying {len(processed_gates)} filters...")
-                        
+
                         # Prepare Data
                         df = filtered_df
 
