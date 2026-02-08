@@ -22,6 +22,11 @@ tests/test_data/
 active_learning_data/
 real_data*
 real_training_data*
+bundle_repo.py
+check_glow_utils.py
+codebase_dump.txt
+pyproject.toml
+pytest.ini
 synthetic_training_data*
 gating_model_full.pkl.base
 singlet_model_full.pkl.base
