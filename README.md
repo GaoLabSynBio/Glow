@@ -1,6 +1,6 @@
 <img src="assets/glow_icon_breath.svg" width="300" alt="Glow Icon" />
 
-A user-friendly flow analysis pipeline with a clean user-friendly UI and active learning capabilities.
+A flow analysis pipeline with a clean user-friendly UI and active learning capabilities.
 (We are actively collecting data from various machines and updating this repository for compatibility. If you encounter any data issues, please open an issue on GitHub.)
 
 ## Overview
