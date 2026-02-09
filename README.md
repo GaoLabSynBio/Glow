@@ -26,7 +26,7 @@ For Windows and Mac users, a standalone app will be provided—no manual install
 
 ## Usage
 
-You can check out our demo video through youtube link https://youtu.be/d6pQYoGVG6
+You can check out our demo video through youtube link https://youtu.be/d6pQYoGVG68
 
 ### 1. Starting the Application
 
