@@ -1,6 +1,7 @@
 <img src="assets/glow_icon_breath.svg" width="300" alt="Glow Icon" />
 
 A user-friendly flow analysis pipeline with pretty UI and Active Learning capabilities.
+(We are actively collecting data from various machines and updating the repository for compatibility. If you encounter any data issues, please open an issue on GitHub.)
 
 ## Overview
 
@@ -25,6 +26,8 @@ For Windows and Mac users, a standalone app will be provided—no manual install
 
 ## Usage
 
+You can check out our demo video through youtube link https://youtu.be/d6pQYoGVG68
+
 ### 1. Starting the Application
 
 #### Linux
@@ -41,7 +44,7 @@ Run the provided `.exe` application (no command line required).
 
 #### Mac
 
-Run the provided app bundle (no command line required).
+Run the provided Electron app bundle (no command line required).
 
 ### 2. Workflow
 
@@ -101,5 +104,5 @@ Glow provides a canvas feature where you can customize the appearance of your pl
 
 ## Acknowledgements
 
-* **Eerik**: For developing the foundational pipeline that served as the base for Glow's upgrades.
+* **Eerik Kaseniit**: For developing the foundational pipeline that served as the base for Glow's upgrades.
 * **Gao Lab Members**: Special thanks to all Gao Lab members for advice, feedback, and for sharing the testing data used to refine the models.
