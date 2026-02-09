@@ -204,13 +204,15 @@ def apply_gates_to_dataframe(df, gates, experiment_metadata=None, show_raw=False
     if experiment_metadata and experiment_metadata.get('is_high_res', False):
          scaling_factor = experiment_metadata.get('scaling_factor', 10000.0)
          
-         # Determine Data State
-         # In Glow, if 'is_high_res' is True, the data is loaded and immediately Scaled in place (utils.py).
-         # Therefore, the DataFrame is physically Scaled.
-         # We prioritize the 'is_scaled' flag if present, but default to True if 'is_high_res' is set,
-         # because standard Glow workflow enforces scaling.
-         is_data_scaled = experiment_metadata.get('is_scaled', True)
-
+         # Determine Data State based on "Show Raw" toggle
+         # If user selected "Show Raw", the plot data is Raw.
+         # If user selected "Scaled" (default, show_raw=False), the plot data is Scaled.
+         
+         if show_raw:
+             is_data_scaled = False
+         else:
+             is_data_scaled = True
+             
     # 2. Process and Apply Gates
     from glow.gating.geometry import points_in_polygon
     

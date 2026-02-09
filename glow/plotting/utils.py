@@ -73,7 +73,15 @@ def filter_experiment(experiment, condition, values):
             def __init__(self, d, orig=None):
                 self.data = d
                 self._orig = orig
+                self.metadata = getattr(orig, 'metadata', {}).copy() if orig else {}
 
+            def clone(self):
+                # Simple clone that preserves metadata
+                new_inst = SimpleExp(self.data.copy(), self._orig)
+                if hasattr(self, 'metadata'):
+                    new_inst.metadata = self.metadata.copy()
+                return new_inst
+            
             @property
             def channels(self):
                 # Try to inherit from original experiment to ensure consistency

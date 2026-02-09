@@ -282,7 +282,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     st.error(f"Error loading CSV: {e}")
 
     elif upload_option == "Enter Directory Path":
-        input_dir = st.text_input("Enter absolute path to directory containing .fcs files", "/home/xwz/Projects/Flow/flow-data/dhy_20251001_fcs/")
+        input_dir = st.text_input("Enter absolute path to directory containing .fcs files", "")
 
         if st.button("Scan Directory"):
             if CYTOFLOW_AVAILABLE:

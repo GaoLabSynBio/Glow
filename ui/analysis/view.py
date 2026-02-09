@@ -913,7 +913,6 @@ def render_analysis_tab():
                                      mpl_ax.set_yticklabels([])
                                      mpl_ax.set_ylabel("") # Remove 'Sample' label too
 
-                                     mpl_ax.set_title(f"Ridgeline Plot: {selected_channel} (Subset: {parent_gate})", pad=40)
                                      # Adjust y-limit to show top plot
                                      total_height = (len(selected_samples) - 1) * ridgeline_offset + 1.2
                                      mpl_ax.set_ylim(bottom=0, top=total_height)
