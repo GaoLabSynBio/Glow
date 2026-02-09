@@ -44,7 +44,7 @@ Run the provided `.exe` application (no command line required).
 
 #### Mac
 
-Run the provided app bundle (no command line required).
+Run the provided Electron app bundle (no command line required).
 
 ### 2. Workflow
 
@@ -104,5 +104,5 @@ Glow provides a canvas feature where you can customize the appearance of your pl
 
 ## Acknowledgements
 
-* **Eerik**: For developing the foundational pipeline that served as the base for Glow's upgrades.
+* **Eerik Kaseniit**: For developing the foundational pipeline that served as the base for Glow's upgrades.
 * **Gao Lab Members**: Special thanks to all Gao Lab members for advice, feedback, and for sharing the testing data used to refine the models.
