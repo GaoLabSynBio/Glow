@@ -1,27 +1,12 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
-import importlib
-import io
 import copy
-import warnings
 from glow.plotting import utils, categorical
 from glow.canvas.functions import add_plot_to_canvas
+from common.widgets import download_svg_button as download_btn
+from common.errors import show_error
 from .gating_component import render_gating_component, apply_gates_to_dataframe
-
-def download_btn(fig, key):
-    buf = io.BytesIO()
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
-        fig.savefig(buf, format="svg", bbox_inches="tight")
-    buf.seek(0)
-    st.download_button(
-         label="Download SVG",
-         data=buf.getvalue(),
-         file_name=f"{key}.svg",
-         mime="image/svg+xml",
-         key=f"dl_{key}"
-    )
 
 def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
     """
@@ -48,20 +33,24 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         # Move Grouping Settings Here (Detailed Options)
         st.markdown("### Grouping Configuration")
 
-        # Force Group By to Experiment_Name/Sample if possible, as requested
-        target_group_cols = ["Experiment_Name", "Experiment Name", "Sample", "sample"]
-        found_group_col = None
-        for t in target_group_cols:
-            if t in conditions:
-                found_group_col = t
+        # Group By is fully user-selectable. We default to the experiment/sample
+        # column when present (the most common choice), but the user can group by
+        # ANY available condition (Cell Line, Treatment, Dose, timepoint, ...).
+        preferred_group_cols = ["Experiment_Name", "Experiment Name", "Sample", "sample"]
+        default_group_idx = 0
+        for pref in preferred_group_cols:
+            if pref in conditions:
+                default_group_idx = conditions.index(pref)
                 break
 
-        if found_group_col:
-            hue_var = found_group_col
-            # Show as info but allow override via checkbox? For now stick to logic
-            st.info(f"Grouping by **{hue_var}**")
+        if conditions:
+            hue_var = st.selectbox(
+                "Group By (X-Axis)", conditions, index=default_group_idx,
+                help="Choose which metadata column defines the groups on the X-axis.",
+            )
         else:
-            hue_var = st.selectbox("Group By (X-Axis)", conditions)
+            st.warning("No grouping conditions are available for this dataset.")
+            hue_var = None
 
         if hue_var:
             all_groups = sorted(filtered_experiment.data[hue_var].unique())
@@ -101,6 +90,13 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
         comparisons = []
         if hue_var and selected_groups:
             st.markdown("#### Comparisons")
+            has_replicate = any(str(c).lower() == 'replicate' for c in filtered_experiment.data.columns)
+            if not has_replicate:
+                st.caption(
+                    "⚠️ No **Replicate** column detected, so significance can't be computed "
+                    "(each group is treated as n=1). Brackets will show fold change only. "
+                    "Add a Replicate column in the metadata to enable statistics."
+                )
             with st.expander("Add Comparisons"):
                 if 'bar_comparisons' not in st.session_state:
                     st.session_state.bar_comparisons = []
@@ -214,10 +210,6 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
             st.session_state.bar_generated = True
 
         if st.session_state.get('bar_generated'):
-            # reload to get latest backend changes
-            importlib.reload(utils)
-            importlib.reload(categorical)
-
             with st.spinner("Generating plots..."):
                 try:
                     # --- Gating Application ---
@@ -333,4 +325,9 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                         st.warning("Could not determine grouping columns for export.")
 
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    show_error(
+                        "Could not generate the bar plot.",
+                        cause="the selected channel, grouping, or gates may leave no valid data",
+                        fix="try a different Output Channel, widen your gates, or turn off Log Scale if the data has no positive values",
+                        exc=e,
+                    )

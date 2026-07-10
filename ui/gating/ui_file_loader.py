@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import re
 import pandas as pd
+from glow import paths as glow_paths
 from .ui_metadata import render_metadata_upload_section
 
 def auto_format_replicates(df):
@@ -140,7 +141,7 @@ def clear_experiment_state():
     # Full wipe
     reset_live_gating()
 
-    for key in ['base_experiment', 'analysis_experiment',
+    for key in ['base_experiment', 'analysis_experiment', 'gating_complete',
                 'fixed_gate_params', 'positive_gates', 'threshold_gate',
                 'selected_channels', 'persistent_selected_channels']:
         if key in st.session_state:
@@ -459,7 +460,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                     clean_m[clean_k] = v
                                 sanitized_meta_list.append(clean_m)
 
-                            loaded_files = loader.process_files(sanitized_meta_list, output_dir="processed_fcs_ui")
+                            loaded_files = loader.process_files(sanitized_meta_list, output_dir=str(glow_paths.processed_dir()))
                             st.session_state.loaded_files = loaded_files
                             st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
                             st.write("Loaded Metadata Example:", pd.DataFrame(loaded_files).head())
@@ -478,7 +479,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                 if CYTOFLOW_AVAILABLE:
                     loader = DataLoader()
                     with st.spinner("Saving uploaded files..."):
-                        saved_paths = loader.save_uploaded_files(uploaded_files, target_dir="data/uploaded_raw", folder_name=upload_folder_name)
+                        saved_paths = loader.save_uploaded_files(uploaded_files, folder_name=upload_folder_name)
 
                     st.session_state.uploaded_paths = saved_paths
                     st.success(f"Saved {len(saved_paths)} files to folder '{upload_folder_name}'.")
@@ -629,7 +630,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                     clean_m[clean_k] = v
                                 sanitized_meta_list.append(clean_m)
 
-                            loaded_files = loader.process_files(sanitized_meta_list, output_dir="processed_fcs_ui")
+                            loaded_files = loader.process_files(sanitized_meta_list, output_dir=str(glow_paths.processed_dir()))
                             st.session_state.loaded_files = loaded_files
                             st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
 

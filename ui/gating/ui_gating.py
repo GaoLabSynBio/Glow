@@ -8,6 +8,8 @@ from glow.canvas.functions import add_plot_to_canvas
 from .ui_file_loader import reset_live_gating, reset_singlet_gating
 import matplotlib.pyplot as plt
 from glow.utils import safe_log10, logicle_transform
+from common.errors import show_error
+from glow import paths as glow_paths
 
 
 def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
@@ -35,7 +37,7 @@ def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
 
             if gate['type'] == 'mlp':
                 try:
-                    clf = SingletClassifier.load("data/singlet_model_full.pkl")
+                    clf = SingletClassifier.load(str(glow_paths.model_path("singlet_model_full.pkl")))
                     channels = gate.get('diff_channels', gate.get('channels', []))
                     if not channels:
                         continue
@@ -404,10 +406,38 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                          st.session_state.has_precomputed_compensation = True
                          st.toast(f"Detected {len(comp_cols)} compensated channels in dataset.", icon="ℹ️")
 
+                     # Warn about mixed panels (channels absent from some files).
+                     meta = getattr(st.session_state.base_experiment, 'metadata', None) or {}
+                     partial = meta.get('partial_channels')
+                     if partial:
+                         shown = ", ".join(map(str, partial[:8])) + (" …" if len(partial) > 8 else "")
+                         st.warning(
+                             f"⚠️ Mixed panels: {len(partial)} channel(s) are missing from some "
+                             f"files and are left blank (not zero) there: {shown}. "
+                             "Gating on the shared FSC/SSC channels is unaffected, but per-channel "
+                             "stats will only use files that measured each channel."
+                         )
+
         # We work with base_experiment for channel selection
         base_exp = st.session_state.base_experiment
 
         if base_exp:
+            with st.expander("🔓 Not locked — redo gating or edit metadata", expanded=False):
+                st.caption(
+                    "Nothing here is locked. To fix metadata, edit it in the **File Loading & "
+                    "Metadata** section above and click *Confirm and Load* again. To gate again, "
+                    "reset the Live/Dead and Singlet decisions below — your loaded files are kept."
+                )
+                if st.button(
+                    "↩️ Redo gating (keep loaded files)", key="redo_gating_btn",
+                    help="Clears accepted Live/Dead and Singlet gates so you can gate again.",
+                ):
+                    reset_live_gating()
+                    for _k in ('gating_complete', 'analysis_experiment'):
+                        st.session_state.pop(_k, None)
+                    st.toast("Gating reset — you can gate again.", icon="↩️")
+                    st.rerun()
+
             col_opts, col_plots = st.columns([1, 3])
 
             with col_opts:
@@ -2568,7 +2598,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                         st.rerun()
 
                                     except Exception as e:
-                                        st.error(f"Error in Singlet Gating: {e}")
+                                        show_error(
+                                            "Singlet gating failed.",
+                                            cause="the selected channels (e.g. FSC-A vs FSC-H) may be missing or the auto-model may not fit this data",
+                                            fix="check the singlet channel selection, or switch to manual polygon selection",
+                                            exc=e,
+                                        )
                         if st.session_state.get('doublets_removed'):
                             # Stats for Singlets
                             st.success("Doublets Removed.")
@@ -2756,7 +2791,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             elif s_params and s_params.get("type") == "mlp":
                                                 try:
                                                     from glow.active_learning.models import SingletClassifier
-                                                    clf = SingletClassifier.load("data/singlet_model_full.pkl")
+                                                    clf = SingletClassifier.load(str(glow_paths.model_path("singlet_model_full.pkl")))
                                                     X = df_export[s_params["diff_channels"]].values
                                                     if np.max(X) > 10:
                                                         # Use logicle transform to handle negative values from compensation
@@ -2802,7 +2837,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     elif gate['type'] == 'mlp':
                                                         try:
                                                             from glow.active_learning.models import SingletClassifier
-                                                            clf = SingletClassifier.load("data/singlet_model_full.pkl")
+                                                            clf = SingletClassifier.load(str(glow_paths.model_path("singlet_model_full.pkl")))
                                                             X_s = df_export.loc[subset_idxs, gate['diff_channels']].values
                                                             if np.max(X_s) > 10:
                                                                 # Use logicle transform to handle negative values from compensation
@@ -3062,7 +3097,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             elif s_params.get("type") == "mlp":
                                                 try:
                                                     from glow.active_learning.models import SingletClassifier
-                                                    clf = SingletClassifier.load("data/singlet_model_full.pkl")
+                                                    clf = SingletClassifier.load(str(glow_paths.model_path("singlet_model_full.pkl")))
                                                     X = full_exp.data[s_params["diff_channels"]].values
                                                     if np.max(X) > 10:
                                                         # Use logicle transform to handle negative values from compensation
@@ -3096,7 +3131,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                      elif gate['type'] == 'mlp':
                                                          try:
                                                              from glow.active_learning.models import SingletClassifier
-                                                             clf = SingletClassifier.load("data/singlet_model_full.pkl")
+                                                             clf = SingletClassifier.load(str(glow_paths.model_path("singlet_model_full.pkl")))
                                                              X_s = full_exp.data.loc[subset_idxs, gate['diff_channels']].values
                                                              if np.max(X_s) > 10:
                                                                  # Use logicle transform to handle negative values from compensation
@@ -3161,17 +3196,26 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             st.session_state.run_compensation = False
                                             st.session_state.current_tab = "Analysis"
 
-                                        # Optimize Cache: Clear raw files now that we have analysis_experiment
-                                        if DataLoader:
-                                            DataLoader.clear_upload_cache()
+                                        # NOTE: We intentionally keep the raw uploaded files
+                                        # so the user can return to the Gating tab and redo
+                                        # gating later. Use "Start New Experiment" to clear.
 
                                         st.rerun()
 
                                     except Exception as e:
-                                        st.error(f"Error preparing analysis: {e}")
+                                        show_error(
+                                            "Could not prepare the gated data for analysis.",
+                                            cause="the gating results or channel selection may be inconsistent",
+                                            fix="try re-running the Live/Dead and Singlet steps, or reset gating and start over",
+                                            exc=e,
+                                        )
 
                 except Exception as e:
-                    st.write(e) # Debug
+                    show_error(
+                        "Something went wrong in the gating workflow.",
+                        fix="try resetting gating (expander above) or reloading your files",
+                        exc=e,
+                    )
 
 
         else:
@@ -3181,8 +3225,5 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
             st.success("Mock Auto-Gating Complete!")
         else:
             st.error("Failed to create experiment.")
-    elif not CYTOFLOW_AVAILABLE:
-        st.success("Mock Auto-Gating Complete!")
-        st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/FlowCytometry_scatter_plot.svg/1200px-FlowCytometry_scatter_plot.svg.png", caption="Mock Output", width=300)
     else:
         st.warning("Please load files first.")

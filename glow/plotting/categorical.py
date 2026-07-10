@@ -3,10 +3,13 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 from .utils import adjust_pvalues, get_significance_label
+from ..logging_config import get_logger
 
-def plot_means_with_significance(experiment, channel, group_by, comparisons=[], statistic='mean',
+log = get_logger("plotting.categorical")
+
+def plot_means_with_significance(experiment, channel, group_by, comparisons=None, statistic='mean',
                                hue_order=None, show_distribution=True, replicate_col=None,
-                               log_scale=False, annotation_cols=[], correction_method='t-test',
+                               log_scale=False, annotation_cols=None, correction_method='t-test',
                                use_bars=False, font_size=12, bracket_spacing=0.15,
                                gates=None, gate_channel=None, gate_threshold=None,
                                error_bar='sem'):
@@ -16,6 +19,10 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
     gates: List of dicts [{'channel': str, 'threshold': (low, high) or float}]
     error_bar: 'sem', 'sd', or None
     """
+    if comparisons is None:
+        comparisons = []
+    if annotation_cols is None:
+        annotation_cols = []
     df = experiment.data
 
     # 1. Prepare Data (Gating)
@@ -23,7 +30,7 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
 
     # Handle multiple gates
     if gates:
-        print(f"DEBUG: Applying {len(gates)} gates to Bar Plot")
+        log.debug("Applying %d gates to bar plot", len(gates))
         for i, gate in enumerate(gates):
             ch = gate.get('channel')
             th = gate.get('threshold')
@@ -38,7 +45,7 @@ def plot_means_with_significance(experiment, channel, group_by, comparisons=[], 
                         plot_df = plot_df[plot_df[ch] < th]
                     else:
                         plot_df = plot_df[plot_df[ch] > th]
-                print(f"DEBUG: Gate {i} ({ch}) reduced points from {before} to {len(plot_df)}")
+                log.debug("Gate %d (%s) reduced points from %d to %d", i, ch, before, len(plot_df))
 
     # Backward compatibility for single gate
     if gate_channel and gate_threshold is not None:

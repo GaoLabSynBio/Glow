@@ -5,10 +5,13 @@ import numpy as np
 import pandas as pd
 
 class ActiveLearningLogger:
-    def __init__(self, storage_dir="data/active_learning_data"):
+    def __init__(self, storage_dir=None):
+        if storage_dir is None:
+            from .. import paths as glow_paths
+            storage_dir = str(glow_paths.user_data_dir() / "active_learning_data")
         self.storage_dir = storage_dir
         if not os.path.exists(self.storage_dir):
-            os.makedirs(self.storage_dir)
+            os.makedirs(self.storage_dir, exist_ok=True)
 
     def log_gate_feedback(self, sample_name, cell_line, x_channel, y_channel, gate_type, gate_params, user_decision):
         """

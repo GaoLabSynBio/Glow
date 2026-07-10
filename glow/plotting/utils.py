@@ -4,10 +4,13 @@ from scipy import stats
 from typing import Any, cast
 import importlib.util
 from glow.utils import safe_log10
+from glow.logging_config import get_logger
 try:
     import statsmodels.stats.multitest as mt
 except ImportError:
     mt = None
+
+log = get_logger("plotting.utils")
 
 # Try to import cytoflow, but don't fail if not present
 if importlib.util.find_spec("cytoflow") is not None:
@@ -295,5 +298,5 @@ def adjust_pvalues(p_values, method='t-test'):
         _, pvals_corrected, _, _ = mt.multipletests(p_values, method=m)
         return pvals_corrected
     except Exception as e:
-        print(f"Error in p-value adjustment: {e}")
+        log.warning("Error in p-value adjustment: %s", e)
         return p_values

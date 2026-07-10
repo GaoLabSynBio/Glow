@@ -3,6 +3,10 @@ import shutil
 import numpy as np
 from .storage import ActiveLearningLogger
 from .models import GatingClassifier, SingletClassifier
+from .. import paths as glow_paths
+from ..logging_config import get_logger
+
+log = get_logger("active_learning.learner")
 
 class ActiveLearner:
     """
@@ -11,9 +15,12 @@ class ActiveLearner:
     2. Queries for uncertain samples.
     3. Updates the model with new user feedback.
     """
-    def __init__(self, storage_dir="data/active_learning_data", model_path="data/gating_model_full.pkl", model_type="gating"):
-        self.storage_dir = storage_dir
-        self.model_path = model_path
+    def __init__(self, storage_dir=None, model_path=None, model_type="gating"):
+        self.storage_dir = storage_dir or str(glow_paths.user_data_dir() / "active_learning_data")
+        # Default to the model matching model_type (previously always defaulted to
+        # the gating model, which silently loaded the wrong model for singlets).
+        default_model = "singlet_model_full.pkl" if model_type == 'singlet' else "gating_model_full.pkl"
+        self.model_path = model_path or str(glow_paths.model_path(default_model))
         self.model_type = model_type
 
         # Select Class
@@ -25,7 +32,7 @@ class ActiveLearner:
         # Ensure backup exists for reset functionality
         self.backup_path = self.model_path + ".base"
         if os.path.exists(self.model_path) and not os.path.exists(self.backup_path):
-            print(f"Creating base backup at {self.backup_path}")
+            log.info("Creating base backup at %s", self.backup_path)
             shutil.copy2(self.model_path, self.backup_path)
 
         self.logger = ActiveLearningLogger(storage_dir)

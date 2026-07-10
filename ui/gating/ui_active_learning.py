@@ -2,31 +2,35 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import importlib
-import glow.active_learning.learner
 from glow.active_learning.learner import ActiveLearner
+from glow.logging_config import get_logger
+from glow import paths
+from common.errors import show_error
+
+log = get_logger("ui.active_learning")
 
 def get_active_learner(model_type='gating'):
     key = f"active_learner_{model_type}"
 
-    # Ensure module is up to date if we are relying on recent changes
-    # importlib.reload(glow.active_learning.learner)
-
     if key not in st.session_state:
-        print(f"Initializing ActiveLearner for {model_type}")
-        model_path = "data/gating_model_full.pkl" if model_type == 'gating' else "data/singlet_model_full.pkl"
+        log.info("Initializing ActiveLearner for %s", model_type)
+        model_file = "gating_model_full.pkl" if model_type == 'gating' else "singlet_model_full.pkl"
+        model_path = str(paths.model_path(model_file))
         try:
              st.session_state[key] = ActiveLearner(model_path=model_path, model_type=model_type)
         except Exception as e:
-             st.error(f"Failed to load ActiveLearner for {model_type}: {e}")
+             show_error(
+                 f"Could not load the {model_type} model for active learning.",
+                 cause="the bundled model file may be missing or incompatible",
+                 fix="reinstall/redownload the app so the model files under data/ are present",
+                 exc=e,
+             )
              return None
 
-    # Auto-heal check (optional, can be removed if stable)
+    # Auto-heal: if a stale instance is cached, rebuild from the current class.
     learner = st.session_state[key]
     if not hasattr(learner, 'reset_model'):
-        importlib.reload(glow.active_learning.learner)
-        from glow.active_learning.learner import ActiveLearner as NewActiveLearner
-        st.session_state[key] = NewActiveLearner(model_path=learner.model_path, model_type=learner.model_type)
+        st.session_state[key] = ActiveLearner(model_path=learner.model_path, model_type=learner.model_type)
 
     return st.session_state[key]
 

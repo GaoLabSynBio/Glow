@@ -7,6 +7,11 @@ import zipfile
 import pyarrow.parquet as pq
 import numpy as np
 
+from ..logging_config import get_logger
+from .. import paths as glow_paths
+
+log = get_logger("loader")
+
 class ParquetBatchLoader:
     def __init__(self, file_path, batch_size=100000, columns=None, row_group_indices=None):
         self.file_path = file_path
@@ -55,7 +60,9 @@ class DataLoader:
     def _natural_sort_key(self, text):
         return [int(c) if c.isdigit() else c.lower() for c in re.split('([0-9]+)', str(text))]
 
-    def save_uploaded_files(self, uploaded_files, target_dir="data/uploaded_raw", folder_name=None):
+    def save_uploaded_files(self, uploaded_files, target_dir=None, folder_name=None):
+        if target_dir is None:
+            target_dir = str(glow_paths.uploads_dir())
         if folder_name:
             folder_name = "".join(x for x in folder_name if (x.isalnum() or x in "._-"))
             target_dir = os.path.join(target_dir, folder_name)
@@ -73,16 +80,35 @@ class DataLoader:
         saved_paths.sort(key=self._natural_sort_key)
         return saved_paths
 
-    def save_uploaded_folder_zip(self, uploaded_zip, target_dir="data/uploaded_raw_zip"):
+    @staticmethod
+    def _safe_extract(zip_ref, target_dir):
+        """Extract a zip while rejecting members that would escape target_dir.
+
+        Guards against the "Zip Slip" path-traversal attack, where an archive
+        entry named e.g. ``../../evil`` writes outside the intended directory.
+        """
+        dest_root = os.path.realpath(target_dir)
+        for member in zip_ref.namelist():
+            member_path = os.path.realpath(os.path.join(target_dir, member))
+            if member_path != dest_root and not member_path.startswith(dest_root + os.sep):
+                raise ValueError(f"Unsafe path in zip archive (path traversal): {member!r}")
+        zip_ref.extractall(target_dir)
+
+    def save_uploaded_folder_zip(self, uploaded_zip, target_dir=None):
+        if target_dir is None:
+            target_dir = str(glow_paths.user_data_dir() / "uploaded_raw_zip")
         if os.path.exists(target_dir):
             shutil.rmtree(target_dir) # Clean up previous uploads
         os.makedirs(target_dir, exist_ok=True)
 
         try:
             with zipfile.ZipFile(uploaded_zip, 'r') as zip_ref:
-                zip_ref.extractall(target_dir)
+                self._safe_extract(zip_ref, target_dir)
         except zipfile.BadZipFile:
-            print("Error: Invalid zip file")
+            log.error("Invalid zip file uploaded")
+            return []
+        except ValueError as e:
+            log.error("Rejected unsafe zip archive: %s", e)
             return []
 
         saved_paths = []
@@ -97,7 +123,7 @@ class DataLoader:
     def scan_directory(self, directory_path):
         paths = []
         if not os.path.isdir(directory_path):
-            print(f"Directory not found: {directory_path}")
+            log.warning("Directory not found: %s", directory_path)
             return paths
 
         for root, dirs, files in os.walk(directory_path):
@@ -110,17 +136,19 @@ class DataLoader:
         return paths
 
     @staticmethod
-    def clear_upload_cache(target_dir="data/uploaded_raw"):
+    def clear_upload_cache(target_dir=None):
         """
         Clears the upload cache directory to free up space.
         """
+        if target_dir is None:
+            target_dir = str(glow_paths.uploads_dir())
         if os.path.exists(target_dir):
             try:
                 shutil.rmtree(target_dir)
                 os.makedirs(target_dir, exist_ok=True)
-                print(f"Cache cleared: {target_dir}")
+                log.info("Cache cleared: %s", target_dir)
             except Exception as e:
-                print(f"Failed to clear cache {target_dir}: {e}")
+                log.warning("Failed to clear cache %s: %s", target_dir, e)
 
     def parse_file_paths_from_text(self, file_path_list_file):
         paths = []
@@ -138,7 +166,7 @@ class DataLoader:
                     if os.path.exists(path):
                         paths.append({'path': path, 'name': custom_name})
                     else:
-                        print(f"Warning: File not found at {path}")
+                        log.warning("File not found at %s", path)
 
         paths.sort(key=lambda x: self._natural_sort_key(x['path']))
 
@@ -201,7 +229,7 @@ class DataLoader:
                     shutil.copy2(original, dest_path)
                     final_path = dest_path
                 except Exception as e:
-                    print(f"Error copying {original}: {e}")
+                    log.error("Error copying %s: %s", original, e)
 
             # Sanitize metadata keys immediately upon loading/processing
             sanitized_meta = {}
@@ -241,7 +269,7 @@ class DataLoader:
 
         max_vals = experiment.data[numeric_cols].max()
         if (max_vals > threshold).any():
-            print("Detected high-resolution data. Tagging metadata.")
+            log.info("Detected high-resolution data. Tagging metadata.")
             new_meta = experiment.metadata.copy() if experiment.metadata else {}
             new_meta['is_high_res'] = True
             new_meta['scaling_factor'] = 10000.0
@@ -254,7 +282,7 @@ class DataLoader:
             metadata_list = self.loaded_files_metadata
 
         if not metadata_list:
-            print("No files to load.")
+            log.info("No files to load.")
             return None
 
         internal_keys = ['original_path', 'current_path', 'path', 'display_name', 'condition']
@@ -270,7 +298,7 @@ class DataLoader:
                      clean_key = self.sanitize_key(key)
                      all_condition_keys.add(clean_key)
 
-        print(f"DEBUG: All Condition Keys: {all_condition_keys}")
+        log.debug("All condition keys: %s", all_condition_keys)
 
         import_conditions_schema = {}
         for key in all_condition_keys:
@@ -308,7 +336,7 @@ class DataLoader:
                 tube = cytoflow.Tube(file=meta['current_path'], conditions=tube_conditions)
                 tubes.append(tube)
             except Exception as e:
-                print(f"Failed to create Tube for {meta.get('current_path')}: {e}")
+                log.error("Failed to create Tube for %s: %s", meta.get('current_path'), e)
 
         # Modified Loading Logic: Handle disjoint channels by unioning per-tube Experiments
         if tubes:
@@ -321,7 +349,7 @@ class DataLoader:
                 # Check for channel mismatch error or generic CytoflowOpError
                 msg = str(e)
                 if "doesn't have the same channels" in msg or "CytoflowOpError" in str(type(e)):
-                    print(f"Standard import failed ({msg}). Attempting manual channel union...")
+                    log.info("Standard import failed (%s). Attempting manual channel union...", msg)
 
                     # Manual Union Strategy
                     loaded_dfs = []
@@ -354,17 +382,34 @@ class DataLoader:
                                     # For channels, we assume metadata (voltage etc) is acceptable from the first source
 
                         except Exception as e_inner:
-                            print(f"Error loading individual tube {tube.file}: {e_inner}")
+                            log.error("Error loading individual tube %s: %s", tube.file, e_inner)
 
                     if not loaded_dfs:
                         return None
 
-                    # Concatenate all (Columns will be unioned, missing values -> NaN)
+                    # Concatenate all tubes; disjoint columns become NaN where absent.
+                    per_tube_cols = [set(d.columns) for d in loaded_dfs]
                     combined_df = pd.concat(loaded_dfs, axis=0, ignore_index=True, sort=False)
 
-                    # Fill missing numeric channels with 0.0
-                    numeric_cols = combined_df.select_dtypes(include=[np.number]).columns
-                    combined_df[numeric_cols] = combined_df[numeric_cols].fillna(0.0)
+                    # Identify channels missing from at least one tube. We deliberately
+                    # keep these as NaN instead of fabricating 0.0: filling with zero
+                    # invents a dense artificial population at the origin that corrupts
+                    # gating and statistics. NaN is skipped by aggregates and excluded by
+                    # the ``value > 0`` filters used in plotting. We record coverage so the
+                    # UI can warn the user about mixed panels.
+                    partial_channels = sorted(
+                        str(c) for c in combined_df.columns
+                        if pd.api.types.is_numeric_dtype(combined_df[c])
+                        and any(c not in cols for cols in per_tube_cols)
+                    )
+                    if partial_channels:
+                        log.warning(
+                            "Mixed panels detected: %d channel(s) are absent from some "
+                            "files and will be NaN there (not 0): %s",
+                            len(partial_channels), ", ".join(partial_channels),
+                        )
+                        combined_metadata = dict(combined_metadata)
+                        combined_metadata["partial_channels"] = partial_channels
 
                     # Create unified experiment manually
                     try:
@@ -373,7 +418,7 @@ class DataLoader:
                         unified_experiment.metadata = combined_metadata
                         return self._detect_and_tag_high_res(unified_experiment)
                     except Exception as e_final:
-                         print(f"Failed to create unified experiment: {e_final}")
+                         log.error("Failed to create unified experiment: %s", e_final)
                          return None
                 else:
                     # Propagate other errors

@@ -202,9 +202,3 @@ class GatingManager:
                                  keep=keep,
                                  sigma=sigma)
         return strategy.apply(experiment)
-
-    def filter_by_condition(self, experiment, condition_name, value):
-        """
-        Filters the experiment.
-        """
-        pass

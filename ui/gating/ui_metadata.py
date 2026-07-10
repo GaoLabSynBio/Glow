@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from glow.data_loading.metadata_parser import parse_metadata_file
+from common.errors import show_error
 
 def render_metadata_upload_section(key_prefix="", reset_keys=None):
     """
@@ -243,7 +244,9 @@ def render_metadata_upload_section(key_prefix="", reset_keys=None):
                     st.error("Header row index out of bounds.")
 
             except Exception as e:
-                st.error(f"Error reading/merging file: {e}")
-                # Print traceback to terminal for debugging
-                import traceback
-                traceback.print_exc()
+                show_error(
+                    "Could not read or merge the metadata file.",
+                    cause="the Header Row / Data Start Row settings may be wrong, or the join keys may not match",
+                    fix="check the Parse Settings above and make sure the selected key columns exist on both sides",
+                    exc=e,
+                )

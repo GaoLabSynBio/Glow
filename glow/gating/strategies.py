@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple, cast
 import warnings
 from glow.utils import safe_log10
+from glow import paths as glow_paths
 
 # Suppress Cytoflow PnR vs PnB warning (common in commercial FCS)
 warnings.filterwarnings("ignore", message="The data range .* doesn't match the data bits")
@@ -421,9 +422,9 @@ class MLPGating(AutomaticGating):
     """
     MLP-based gating using a pre-trained neural network.
     """
-    def __init__(self, name: str, channels: List[str], model_path: str = "data/gating_model_full.pkl", outlier_detector: Optional[OutlierDetector] = None, cell_type: str = "colo"):
+    def __init__(self, name: str, channels: List[str], model_path: str = None, outlier_detector: Optional[OutlierDetector] = None, cell_type: str = "colo"):
         super().__init__(name, channels, outlier_detector)
-        self.model_path = model_path
+        self.model_path = model_path or str(glow_paths.model_path("gating_model_full.pkl"))
         self.cell_type = cell_type
 
     def apply(self, experiment):
@@ -431,9 +432,8 @@ class MLPGating(AutomaticGating):
         import os
 
         if not os.path.exists(self.model_path):
-             # Fallback or Error?
-             # Check if we can find it in the generic path
-             self.model_path = "data/gating_model_full.pkl"
+             # Fallback to the bundled model resolved relative to the package.
+             self.model_path = str(glow_paths.model_path("gating_model_full.pkl"))
              if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"MLP Model not found at {self.model_path}")
 
@@ -480,9 +480,9 @@ class MLPSingletGating(AutomaticGating):
     """
     MLP-based singlet gating using a pre-trained neural network.
     """
-    def __init__(self, name: str, channels: List[str], model_path: str = "data/singlet_model_full.pkl", outlier_detector: Optional[OutlierDetector] = None, cell_type: str = "colo"):
+    def __init__(self, name: str, channels: List[str], model_path: str = None, outlier_detector: Optional[OutlierDetector] = None, cell_type: str = "colo"):
         super().__init__(name, channels, outlier_detector)
-        self.model_path = model_path
+        self.model_path = model_path or str(glow_paths.model_path("singlet_model_full.pkl"))
         self.cell_type = cell_type
 
     def apply(self, experiment):
@@ -490,7 +490,7 @@ class MLPSingletGating(AutomaticGating):
         import os
 
         if not os.path.exists(self.model_path):
-             self.model_path = "data/singlet_model_full.pkl"
+             self.model_path = str(glow_paths.model_path("singlet_model_full.pkl"))
              if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"Singlet Model not found at {self.model_path}")
 

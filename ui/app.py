@@ -1,12 +1,19 @@
-import streamlit as st
 import os
 import sys
 
-# Set page config must be the first streamlit command
-st.set_page_config(page_title="Glow Flow Analysis", page_icon="assets/glow_icon.png", layout="wide")
-
-# Add parent directory to path to import pipeline modules
+# Make the repo root importable so ``import glow`` works regardless of the
+# current working directory (e.g. when launched from a packaged app bundle).
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import streamlit as st
+from glow import paths as glow_paths
+
+# Set page config must be the first streamlit command
+st.set_page_config(
+    page_title="Glow Flow Analysis",
+    page_icon=str(glow_paths.asset_path("glow_icon.png")),
+    layout="wide",
+)
 
 # Import tab views
 from gating.view import render_gating_tab
@@ -14,6 +21,7 @@ from analysis.view import render_analysis_tab
 from plot.view import render_plot_tab
 from canvas.view import render_canvas_tab
 from compensation.view import render_compensation_tab
+from common import session as glow_session
 
 # Custom CSS to set sidebar width to 175px (Fixed, no resizing)
 st.markdown(
@@ -47,7 +55,7 @@ except ImportError:
 
 col1, col2 = st.columns([1, 2.5], vertical_alignment="center")
 with col1:
-    st.image("assets/glow_icon_breath.svg", width=500)
+    st.image(str(glow_paths.asset_path("glow_icon_breath.svg")), width=500)
 with col2:
     st.markdown('<h1 style="padding-top: 0px; position: relative; top: 1px;">   Flow Analysis Pipeline</h1>', unsafe_allow_html=True)
 
@@ -57,18 +65,18 @@ if 'gating_complete' not in st.session_state:
 if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'current_tab' not in st.session_state:
-    st.session_state.current_tab = "Gating"
+    # Restore the tab from the URL so a browser refresh keeps your place.
+    st.session_state.current_tab = st.query_params.get("tab", "Gating")
 
-# Initial Cache Cleanup (Optimized Data Management)
-if 'cleanup_done' not in st.session_state and DataLoader:
-    # Clear active learning/temp data on fresh start
-    DataLoader.clear_upload_cache()
-    # Create necessary dirs if missing
-    os.makedirs("data/uploaded_raw", exist_ok=True)
-    st.session_state.cleanup_done = True
+# Ensure writable data directories exist. We intentionally do NOT clear the upload
+# cache here: keeping the files lets the user refresh or come back later and pick
+# up where they left off. Use "Start New Experiment" (Gating tab) to clear.
+if 'startup_done' not in st.session_state:
+    glow_paths.uploads_dir()
+    st.session_state.startup_done = True
 
 # Sidebar Navigation
-st.sidebar.image("assets/glow_icon.png", width=80)
+st.sidebar.image(str(glow_paths.asset_path("glow_icon.png")), width=80)
 st.sidebar.title("Navigation")
 
 # Determine available tabs based on state
@@ -88,10 +96,36 @@ if st.session_state.current_tab not in tabs:
 # Simple approach: use the radio value.
 selected_tab = st.sidebar.radio("Go to", tabs, index=tabs.index(st.session_state.current_tab))
 
+# Keep the URL in sync so a refresh restores the current tab.
+if st.query_params.get("tab") != selected_tab:
+    st.query_params["tab"] = selected_tab
+
 # Handle tab switch
 if selected_tab != st.session_state.current_tab:
     st.session_state.current_tab = selected_tab
     st.rerun()
+
+st.sidebar.divider()
+
+# --- Session Save / Restore ------------------------------------------------
+with st.sidebar.expander("💾 Session", expanded=False):
+    st.caption("Save your progress to a file and restore it later.")
+    st.download_button(
+        "Save session",
+        data=glow_session.save_session_bytes(),
+        file_name="glow_session.json",
+        mime="application/json",
+        help="Downloads your metadata, gate settings and selections (not the raw data).",
+        width="stretch",
+    )
+    restore_file = st.file_uploader("Restore session", type=["json"], key="restore_session_file")
+    if restore_file is not None and st.button("Load this session", width="stretch"):
+        try:
+            n = glow_session.restore_session(restore_file.getvalue())
+            st.success(f"Restored {n} settings. Reloading…")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Could not restore session: {e}")
 
 st.sidebar.divider()
 

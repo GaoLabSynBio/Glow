@@ -1,5 +1,4 @@
 import streamlit as st
-import importlib
 import pandas as pd
 from glow.plotting import utils, plots
 
@@ -103,7 +102,6 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
                     )
 
     with st.expander("Add New Local Gate"):
-        importlib.reload(utils)
 
         # Ensure different new gate channel per plot type if possible to avoid clashes?
         # Actually standard widget keys should be uniqueified by prefix.

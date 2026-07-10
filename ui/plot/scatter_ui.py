@@ -1,26 +1,11 @@
 import streamlit as st
 import matplotlib.pyplot as plt
-import importlib
 import copy
-import io
-import warnings
 from glow.plotting import plots
 from glow.canvas.functions import add_plot_to_canvas
+from common.widgets import download_svg_button as download_btn
+from common.errors import show_error
 from .gating_component import render_gating_component, apply_gates_to_dataframe
-
-def download_btn(fig, key):
-    buf = io.BytesIO()
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
-        fig.savefig(buf, format="svg", bbox_inches="tight")
-    buf.seek(0)
-    st.download_button(
-         label="Download SVG",
-         data=buf.getvalue(),
-         file_name=f"{key}.svg",
-         mime="image/svg+xml",
-         key=f"dl_{key}"
-    )
 
 def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditions, scale):
     """
@@ -167,8 +152,6 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
 
         if st.session_state.get('scatter_generated'):
             from glow.plotting import scatter, plots as main_plots
-            importlib.reload(scatter)
-            importlib.reload(main_plots)
 
             base_title = f"Scatter: {x_channel} vs {y_channel}"
             if hue_var:
@@ -338,4 +321,9 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                     plt.close(fig)
 
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    show_error(
+                        "Could not generate the scatter plot.",
+                        cause="the selected X/Y channels or gates may leave no plottable data",
+                        fix="pick different channels, widen your gates, or adjust the scale settings",
+                        exc=e,
+                    )

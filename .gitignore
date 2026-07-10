@@ -11,7 +11,6 @@ processed_fcs_ui/
 my_test_env/
 test_venv/
 .pytest_cache/
-/tests/
 /debug/
 gemini_coder/
 .ipynb_checkpoints/
@@ -26,7 +25,6 @@ bundle_repo.py
 check_glow_utils.py
 codebase_dump.txt
 pyproject.toml
-pytest.ini
 synthetic_training_data*
 gating_model_full.pkl.base
 singlet_model_full.pkl.base

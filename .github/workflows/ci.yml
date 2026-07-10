@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, update ]
+  pull_request:
+
+jobs:
+  compile:
+    name: Byte-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Byte-compile all sources
+        run: python -m compileall -q glow ui training
+
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: glow_env
+          auto-activate-base: false
+      - name: Install pytest
+        run: pip install pytest
+      - name: Run tests
+        run: python -m pytest tests/ -q
+      - name: Import smoke test
+        run: python -c "import glow, glow.paths, glow.data_loading.loader, glow.gating.manager; print('import OK')"

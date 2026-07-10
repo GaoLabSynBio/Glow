@@ -54,9 +54,8 @@ def run_base_pipeline(file_list_path=None, input_dir=None, file_paths=None, rena
             # Note: channel names here are hardcoded for now, but should ideally come from learned metadata too or user config
             experiment = gater.apply_manual_gate(experiment, "_temp_singlet_mask_learned", "FSC-A", "FSC-H", singlet_vertices)
         else:
-             # Fallback to auto
-             # print("Attempting to filter duplicates (Singlet finding)...")
-             # experiment = gater.remove_duplicates(experiment)
+             # No learned singlet gate for this cell line; auto singlet finding
+             # (if needed) happens downstream.
              pass
 
         # Live Gate (Learned)
