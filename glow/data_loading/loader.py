@@ -70,9 +70,17 @@ class DataLoader:
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
 
+        dest_root = os.path.realpath(target_dir)
         saved_paths = []
         for uploaded_file in uploaded_files:
-            file_path = os.path.join(target_dir, uploaded_file.name)
+            # Folder drag-and-drop gives names with relative subpaths
+            # (e.g. "Plate1/D6.fcs"); keep that structure so same-named files
+            # from different folders don't overwrite each other.
+            rel_name = uploaded_file.name.replace("\\", "/").lstrip("/")
+            file_path = os.path.realpath(os.path.join(target_dir, rel_name))
+            if not file_path.startswith(dest_root + os.sep):
+                raise ValueError(f"Unsafe upload file name (path traversal): {uploaded_file.name!r}")
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             saved_paths.append(os.path.abspath(file_path))

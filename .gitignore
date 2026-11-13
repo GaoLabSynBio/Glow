@@ -16,8 +16,13 @@ gemini_coder/
 .ipynb_checkpoints/
 .vscode/
 tests/test_data/
-!data/
-!data/**/*.fcs
+# Runtime data written by the app (uploads, processed files, logs, sessions) -- never commit
+data/uploaded_raw/
+data/uploaded_raw_zip/
+data/processed_fcs_ui/
+data/logs/
+data/sessions/
+data/active_learning_data/
 active_learning_data/
 real_data*
 real_training_data*
