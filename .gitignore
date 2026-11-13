@@ -35,3 +35,8 @@ gating_model_full.pkl.base
 singlet_model_full.pkl.base
 singlet_training_data*
 .vscode/
+
+# Claude Code personal settings
+.claude/settings.local.json
+# Revamp runner logs
+revamp.log
