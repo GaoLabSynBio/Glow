@@ -11,6 +11,7 @@ from glow.analysis.positive import get_channel_data_for_samples, calculate_posit
 from glow.canvas.functions import add_plot_to_canvas
 from glow.utils import logicle_transform
 from glow.data_loading.sample_metadata import label_map_from_data
+from ui.common.metadata_editor import render_metadata_editor
 
 
 def sample_label(sample_id):
@@ -39,6 +40,8 @@ def render_analysis_tab():
     else:
         st.error("No experiment loaded. Please go back to Gating tab.")
         return
+
+    render_metadata_editor("analysis")
 
     # Check for High Resolution Data Scaling
     apply_scaling = False

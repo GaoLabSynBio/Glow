@@ -107,6 +107,8 @@ def main():
     check(nav is not None, "navigation radio present")
     if nav:
         nav.set_value("Plot"); run(at, "plot tab")
+        check("sample_metadata" in at.session_state.filtered_state, "shared metadata editor built sample_metadata")
+        check(any("Edit metadata" in e.label for e in at.expander), "Edit metadata expander on Plot tab")
         for pt, gen_prefix in [("1D Histogram", "Generate"), ("2D Scatter", "Generate"),
                                ("Bar Plot", "Generate"), ("Pairwise Plot", "Generate")]:
             sel = widget(at.sidebar.selectbox, "Select Plot Type") or widget(at.selectbox, "Select Plot Type")

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import copy
 from glow.plotting import plots
+from ui.common.metadata_editor import render_metadata_editor
 from .base import render_data_selection
 from .histogram_ui import render_histogram_ui
 from .scatter_ui import render_scatter_ui
@@ -21,6 +22,8 @@ def render_plot_tab():
     if experiment is None:
         st.error("Experiment is None.")
         return
+
+    render_metadata_editor("plot")
 
     # 1. Common Data Selection
     filtered_experiment, conditions = render_data_selection(experiment)

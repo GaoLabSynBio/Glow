@@ -56,3 +56,28 @@ def test_apply_sample_metadata_relabels_only():
     assert exp.data["cells"].tolist() == [True, False, True, True]
     assert "Old" not in exp.data.columns and "Old" not in exp.metadata
     assert exp.metadata["Cell_Line"]["type"] == "condition"
+
+
+def test_metadata_from_events_and_replicates():
+    from glow.data_loading import sample_metadata as sm
+    df = pd.DataFrame({"Sample": ["a", "a", "b", "c"], "Experiment_Name": ["x", "x", "x", "y"],
+                       "Cell_Line": ["HEK"] * 4, "Replicate": [1, 1, 2, 1]})
+    meta = sm.metadata_from_events(df)
+    assert list(meta.index) == ["a", "b", "c"]
+    new = meta.copy()
+    new.loc["c", "Experiment_Name"] = "x"
+    out = sm.reinfer_replicates(meta, new)
+    assert out["Replicate"].tolist() == [1, 2, 3]
+    new.loc["c", "Replicate"] = 7  # hand edit survives
+    assert sm.reinfer_replicates(meta, new).loc["c", "Replicate"] == 7
+
+
+def test_cell_line_rename_vs_reassign():
+    from glow.data_loading import sample_metadata as sm
+    old = pd.DataFrame({"Cell_Line": ["A", "A", "B", "B"]}, index=["1", "2", "3", "4"])
+    new = old.copy()
+    new["Cell_Line"] = ["C", "C", "B", "B"]
+    assert sm.cell_line_changes(old, new) == ({"A": "C"}, set())
+    new["Cell_Line"] = ["A", "B", "B", "B"]
+    assert sm.cell_line_changes(old, new) == ({}, {"A", "B"})
+    assert sm.rekey_gates({"A": 1, "B": 2}, {"A": "C"}) == {"C": 1, "B": 2}

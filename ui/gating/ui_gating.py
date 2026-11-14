@@ -11,6 +11,7 @@ from glow.utils import safe_log10, logicle_transform
 from common.errors import show_error
 from glow import paths as glow_paths
 from glow.data_loading.sample_metadata import label_map_from_data
+from ui.common.metadata_editor import render_metadata_editor
 
 
 def _sample_label_fn(df):
@@ -429,11 +430,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
         base_exp = st.session_state.base_experiment
 
         if base_exp:
-            with st.expander("🔓 Not locked — redo gating or edit metadata", expanded=False):
+            render_metadata_editor("gating")
+            with st.expander("🔓 Not locked — redo gating", expanded=False):
                 st.caption(
-                    "Nothing here is locked. To fix metadata, edit it in the **File Loading & "
-                    "Metadata** section above and click *Confirm and Load* again. To gate again, "
-                    "reset the Live/Dead and Singlet decisions below — your loaded files are kept."
+                    "Nothing here is locked. To gate again, reset the Live/Dead and Singlet "
+                    "decisions below — your loaded files and metadata are kept."
                 )
                 if st.button(
                     "↩️ Redo gating (keep loaded files)", key="redo_gating_btn",

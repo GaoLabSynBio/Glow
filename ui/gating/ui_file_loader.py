@@ -148,7 +148,8 @@ def clear_experiment_state():
 
     for key in ['base_experiment', 'analysis_experiment', 'gating_complete',
                 'fixed_gate_params', 'positive_gates', 'threshold_gate',
-                'selected_channels', 'persistent_selected_channels']:
+                'selected_channels', 'persistent_selected_channels',
+                'sample_metadata', 'lines_need_regate', '_meta_editor_ver']:
         if key in st.session_state:
             del st.session_state[key]
 

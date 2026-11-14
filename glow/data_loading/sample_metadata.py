@@ -141,8 +141,76 @@ def apply_sample_metadata(experiment, meta: pd.DataFrame, drop: Optional[Iterabl
         else:
             data[col] = mapped.astype("object").fillna("NA").astype("category")
             experiment.metadata[col] = {"type": "condition", "class": "category"}
+        conds = getattr(experiment, "conditions", None)
+        if isinstance(conds, dict):  # MockExperiment keeps a plain dict (cytoflow derives it)
+            conds[col] = "int" if col == REPLICATE_COL else "category"
     for col in drop or ():
         if col in data.columns and col not in meta.columns and col != SAMPLE_COL:
             data.drop(columns=col, inplace=True)
             experiment.metadata.pop(col, None)
     return experiment
+
+
+# Columns of the event table that are gating/bookkeeping state, never user metadata.
+_NON_METADATA = {SAMPLE_COL, CONDITION_COL, "cells", "singlets", "Is_Live", "Is_Singlet",
+                 "LiveGate", "SingletGate"}
+
+
+def metadata_from_events(df: pd.DataFrame, extra: Optional[Iterable[str]] = None) -> pd.DataFrame:
+    """Rebuild the per-sample metadata table (indexed by Sample) from an event table."""
+    cols = [c for c in (NAME_COL, REPLICATE_COL, CELL_LINE_COL) if c in df.columns]
+    cols += [c for c in (extra or ()) if c in df.columns and c not in cols and c not in _NON_METADATA]
+    keys = df[SAMPLE_COL].astype(str).to_numpy()
+    meta = df[cols].astype(object).groupby(keys, sort=False).first()
+    meta.index.name = SAMPLE_COL
+    meta = default_experiment_names(meta)
+    if REPLICATE_COL in meta.columns:
+        rep = pd.to_numeric(meta[REPLICATE_COL], errors="coerce")
+        meta[REPLICATE_COL] = rep.where(rep.notna(), infer_replicates(meta[NAME_COL]).to_numpy()).astype(int)
+    else:
+        meta[REPLICATE_COL] = infer_replicates(meta[NAME_COL]).to_numpy()
+    return meta
+
+
+def reinfer_replicates(old: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
+    """After an edit: if names changed, renumber replicates, keeping any the user edited by hand."""
+    new = new.copy()
+    if NAME_COL not in new.columns or not (old[NAME_COL].astype(str) != new[NAME_COL].astype(str)).any():
+        return new
+    inferred = pd.Series(infer_replicates(new[NAME_COL]).to_numpy(), index=new.index)
+    if REPLICATE_COL in old.columns and REPLICATE_COL in new.columns:
+        by_hand = old[REPLICATE_COL].astype(str) != new[REPLICATE_COL].astype(str)
+        inferred = inferred.where(~by_hand, pd.to_numeric(new[REPLICATE_COL], errors="coerce"))
+    new[REPLICATE_COL] = inferred.astype(int)
+    return new
+
+
+def cell_line_changes(old: pd.DataFrame, new: pd.DataFrame):
+    """Compare Cell_Line before/after an edit.
+
+    Returns ``(renames, affected)``. ``renames`` maps old->new for lines whose every file
+    moved together to a brand-new name (gates can simply be re-keyed). ``affected`` holds the
+    lines (old and new) involved in any other change; their gates no longer cover the right files.
+    """
+    if CELL_LINE_COL not in old.columns or CELL_LINE_COL not in new.columns:
+        return {}, set()
+    before = old[CELL_LINE_COL].astype(str)
+    after = new[CELL_LINE_COL].astype(str).reindex(before.index)
+    changed = before != after
+    renames: Dict[str, str] = {}
+    affected = set()
+    for line in before[changed].unique():
+        rows = before == line
+        targets = set(after[rows])
+        target = next(iter(targets)) if len(targets) == 1 else None
+        if target is not None and bool(changed[rows].all()) and target not in set(before):
+            renames[line] = target
+        else:
+            affected.add(line)
+            affected.update(targets)
+    return renames, affected
+
+
+def rekey_gates(gates: Optional[dict], renames: Dict[str, str]) -> dict:
+    """Return ``gates`` with keys renamed per ``renames`` (no recompute)."""
+    return {renames.get(k, k): v for k, v in (gates or {}).items()}
