@@ -10,6 +10,12 @@ from glow.analysis.stats import get_summary_statistics
 from glow.analysis.positive import get_channel_data_for_samples, calculate_positive_stats_recursive
 from glow.canvas.functions import add_plot_to_canvas
 from glow.utils import logicle_transform
+from glow.data_loading.sample_metadata import label_map_from_data
+
+
+def sample_label(sample_id):
+    """Display label for a stable Sample id (falls back to the id itself)."""
+    return st.session_state.get('_sample_labels', {}).get(str(sample_id), str(sample_id))
 
 def update_threshold_value(model_key, widget_key):
     """Callback to sync widget value to model state."""
@@ -119,6 +125,9 @@ def render_analysis_tab():
 
         if 'threshold' in g:
             st.session_state.threshold_gate[lbl] = g['threshold']
+
+    # Display labels (Experiment Name [+ rep N]) for the stable Sample ids
+    st.session_state['_sample_labels'] = label_map_from_data(experiment.data)
 
     # Dynamically build full table using Recursive Logic
     full_df = stats_df.copy()
@@ -255,7 +264,7 @@ def render_analysis_tab():
                                             y_dom = kde(d_dom)
 
                                         c = colors_v[idx % len(colors_v)]
-                                        fig_g.add_trace(go.Scatter(x=d_dom, y=y_dom, mode='lines', line=dict(color=c), name=s, fill='tozeroy', opacity=0.3))
+                                        fig_g.add_trace(go.Scatter(x=d_dom, y=y_dom, mode='lines', line=dict(color=c), name=sample_label(s), fill='tozeroy', opacity=0.3))
                                     except Exception:
                                         pass
 
@@ -461,7 +470,7 @@ def render_analysis_tab():
                 default_samples = [sample_list[0]] if sample_list else []
 
                 with col_opts:
-                    selected_samples = st.multiselect("Select Samples to Overlay", sample_list, default=default_samples, key="analysis_sample_select")
+                    selected_samples = st.multiselect("Select Samples to Overlay", sample_list, default=default_samples, format_func=sample_label, key="analysis_sample_select")
 
                 if selected_samples:
                     # Fetch Data, Filtered by Parent gate
@@ -717,7 +726,7 @@ def render_analysis_tab():
                                         mode='lines',
                                         line=dict(color='white', width=0.1),
                                         fillcolor=color,
-                                        name=s,
+                                        name=sample_label(s),
                                         opacity=0.5,
                                         hoverinfo='skip' # Simplify hover for filled area
                                     ))
@@ -737,7 +746,7 @@ def render_analysis_tab():
                                         mode='lines+markers', # Markers needed for click targeting
                                         marker=dict(size=20, color=color, opacity=0), # Invisible markers but hit-testable
                                         line=dict(color=color, width=2),
-                                        name=s,
+                                        name=sample_label(s),
                                         fill='tozeroy',
                                         opacity=0.5,
                                         hovertemplate=f"<b>{s}</b><br>Intensity: %{{x}}<br>Density: %{{y}}<extra></extra>"
@@ -888,13 +897,13 @@ def render_analysis_tab():
                                                  # Use zorder to manage stacking (higher index on top or bottom?)
                                                  # Let's stack naturally
                                                  # Use explicit facecolor and alpha to guarantee visibility
-                                                 mpl_ax.fill_between(x_domain, y_shifted, y2=base_y, facecolor=color, alpha=0.6, zorder=10+i, label=s)
+                                                 mpl_ax.fill_between(x_domain, y_shifted, y2=base_y, facecolor=color, alpha=0.6, zorder=10+i, label=sample_label(s))
                                                  # Outline in black/dark on top of fill
                                                  mpl_ax.plot(x_domain, y_shifted, color='black', linewidth=1, zorder=10+i+0.1)
 
                                              else:
                                                  # Standard Overlay
-                                                 mpl_ax.plot(x_domain, y_vals, color=color, label=s, linewidth=2, zorder=10)
+                                                 mpl_ax.plot(x_domain, y_vals, color=color, label=sample_label(s), linewidth=2, zorder=10)
                                                  try:
                                                      mpl_ax.fill_between(x_domain, y_vals, y2=0, color=color, alpha=0.3, zorder=5)
                                                  except Exception as e:
@@ -1024,7 +1033,7 @@ def render_analysis_tab():
 
                 sample_list = full_df['Sample'].unique().tolist()
                 def_samp = [sample_list[0]] if sample_list else []
-                sel_samps = st.multiselect("Samples", sample_list, default=def_samp, key="quad_samp")
+                sel_samps = st.multiselect("Samples", sample_list, default=def_samp, format_func=sample_label, key="quad_samp")
 
             if sel_x and sel_y and sel_samps:
                 # Fetch Data
@@ -1266,7 +1275,7 @@ def render_analysis_tab():
                                                     vx = vx[idx]
                                                     vy = vy[idx]
                                                c = colors_c[i%len(colors_c)]
-                                               mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+                                               mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=sample_label(s), edgecolors="none")
                                 mpl_ax.legend()
 
                             if use_log:
@@ -1359,7 +1368,7 @@ def render_analysis_tab():
 
                 sample_list = full_df['Sample'].unique().tolist()
                 def_samp = [sample_list[0]] if sample_list else []
-                sel_samps = st.multiselect("Samples", sample_list, default=def_samp, key="poly_samp")
+                sel_samps = st.multiselect("Samples", sample_list, default=def_samp, format_func=sample_label, key="poly_samp")
 
             if sel_x and sel_y and sel_samps:
                 # Fetch Data
@@ -1586,7 +1595,7 @@ def render_analysis_tab():
                                                     vx = vx[idx]
                                                     vy = vy[idx]
                                                c = colors_c[i%len(colors_c)]
-                                               mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=s, edgecolors="none")
+                                               mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=sample_label(s), edgecolors="none")
                                 mpl_ax.legend()
 
                             if use_log:

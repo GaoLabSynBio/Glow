@@ -182,6 +182,9 @@ class DataLoader:
 
     def generate_preview_metadata(self, paths, rename_strategy='folder_name'):
         preview_metadata = []
+        # Folder prefix is only added when the same file name occurs in several folders.
+        all_names = [os.path.basename(i['path'] if isinstance(i, dict) else str(i)) for i in paths]
+        colliding = {n for n in all_names if all_names.count(n) > 1}
         for item in paths:
             if isinstance(item, dict):
                 path = item['path']
@@ -203,7 +206,7 @@ class DataLoader:
                 new_name = custom_name
                 if not new_name.lower().endswith('.fcs'):
                     new_name += '.fcs'
-            elif rename_strategy == 'folder_name':
+            elif rename_strategy == 'folder_name' and filename in colliding:
                 name_prefix = dirname.replace(" ", "_")
                 new_name = f"{name_prefix}_{filename}"
             else:
@@ -316,7 +319,8 @@ class DataLoader:
         for meta in metadata_list:
             tube_conditions = {}
             # Always ensure Sample and Condition are present
-            tube_conditions['Sample'] = str(meta.get('display_name', 'Unknown'))
+            # Stable sample id = file stem (display_name carries the folder prefix on collisions only)
+            tube_conditions['Sample'] = os.path.splitext(str(meta.get('display_name', 'Unknown')))[0]
 
             if 'condition' in meta and meta['condition']:
                 tube_conditions['Condition'] = str(meta['condition'])

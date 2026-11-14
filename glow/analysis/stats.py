@@ -1,5 +1,7 @@
 import pandas as pd
 
+from glow.analysis.grouping import condition_columns, resolve_group_cols
+
 def get_summary_statistics(experiment):
     """
     Returns a DataFrame with summary statistics for the experiment.
@@ -17,53 +19,15 @@ def get_summary_statistics(experiment):
     results = []
     data = experiment.data
 
-    # Identify sample grouping column
-    group_cols = []
-
-    # Define internal gating columns to exclude from grouping
-    # These are added as 'conditions' for metadata validity but should not split the sample summary
-    EXCLUDE_CONDITIONS = [
-        'cells', 'singlets', 'IsSinglet', 'Is_Singlet',
-        'Population', 'AutoLiveGate', 'LiveGate', 'SingletGate',
-        'Is_Live', 'Live', 'Density'
-    ]
-
-    try:
-        # Cytoflow property access can trigger lazy evaluation looking up cached keys in metadata
-        # If metadata[x] missing for a key it thinks is a condition, it crashes.
-        if hasattr(experiment, 'conditions'):
-            all_conditions = list(experiment.conditions.keys())
-            # Filter out excluded conditions
-            group_cols = [
-                c for c in all_conditions
-                if c not in EXCLUDE_CONDITIONS
-                and not c.startswith('__') # exclude internal python attrs if any
-            ]
-    except Exception:
-        # Fallback if Cytoflow metadata is corrupted or mismatching data columns
-        pass
-
-    # If no conditions found in experiment metadata, check columns for typical names
-    if not group_cols:
-        possible_cols = ['Sample', 'sample', 'Name', 'name', 'folder_name']
-        for c in possible_cols:
-            if c in data.columns:
-                group_cols = [c]
-                break
-
-    if group_cols:
-        # Check if columns actually exist in data to avoid KeyError
-        valid_group_cols = [c for c in group_cols if c in data.columns]
-        if valid_group_cols:
-            grouped = data.groupby(valid_group_cols, observed=True)
-        else:
-             grouped = [('All', data)]
+    # Group by the stable Sample id; other conditions become their own columns.
+    valid_group_cols = resolve_group_cols(experiment, data)
+    extra_cols = condition_columns(experiment, data, valid_group_cols)
+    if valid_group_cols:
+        grouped = data.groupby(valid_group_cols, observed=True)
     else:
-        # specific handling if no grouping (single file?)
         grouped = [('All', data)]
 
     for name, group in grouped:
-        # Format sample name
         if isinstance(name, tuple):
             sample_name = "_".join(map(str, name))
         else:
@@ -131,6 +95,7 @@ def get_summary_statistics(experiment):
 
         row = {
             'Sample': sample_name,
+            **{c: group[c].iloc[0] for c in extra_cols if len(group)},
             'Total Events': total_events,
             'Live Count': live_count,
             'Live %': round(live_pct, 2),

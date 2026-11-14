@@ -111,6 +111,17 @@ def sample_label_map(meta: pd.DataFrame) -> Dict[str, str]:
     }
 
 
+def label_map_from_data(df: pd.DataFrame) -> Dict[str, str]:
+    """Sample id -> display label derived from an event table (identity if no names)."""
+    if SAMPLE_COL not in df.columns:
+        return {}
+    cols = [c for c in (SAMPLE_COL, NAME_COL, REPLICATE_COL) if c in df.columns]
+    per_sample = df[cols].drop_duplicates(SAMPLE_COL).astype({SAMPLE_COL: str}).set_index(SAMPLE_COL)
+    if NAME_COL not in per_sample.columns:
+        return {s: s for s in per_sample.index}
+    return sample_label_map(per_sample)
+
+
 def apply_sample_metadata(experiment, meta: pd.DataFrame, drop: Optional[Iterable[str]] = None):
     """Relabel an experiment in place from ``meta`` (indexed by Sample); no re-gating.
 

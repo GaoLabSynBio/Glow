@@ -10,6 +10,13 @@ import matplotlib.pyplot as plt
 from glow.utils import safe_log10, logicle_transform
 from common.errors import show_error
 from glow import paths as glow_paths
+from glow.data_loading.sample_metadata import label_map_from_data
+
+
+def _sample_label_fn(df):
+    """format_func mapping Sample ids to Experiment Name (+ rep N) labels."""
+    labels = label_map_from_data(df)
+    return lambda s: labels.get(str(s), str(s))
 
 
 def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
@@ -656,7 +663,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     unique_samples = sorted(df['Sample'].unique())
                     if len(unique_samples) > 1:
                         col_plots.info(f"Multiple files detected for {active_cell_line}. Select one to visualize and define the gate.")
-                        selected_sample = col_plots.selectbox("Representative File", unique_samples, key=f"sample_sel{ukey}")
+                        selected_sample = col_plots.selectbox("Representative File", unique_samples, format_func=_sample_label_fn(df), key=f"sample_sel{ukey}")
                         df = df[df['Sample'] == selected_sample].copy()
 
                 # Removed inline Viz controls (Scale, Drag, Cmap) as they are now in col_opts
@@ -1761,7 +1768,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     unique_s_samples = sorted(df_gated['Sample'].unique())
                                     if len(unique_s_samples) > 1:
                                         st.info(f"Multiple files for {active_line_singlets}. Select representative:")
-                                        rep_sample = st.selectbox("Representative File", unique_s_samples, key=f"s_sample_{sukey}")
+                                        rep_sample = st.selectbox("Representative File", unique_s_samples, format_func=_sample_label_fn(df_gated), key=f"s_sample_{sukey}")
                                         viz_df_full = df_gated[df_gated['Sample'] == rep_sample].copy()
                                     else:
                                         viz_df_full = df_gated
