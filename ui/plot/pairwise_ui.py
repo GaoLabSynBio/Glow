@@ -83,9 +83,7 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
 
                         filtered_df, processed_gates = apply_gates_to_dataframe(
                             experiment.data,
-                            all_applied_gates,
-                            experiment_metadata=getattr(experiment, 'metadata', None),
-                            show_raw=st.session_state.get('plot_show_raw_vals', False)
+                            all_applied_gates
                         )
 
                         if filtered_df.empty:

@@ -116,6 +116,8 @@ def main():
         nav.set_value("Plot"); run(at, "plot tab")
         check("sample_metadata" in at.session_state.filtered_state, "shared metadata editor built sample_metadata")
         check(any("Edit metadata" in e.label for e in at.expander), "Edit metadata expander on Plot tab")
+        check(any("exports are raw" in c.value for c in at.caption), "units caption on Plot tab")
+        check(not any("Raw Values" in t.label for t in at.toggle), "no raw-values toggle on Plot tab")
         for pt, gen_prefix in [("1D Histogram", "Generate"), ("2D Scatter", "Generate"),
                                ("Bar Plot", "Generate"), ("Pairwise Plot", "Generate")]:
             sel = widget(at.sidebar.selectbox, "Select Plot Type") or widget(at.selectbox, "Select Plot Type")
@@ -133,6 +135,8 @@ def main():
         nav = widget(at.sidebar.radio, "Go to") or widget(at.radio, "Go to")
         nav.set_value("Analysis"); run(at, "analysis tab")
         check(len(at.dataframe) >= 1, "summary statistics table rendered")
+        check(any("exports are raw" in c.value for c in at.caption), "units caption on Analysis tab")
+        check(not any("Raw Values" in t.label for t in at.toggle), "no raw-values toggle on Analysis tab")
         ag = button(at, "Add New Gate")
         if ag is not None:
             ag.click(); run(at, "add new gate")

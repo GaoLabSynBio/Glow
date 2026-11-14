@@ -188,88 +188,19 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
     return st.session_state[gate_key], analysis_gates_to_apply
 
 
-def apply_gates_to_dataframe(df, gates, experiment_metadata=None, show_raw=False):
+def apply_gates_to_dataframe(df, gates):
     """
     Applies a list of gates to a DataFrame.
-    Handles scaling correction if experiment_metadata indicates high-res data.
+    Data and gates share one unit convention (high-res data is scaled once at load),
+    so no unit correction happens here.
     """
     plot_df = df.copy()
-    
-    # 1. Determine Data Scaling State
-    scaling_factor = 1.0
-    is_data_scaled = False
-    
-    if experiment_metadata and experiment_metadata.get('is_high_res', False):
-         scaling_factor = experiment_metadata.get('scaling_factor', 10000.0)
-         
-         # Determine Data State based on "Show Raw" toggle
-         # If user selected "Show Raw", the plot data is Raw.
-         # If user selected "Scaled" (default, show_raw=False), the plot data is Scaled.
-         
-         if show_raw:
-             is_data_scaled = False
-         else:
-             is_data_scaled = True
-             
-    # 2. Process and Apply Gates
+
     from glow.gating.geometry import points_in_polygon
     
-    processed_gates = []
-    
-    for g in gates:
-        pg = g.copy()
-        
-        is_mask_gate = pg.get('channel') in ['cells', 'singlets', 'time', 'Time', 'Is_Live', 'Is_Singlet']
-        if pg.get('type') in ['quadrant', 'polygon']: is_mask_gate = False
-        
-        is_data_units = pg.get('is_data_units', False) # True for Local Gates (always match data)
+    processed_gates = [g.copy() for g in gates]
 
-        # Scaling Logic:
-        # Assumption/Requirement: Gates passed from Analysis/External are ALWAYS Raw Values.
-        # Data State: Can be Scaled (is_data_scaled=True) or Raw (is_data_scaled=False).
-        
-        # Logic:
-        # 1. If Gate is Local (is_data_units=True) -> No Scaling (It's already in plot units).
-        # 2. If Gate is Mask -> No Scaling.
-        # 3. If Data is Scaled -> Scale Gate DOWN (Raw -> Scaled) to match Data.
-        # 4. If Data is Raw -> Scale Gate NONE (Raw -> Raw) to match Data.
-        
-        correction_factor = 1.0
-        
-        if not is_data_units and not is_mask_gate:
-            if is_data_scaled:
-                 # Data is Scaled (0-100), Gate is Raw (0-1M).
-                 # Scale Gate DOWN.
-                 correction_factor = 1.0 / scaling_factor
-            else:
-                 # Data is Raw (0-1M), Gate is Raw (0-1M).
-                 # No Scaling.
-                 correction_factor = 1.0
-
-        if correction_factor != 1.0:
-             # Apply Correction
-             if pg.get('type') == 'quadrant':
-                  pg['threshold_x'] = float(pg.get('threshold_x', 0)) * correction_factor
-                  pg['threshold_y'] = float(pg.get('threshold_y', 0)) * correction_factor
-             
-             elif pg.get('type') == 'polygon':
-                   verts = pg.get('vertices', [])
-                   pg['vertices'] = [[v[0]*correction_factor, v[1]*correction_factor] for v in verts]
-             
-             else:
-                  # 1D Logic 
-                  th = pg.get('threshold')
-                  if isinstance(th, (list, tuple)) and len(th) == 2:
-                      pg['threshold'] = (th[0]*correction_factor, th[1]*correction_factor)
-                  elif isinstance(th, (int, float)):
-                      pg['threshold'] = th * correction_factor
-                  
-                  if 'min' in pg and pg['min'] is not None: pg['min'] *= correction_factor
-                  if 'max' in pg and pg['max'] is not None: pg['max'] *= correction_factor
-        
-        processed_gates.append(pg)
-
-    # 3. Filtering Loop
+    # Filtering Loop
     for gate in processed_gates:
         g_type = gate.get('type')
         

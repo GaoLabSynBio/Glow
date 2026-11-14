@@ -3,6 +3,7 @@ import pandas as pd
 import copy
 from glow.plotting import plots
 from ui.common.metadata_editor import render_metadata_editor
+from ui.common.units import render_units_caption
 from .base import render_data_selection
 from .histogram_ui import render_histogram_ui
 from .scatter_ui import render_scatter_ui
@@ -24,53 +25,12 @@ def render_plot_tab():
         return
 
     render_metadata_editor("plot")
+    render_units_caption(experiment)
 
     # 1. Common Data Selection
     filtered_experiment, conditions = render_data_selection(experiment)
     if filtered_experiment is None:
         return # Selection failed
-
-    # --- High Resolution Scaling Logic ---
-    if hasattr(experiment, 'metadata') and experiment.metadata.get('is_high_res', False):
-         st.warning("High-resolution data detected. Data logic is scaled by default (1/10000).")
-         use_raw = st.toggle("Show Raw Values (Unscaled)", value=False, key="plot_show_raw_vals")
-
-         if not use_raw:
-             scaling_factor = experiment.metadata.get('scaling_factor', 10000.0)
-             # Create a safe copy for modification
-             if hasattr(filtered_experiment, 'clone'):
-                 filtered_experiment = filtered_experiment.clone()
-             else:
-                 filtered_experiment = copy.copy(filtered_experiment)
-                 # Ensure data is also a copy to avoid reference modification
-                 filtered_experiment.data = filtered_experiment.data.copy()
-
-             # Perform Scaling on Channels Only (Fluorophores + Scatter)
-             # Instead of excluding specific metadata columns, we target declared channels.
-             # This ensures metadata like 'Experiment_Name' or 'Replicate' are never scaled.
-
-             target_cols = []
-
-             # Get declared channels (measurements)
-             # We prefer the explicit .channels property if available (Cytoflow or MockExperiment)
-             try:
-                 if hasattr(filtered_experiment, 'channels'):
-                     declared_channels = list(filtered_experiment.channels)
-                 else:
-                     declared_channels = plots.get_channels(filtered_experiment)
-             except Exception:
-                 declared_channels = []
-
-             # Extra safety: explicitly exclude Time if it appears in channels
-             STRICT_EXCLUDE_TIME = ['Time', 'time', 'Time (ms)', 'Time (s)']
-
-             for c in declared_channels:
-                 if c in filtered_experiment.data.columns and c not in STRICT_EXCLUDE_TIME:
-                     if pd.api.types.is_numeric_dtype(filtered_experiment.data[c]):
-                         target_cols.append(c)
-
-             if target_cols:
-                 filtered_experiment.data[target_cols] = filtered_experiment.data[target_cols].astype(float) / scaling_factor
 
     # 2. Main Plot Type Selection
     all_available_channels = plots.get_channels(filtered_experiment)

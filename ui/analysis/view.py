@@ -11,6 +11,7 @@ from glow.analysis.positive import get_channel_data_for_samples, calculate_posit
 from glow.canvas.functions import add_plot_to_canvas
 from glow.utils import logicle_transform
 from glow.data_loading.sample_metadata import label_map_from_data
+from ui.common.units import render_units_caption
 from ui.common.metadata_editor import render_metadata_editor
 
 
@@ -42,16 +43,7 @@ def render_analysis_tab():
         return
 
     render_metadata_editor("analysis")
-
-    # Check for High Resolution Data Scaling
-    apply_scaling = False
-    scaling_factor = 1.0
-    if hasattr(experiment, 'metadata') and experiment.metadata.get('is_high_res', False):
-        st.warning("High-resolution data detected. Data logic is scaled by default (1/10000).")
-        use_raw = st.toggle("Show Raw Values (Unscaled)", value=False, key="analysis_show_raw_vals")
-        apply_scaling = not use_raw
-        if apply_scaling:
-            scaling_factor = experiment.metadata.get('scaling_factor', 10000.0)
+    render_units_caption(experiment)
 
     # --- UNIFY COMPENSATED CHANNEL NAMES ---
     # Requirement: Rename "Comp_{fluor}-A" (or comp_) to "Comp-{fluor}-A"
@@ -217,7 +209,7 @@ def render_analysis_tab():
                         p_gate = g.get('parent', 'Singlets')
                         ch = g['channel']
 
-                        data_map_v = get_channel_data_for_samples(experiment, ch, disp_samples, parent_gate_name=p_gate, defined_gates=st.session_state.positive_gates, apply_scaling=apply_scaling)
+                        data_map_v = get_channel_data_for_samples(experiment, ch, disp_samples, parent_gate_name=p_gate, defined_gates=st.session_state.positive_gates)
 
                         # Prepare Plot
                         fig_g = go.Figure()
@@ -272,21 +264,15 @@ def render_analysis_tab():
                                         pass
 
                             # Add Threshold/Range Line
-                            # Gates are stored in Standard (Scaled) Units.
-                            # Adjust gate values only if we are displaying Raw Data (apply_scaling=False).
+                            # Gates are stored in displayed (scaled-at-load) units.
                             if g.get('type') == 'range':
                                  t_min, t_max = g.get('min'), g.get('max')
-                                 if not apply_scaling:
-                                     t_min *= scaling_factor
-                                     t_max *= scaling_factor
                                  
                                  fig_g.add_vrect(x0=t_min, x1=t_max, fillcolor="green", opacity=0.1, layer="below", line_width=0)
                                  fig_g.add_vline(x=t_min, line_dash="dash", line_color="green")
                                  fig_g.add_vline(x=t_max, line_dash="dash", line_color="green")
                             else:
                                  thr = g['threshold']
-                                 if not apply_scaling:
-                                     thr *= scaling_factor
                                  
                                  is_pos = (g.get('direction', 'positive') == 'positive')
                                  color_line = "green" if is_pos else "red"
@@ -477,7 +463,7 @@ def render_analysis_tab():
 
                 if selected_samples:
                     # Fetch Data, Filtered by Parent gate
-                    data_map = get_channel_data_for_samples(experiment, selected_channel, selected_samples, parent_gate_name=parent_gate, defined_gates=st.session_state.positive_gates, apply_scaling=apply_scaling)
+                    data_map = get_channel_data_for_samples(experiment, selected_channel, selected_samples, parent_gate_name=parent_gate, defined_gates=st.session_state.positive_gates)
 
                     # determine range for slider
                     all_values = []
@@ -987,18 +973,7 @@ def render_analysis_tab():
                                      'samples': selected_samples # Persist the samples used for visualization
                                  }
 
-                                 # Apply Scaling Logic for Storage
-                                 # Goal: Always store gates in Dataframe Units (Scaled).
-                                 # If apply_scaling is True (Plot is Scaled), input is already Scaled. Do nothing.
-                                 # If apply_scaling is False (Plot is Raw), input is Raw. Divide by factor.
                                  final_threshold = curr_threshold
-                                 if not apply_scaling and scaling_factor != 1.0:
-                                     if isinstance(curr_threshold, (list, tuple, np.ndarray)):
-                                         final_threshold = [float(x) / scaling_factor for x in curr_threshold]
-                                     else:
-                                         final_threshold = float(curr_threshold) / scaling_factor
-                                 # If apply_scaling is True, we assume the user defined the gate on the Scaled plot,
-                                 # so the value is already in the correct domain for the dataframe.
 
                                  if is_range and isinstance(final_threshold, (list, tuple, np.ndarray)) and len(final_threshold) >= 2:
                                       new_gate['min'] = final_threshold[0]
@@ -1040,8 +1015,8 @@ def render_analysis_tab():
 
             if sel_x and sel_y and sel_samps:
                 # Fetch Data
-                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates, apply_scaling=apply_scaling)
-                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates, apply_scaling=apply_scaling)
+                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates)
+                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates)
 
                 # Combine
                 arr_x, arr_y = [], []
@@ -1335,11 +1310,6 @@ def render_analysis_tab():
 
                                  final_tx = curr_tx
                                  final_ty = curr_ty
-                                 # Standardize to Scaled Units
-                                 # If not apply_scaling (Raw), divide by factor.
-                                 if not apply_scaling and scaling_factor != 1.0:
-                                     final_tx /= scaling_factor
-                                     final_ty /= scaling_factor
 
                                  new_g = {
                                      'type': 'quadrant',
@@ -1375,8 +1345,8 @@ def render_analysis_tab():
 
             if sel_x and sel_y and sel_samps:
                 # Fetch Data
-                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates, apply_scaling=apply_scaling)
-                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates, apply_scaling=apply_scaling)
+                d_x = get_channel_data_for_samples(experiment, sel_x, sel_samps, parent_gate, st.session_state.positive_gates)
+                d_y = get_channel_data_for_samples(experiment, sel_y, sel_samps, parent_gate, st.session_state.positive_gates)
 
                 # Combine
                 arr_x, arr_y = [], []
@@ -1630,12 +1600,6 @@ def render_analysis_tab():
                                   lbl = f"{parent_gate} -> {sel_x}:{sel_y} Poly" if parent_gate!='Singlets' else f"{sel_x}:{sel_y} Poly"
 
                                   final_verts = verts
-                                  # Standardize to Scaled Units
-                                  if not apply_scaling and scaling_factor != 1.0:
-                                      final_verts = []
-                                      for v in verts:
-                                          # v is [x, y] list
-                                          final_verts.append([v[0] / scaling_factor, v[1] / scaling_factor])
 
                                   new_g = {
                                       'type': 'polygon',

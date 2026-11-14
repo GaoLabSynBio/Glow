@@ -218,9 +218,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     # Apply Gates (Filtering + Scaling)
                     filtered_df, processed_gates = apply_gates_to_dataframe(
                         filtered_experiment.data,
-                        all_applied_gates,
-                        experiment_metadata=getattr(filtered_experiment, 'metadata', None),
-                        show_raw=st.session_state.get('plot_show_raw_vals', False)
+                        all_applied_gates
                     )
 
                     if filtered_df.empty:
