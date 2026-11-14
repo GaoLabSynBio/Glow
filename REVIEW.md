@@ -11,7 +11,8 @@
        idle                         - nothing pending (runner resets to this after reading your decision)
 -->
 
-Decision: pending
+Decision: approved
+
 
 ## Item
 

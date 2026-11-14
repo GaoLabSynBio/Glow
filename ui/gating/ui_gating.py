@@ -14,6 +14,16 @@ from glow.data_loading.sample_metadata import label_map_from_data
 from ui.common.metadata_editor import render_metadata_editor
 
 
+def _file_list_key(loaded_files) -> str:
+    """Stable hash of the loaded file paths; metadata/label edits do not change it."""
+    import hashlib
+    paths = []
+    for f in loaded_files or []:
+        p = (f.get('current_path') or f.get('original_path') or f.get('path')) if isinstance(f, dict) else f
+        paths.append(str(p))
+    return hashlib.sha1("\n".join(sorted(paths)).encode()).hexdigest()
+
+
 def _sample_label_fn(df):
     """format_func mapping Sample ids to Experiment Name (+ rep N) labels."""
     labels = label_map_from_data(df)
@@ -399,10 +409,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
             return
 
-        st.write("Configuring Gating...")
-
-        # Load Base Experiment (Clean state)
+        # Load Base Experiment: rebuild only when the file list changes (label edits never rebuild)
+        file_key = _file_list_key(st.session_state.loaded_files)
+        if st.session_state.get('_base_files_key') != file_key:
+            st.session_state.pop('base_experiment', None)
         if 'base_experiment' not in st.session_state:
+            st.session_state['_base_files_key'] = file_key
             with st.spinner("Loading Experiment Data..."):
                 loader = DataLoader()
                 st.session_state.base_experiment = loader.load_as_cytoflow_experiment(st.session_state.loaded_files)

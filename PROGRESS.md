@@ -17,8 +17,8 @@ before the commit. A failing run must not be committed.
 - [x] (427f508) A1  `glow/data_loading/sample_metadata.py`: `build_sample_metadata(preview_meta)`, `default_experiment_names()`, `infer_replicates()`, `sample_label_map()`, `apply_sample_metadata(experiment, df)` + unit tests (`tests/test_sample_metadata.py`)   gate: before
 - [x] (0cd4692) A2  Metadata editor defaults: Experiment Name ← file stem, Replicate ← inferred integer (re-inferred on name edit), Cell Line ← path guess or blank (never `HEK`), auto-filled values visibly marked, "fill down" helper   gate: none
 - [x] (11b06f6) A3  Stable `Sample` = file stem (folder-prefix only on collision); display label = Experiment Name (+ `rep N`) in gating file selectors, singlet selector, Analysis stats table, overlay multiselect, legends; remove `_`-join in `glow/analysis/stats.py:68`   gate: none
-- [?] (e88cde8) A4  Shared `render_metadata_editor(context)`; used in Step 1 and as a collapsed "Edit metadata" expander on Gating / Analysis / Plot tabs; save → `apply_sample_metadata` on base/gated/analysis experiments, re-infer replicates, no re-gate; Cell_Line rename re-keys `cell_line_gates`/`cell_line_singlet_gates`; genuine reassignment flags only affected lines   gate: after
-- [ ] A5  Replace write-once `base_experiment` (`ui_gating.py:397`) with a file-list hash: rebuild only when the file list changes; label edits never rebuild   gate: after
+- [x] (94d0dc4) A4  Shared `render_metadata_editor(context)`; used in Step 1 and as a collapsed "Edit metadata" expander on Gating / Analysis / Plot tabs; save → `apply_sample_metadata` on base/gated/analysis experiments, re-infer replicates, no re-gate; Cell_Line rename re-keys `cell_line_gates`/`cell_line_singlet_gates`; genuine reassignment flags only affected lines   gate: after
+- [~] A5  Replace write-once `base_experiment` (`ui_gating.py:397`) with a file-list hash: rebuild only when the file list changes; label edits never rebuild   gate: after
 
 ## Phase B — One unit convention (UX_REVIEW §5.2, B2)
 
@@ -72,3 +72,4 @@ before the commit. A failing run must not be committed.
 2026-11-13 · A3 · done (11b06f6); 3 items this run (A1-A3)
 2026-11-13 · A4 · committed (e88cde8), pytest 26 passed, apptest passed; awaiting review (gate: after)
 2026-11-14 · A4 revise · hid condition/folder column in metadata editors; pytest 26 passed, apptest passed; awaiting review
+2026-11-14 · A4 · approved, marked done (94d0dc4)
