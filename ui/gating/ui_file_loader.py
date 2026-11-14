@@ -4,50 +4,55 @@ import re
 import pandas as pd
 from glow import paths as glow_paths
 from .ui_metadata import render_metadata_upload_section
+from glow.data_loading.sample_metadata import infer_replicates
 
 def auto_format_replicates(df):
+    """Default Experiment_Name to the file stem when blank, then infer integer replicates.
+
+    Rows sharing an Experiment_Name are numbered 1, 2, 3... in file order (stored as text
+    for the editor). Re-run after every name edit so replicates follow the names.
     """
-    Auto-formats the Replicate column to 'ExperimentName_N'
-    where N is the 1-based index of the replicate for that experiment.
-    """
-    # Ensure columns exist
+    df = df.copy()
     if "Experiment_Name" not in df.columns:
-        return df
-
-    # Track counts for each experiment name
-    exp_counts = {}
-
-    # We iterate by index to preserve order
-    for idx in df.index:
-        # Get Experiment Name safely
-        exp_val = df.at[idx, "Experiment_Name"]
-        if pd.isna(exp_val):
-            exp_name = ""
-        else:
-            exp_name = str(exp_val).strip()
-
-        if not exp_name or exp_name.lower() == "nan":
-            continue
-
-        # Increment count
-        if exp_name not in exp_counts:
-            exp_counts[exp_name] = 0
-        exp_counts[exp_name] += 1
-
-        # Format: ExperimentName_1, ExperimentName_2, etc.
-        # Ensure Replicate column exists (created implicitly if not, but safe to check)
-        if "Replicate" not in df.columns:
-             df["Replicate"] = ""
-
-        # Assign new formatted value
-        df.at[idx, "Replicate"] = f"{exp_name}_{exp_counts[exp_name]}"
-
+        df["Experiment_Name"] = ""
+    stems = df["original_path"] if "original_path" in df.columns else df.get("display_name", "")
+    stems = pd.Series(stems, index=df.index).map(lambda p: os.path.splitext(os.path.basename(str(p)))[0])
+    names = df["Experiment_Name"].fillna("").astype(str).str.strip()
+    names = names.mask(names.str.lower().isin(["", "nan"]), stems)
+    df["Experiment_Name"] = names
+    df["Replicate"] = infer_replicates(names).to_numpy().astype(str)
     return df
+
+
+def render_fill_down(state_key, key_prefix):
+    """Expander that sets one column to a single value on all rows of ``state_key``'s table."""
+    with st.expander("Fill down (apply one value to all rows)"):
+        st.caption("Experiment Name defaults to the file name and Replicate is numbered "
+                   "automatically per name. Cell Line is left blank unless the path names a known line.")
+        c1, c2, c3 = st.columns([0.3, 0.5, 0.2])
+        col = c1.selectbox("Column", ["Experiment_Name", "Cell_Line"], key=f"{key_prefix}_fd_col")
+        val = c2.text_input("Value", key=f"{key_prefix}_fd_val")
+        if c3.button("Apply to all", key=f"{key_prefix}_fd_btn") and val.strip():
+            if col == "Cell_Line":
+                val = val.strip().upper()
+            st.session_state[state_key] = fill_down(st.session_state[state_key], col, val)
+            st.rerun()
+
+
+def fill_down(df, column, value):
+    """Set ``column`` to ``value`` on every row (blank value is ignored)."""
+    value = str(value).strip()
+    if not value or column not in df.columns:
+        return df
+    df = df.copy()
+    df[column] = value
+    return auto_format_replicates(df) if column == "Experiment_Name" else df
 
 # Helper for Cell Line Detection
 def detect_cell_line_from_path(path):
+    """Best guess of the cell line from the path; blank when no known name is present."""
     if not path:
-        return "HEK"
+        return ""
     filename = os.path.basename(path)
     dirname = os.path.basename(os.path.dirname(path))
     full_str = f"{dirname}_{filename}"
@@ -57,8 +62,8 @@ def detect_cell_line_from_path(path):
     known_lines = ["colo", "hek", "hug1n", "snu", "b16", "cho", "hela", "jurkat"]
     for line in known_lines:
         if line.lower() in full_str.lower():
-            return line.upper().upper()
-    return "HEK"
+            return line.upper()
+    return ""
 
 # Mock Experiment Class to emulate Cytoflow structure for downstream compatibility
 class MockExperiment:
@@ -310,7 +315,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     for m in meta:
                         m['Cell_Line'] = detect_cell_line_from_path(m.get('original_path'))
                     st.session_state.preview_meta = meta
-                    st.session_state.working_df_dir = pd.DataFrame(meta)
+                    st.session_state.working_df_dir = auto_format_replicates(pd.DataFrame(meta))
                     # Reset
                     if 'dir_cols_selected' in st.session_state:
                          del st.session_state['dir_cols_selected']
@@ -331,6 +336,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                          st.session_state.preview_meta = st.session_state.working_df_dir.to_dict('records')
 
                     # --- Metadata Upload ---
+                    render_fill_down('working_df_dir', "dir")
                     render_metadata_upload_section(key_prefix="dir", reset_keys=['working_df_dir'])
 
                     # 1. Custom Fields Persistence
@@ -402,9 +408,9 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                                         "display_name": st.column_config.TextColumn("Sample Name", required=True),
                                                         "condition": st.column_config.TextColumn("Folder (Auto)", disabled=True),
                                                         "original_path": st.column_config.TextColumn("Original Path", disabled=True),
-                                                        "Replicate": st.column_config.TextColumn("Replicate #"),
-                                                        "Experiment_Name": st.column_config.TextColumn("Experiment Name"),
-                                                        "Cell_Line": st.column_config.TextColumn("Cell Line"),
+                                                        "Replicate": st.column_config.TextColumn("Replicate # (auto)", help="Numbered automatically per Experiment Name; updates when you edit names."),
+                                                        "Experiment_Name": st.column_config.TextColumn("Experiment Name", help="Defaults to the file name; edit to group files."),
+                                                        "Cell_Line": st.column_config.TextColumn("Cell Line", help="Blank = one population (default model). Filled only when the path names a known line."),
                                                         "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
                                                     },
                                                     width="stretch",
@@ -498,7 +504,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                      for m in meta:
                         m['Cell_Line'] = detect_cell_line_from_path(m.get('original_path'))
                      st.session_state.preview_meta = meta
-                     st.session_state.working_df = pd.DataFrame(meta)
+                     st.session_state.working_df = auto_format_replicates(pd.DataFrame(meta))
                      # Do NOT reset custom columns or selection to allow persistence
                      if "new_col_input" in st.session_state:
                          del st.session_state["new_col_input"]
@@ -513,6 +519,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                     if 'working_df' in st.session_state:
                          st.session_state.preview_meta = st.session_state.working_df.to_dict('records')
 
+                    render_fill_down('working_df', "upload")
                     render_metadata_upload_section(key_prefix="upload", reset_keys=['working_df'])
 
                     if 'user_custom_cols' not in st.session_state:
@@ -573,9 +580,9 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                                         "display_name": st.column_config.TextColumn("Sample Name", required=True),
                                                         "condition": st.column_config.TextColumn("Folder (Auto)", disabled=True),
                                                         "original_path": st.column_config.TextColumn("Original Path", disabled=True),
-                                                        "Replicate": st.column_config.TextColumn("Replicate #"),
-                                                        "Experiment_Name": st.column_config.TextColumn("Experiment Name"),
-                                                        "Cell_Line": st.column_config.TextColumn("Cell Line"),
+                                                        "Replicate": st.column_config.TextColumn("Replicate # (auto)", help="Numbered automatically per Experiment Name; updates when you edit names."),
+                                                        "Experiment_Name": st.column_config.TextColumn("Experiment Name", help="Defaults to the file name; edit to group files."),
+                                                        "Cell_Line": st.column_config.TextColumn("Cell Line", help="Blank = one population (default model). Filled only when the path names a known line."),
                                                         "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
                                                     },
                                                     width="stretch",
