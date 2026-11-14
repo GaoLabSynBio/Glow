@@ -14,10 +14,7 @@
 Decision: idle
 
 ## Item
-(none)
 
 ## Request
-(none)
 
 ## Blocked tools / problems
-(none)

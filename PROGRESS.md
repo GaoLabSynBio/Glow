@@ -14,7 +14,7 @@ before the commit. A failing run must not be committed.
 
 ## Phase A — Metadata foundations (UX_REVIEW §2, §2b)
 
-- [ ] A1  `glow/data_loading/sample_metadata.py`: `build_sample_metadata(preview_meta)`, `default_experiment_names()`, `infer_replicates()`, `sample_label_map()`, `apply_sample_metadata(experiment, df)` + unit tests (`tests/test_sample_metadata.py`)   gate: before
+- [x] (427f508) A1  `glow/data_loading/sample_metadata.py`: `build_sample_metadata(preview_meta)`, `default_experiment_names()`, `infer_replicates()`, `sample_label_map()`, `apply_sample_metadata(experiment, df)` + unit tests (`tests/test_sample_metadata.py`)   gate: before
 - [ ] A2  Metadata editor defaults: Experiment Name ← file stem, Replicate ← inferred integer (re-inferred on name edit), Cell Line ← path guess or blank (never `HEK`), auto-filled values visibly marked, "fill down" helper   gate: none
 - [ ] A3  Stable `Sample` = file stem (folder-prefix only on collision); display label = Experiment Name (+ `rep N`) in gating file selectors, singlet selector, Analysis stats table, overlay multiselect, legends; remove `_`-join in `glow/analysis/stats.py:68`   gate: none
 - [ ] A4  Shared `render_metadata_editor(context)`; used in Step 1 and as a collapsed "Edit metadata" expander on Gating / Analysis / Plot tabs; save → `apply_sample_metadata` on base/gated/analysis experiments, re-infer replicates, no re-gate; Cell_Line rename re-keys `cell_line_gates`/`cell_line_singlet_gates`; genuine reassignment flags only affected lines   gate: after
@@ -67,3 +67,4 @@ before the commit. A failing run must not be committed.
 
 ## Run log
 <!-- runner appends one line per run: date · items touched · result -->
+2026-11-13 · A1 · done (427f508), pytest 20 passed, apptest passed
