@@ -123,7 +123,7 @@ def render_metadata_editor(context):
                         help="Renumbered per name when you rename; edit a value to override."),
                     sm.CELL_LINE_COL: st.column_config.TextColumn(
                         "Cell Line", help="Rename = gates follow. Reassign = affected lines need re-gating."),
-                    sm.CONDITION_COL: st.column_config.TextColumn("Folder", disabled=True),
+                    sm.CONDITION_COL: None,  # folder name is internal; hidden to keep the editor compact
                 },
                 disabled=[sm.SAMPLE_COL, sm.CONDITION_COL],
                 hide_index=True, num_rows="fixed", width="stretch",

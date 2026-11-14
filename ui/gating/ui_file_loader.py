@@ -407,7 +407,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         edited_df = st.data_editor(df_view,
                                                     column_config={
                                                         "display_name": st.column_config.TextColumn("Sample Name", required=True),
-                                                        "condition": st.column_config.TextColumn("Folder (Auto)", disabled=True),
+                                                        "condition": None,  # folder name is internal; hidden to keep the editor compact
                                                         "original_path": st.column_config.TextColumn("Original Path", disabled=True),
                                                         "Replicate": st.column_config.TextColumn("Replicate # (auto)", help="Numbered automatically per Experiment Name; updates when you edit names."),
                                                         "Experiment_Name": st.column_config.TextColumn("Experiment Name", help="Defaults to the file name; edit to group files."),
@@ -579,7 +579,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         edited_df = st.data_editor(df_view,
                                                     column_config={
                                                         "display_name": st.column_config.TextColumn("Sample Name", required=True),
-                                                        "condition": st.column_config.TextColumn("Folder (Auto)", disabled=True),
+                                                        "condition": None,  # folder name is internal; hidden to keep the editor compact
                                                         "original_path": st.column_config.TextColumn("Original Path", disabled=True),
                                                         "Replicate": st.column_config.TextColumn("Replicate # (auto)", help="Numbered automatically per Experiment Name; updates when you edit names."),
                                                         "Experiment_Name": st.column_config.TextColumn("Experiment Name", help="Defaults to the file name; edit to group files."),

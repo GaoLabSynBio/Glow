@@ -71,3 +71,4 @@ before the commit. A failing run must not be committed.
 2026-11-13 · A2 · done (0cd4692); blank Cell_Line single-population gating path hangs apptest (>300s) when banner filter added, deferred to C2 — gating currently shows 'NA' as a cell line
 2026-11-13 · A3 · done (11b06f6); 3 items this run (A1-A3)
 2026-11-13 · A4 · committed (e88cde8), pytest 26 passed, apptest passed; awaiting review (gate: after)
+2026-11-14 · A4 revise · hid condition/folder column in metadata editors; pytest 26 passed, apptest passed; awaiting review
