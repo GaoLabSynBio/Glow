@@ -6,7 +6,7 @@
 #   MODEL=opus ./tools/run_revamp.sh # override model
 #
 # Loop: run one headless Claude Code pass → read its final line:
-#   WAITING_FOR_REVIEW → poll REVIEW.md every 10 min until Decision != pending, then run again
+#   WAITING_FOR_REVIEW → poll REVIEW.md every 60 min until Decision != pending, then run again
 #   CONTINUE           → run again immediately
 #   DONE               → exit 0
 #   anything else / non-zero exit (e.g. usage limit) → sleep 30 min, run again
@@ -18,7 +18,7 @@ REPO=$(pwd)
 LOG="$REPO/revamp.log"
 MODEL="${MODEL:-sonnet}"
 PROMPT_FILE="$REPO/tools/revamp_prompt.md"
-POLL_SECS="${POLL_SECS:-600}"
+POLL_SECS="${POLL_SECS:-3600}"
 RETRY_SECS="${RETRY_SECS:-1800}"
 
 if ! command -v claude >/dev/null; then echo "claude CLI not found in PATH"; exit 1; fi

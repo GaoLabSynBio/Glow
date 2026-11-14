@@ -1,7 +1,7 @@
 # Review handshake
 
 <!-- The automated runner writes a request below and stops. You answer by editing the
-     Decision line, then the runner picks it up (it polls this file every 10 min while waiting).
+     Decision line, then the runner picks it up (it polls this file every 60 min while waiting).
 
      Decision values:
        pending                      - waiting for you (runner wrote this)
