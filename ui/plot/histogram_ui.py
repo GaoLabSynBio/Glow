@@ -206,9 +206,6 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                              st.warning(f"Data has no positive values in {selected_channel}, and therefore cannot be log-scaled. Use Linear or Logicle, or adjust gates.")
                              return
 
-                    if processed_gates:
-                        st.write(f"Applying {len(processed_gates)} filters...")
-
                     # Create temp experiment
                     plot_experiment = copy.copy(filtered_experiment)
                     plot_experiment.data = filtered_df

@@ -941,8 +941,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     # --- Validation Plot (Live vs Non-Live) ---
                     # User Request: "separate scatter plot below... where live cells and non-live cells are colored"
                     if '_temp_live_labels' in df.columns:
-                        col_plots.write("### Gating Classification")
-
                         # Create validation dataframe (downsampled if needed)
                         # We use the same plot_df for consistency
                         # We explicitly convert the gate column to string to ensure discrete coloring

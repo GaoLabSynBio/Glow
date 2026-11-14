@@ -185,9 +185,6 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                             st.warning(f"Data has no positive values in {x_channel} or {y_channel}, and therefore cannot be log-scaled. Consider switching to Linear or Logicle scale, or adjusting gates.")
                             return
 
-                    if processed_gates:
-                        st.write(f"Applying {len(processed_gates)} filters...")
-
                     # Apply Group Filter (if Groups Selected)
                     if hue_var and final_order is not None:
                         # Filter dataframe to only keep rows where hue_var is in selected groups

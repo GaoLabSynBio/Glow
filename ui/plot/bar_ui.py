@@ -230,9 +230,6 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                               st.warning(f"Data has no positive values in {selected_channel}, and therefore cannot be log-scaled. Uncheck Log Scale or adjust gates.")
                               return
 
-                    if processed_gates:
-                        st.write(f"Applying {len(processed_gates)} filters...")
-
                     # Create temp experiment for backend
                     plot_experiment = copy.copy(filtered_experiment)
                     plot_experiment.data = filtered_df
@@ -300,7 +297,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
                     if actual_group_cols:
                         # compute mean
-                        summary_df = filtered_df.groupby(actual_group_cols)[selected_channel].mean().reset_index()
+                        summary_df = filtered_df.groupby(actual_group_cols, observed=True)[selected_channel].mean().reset_index()
                         summary_df.rename(columns={selected_channel: f"Mean_{selected_channel}"}, inplace=True)
 
                         # Add metadata

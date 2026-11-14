@@ -93,9 +93,6 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
                             # render_pairwise_ui IS a function.
                             return
 
-                        if processed_gates:
-                            st.write(f"Applying {len(processed_gates)} filters...")
-
                         # Prepare Data
                         df = filtered_df
 

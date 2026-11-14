@@ -23,11 +23,11 @@ before the commit. A failing run must not be committed.
 ## Phase B — One unit convention (UX_REVIEW §5.2, B2)
 
 - [x] (14e3034) B1  Scale high-res data once at load in `DataLoader` (divide channel columns by `scaling_factor`, set `is_scaled=True`); export writes raw (multiply back) with the `GlowMetadata` header; CSV import respects `is_scaled`; MLP inputs unaffected (models centre/standardise log inputs)   gate: before
-- [?] B2  Remove per-tab scaling branches: `ui/plot/view.py:30-70`, `ui/plot/gating_component.py:199-243`, `ui/analysis/view.py` raw-toggle paths, `glow/analysis/positive.py:384-396`; replace the three yellow warnings with one caption "Values shown ÷10,000; exports are raw"; gates stored in displayed units everywhere   gate: after
+- [x] (5626ee8) B2  Remove per-tab scaling branches: `ui/plot/view.py:30-70`, `ui/plot/gating_component.py:199-243`, `ui/analysis/view.py` raw-toggle paths, `glow/analysis/positive.py:384-396`; replace the three yellow warnings with one caption "Values shown ÷10,000; exports are raw"; gates stored in displayed units everywhere   gate: after
 
 ## Phase C — Gating tab layout (UX_REVIEW §3, §4)
 
-- [ ] C1  Remove stale/duplicate text: "Configuring Gating..." (`ui_gating.py:394`), duplicated headers before the plot, "Applying N filters..." leftovers in all four plot UIs, pandas `observed=False` warning in `bar_ui.py:305`   gate: none
+- [~] C1  Remove stale/duplicate text: "Configuring Gating..." (`ui_gating.py:394`), duplicated headers before the plot, "Applying N filters..." leftovers in all four plot UIs, pandas `observed=False` warning in `bar_ui.py:305`   gate: none
 - [ ] C2  Live/Dead step card: compact toolbar (scale · colormap · interaction · representative file) directly above the plot; Accept / "Adjust gate manually" / Add-to-canvas row directly below; single result line under the plot; model-context selector read-only (derived from metadata Cell Line) with an override link only when unknown   gate: after
 - [ ] C3  Singlet step: identical card layout to C2 (same column widths, toolbar, button row, result line)   gate: none
 - [ ] C4  Collapse completed steps into summary chips with an Edit link ("Live/Dead ✓ MLP · 87.6 % · Edit"); collapse Step 1 after load into "12 files · N experiments · Edit metadata"; remove the duplicate "Loaded Metadata Example" table; bulk-metadata upload expander collapsed by default and placed below the editor   gate: none
@@ -78,3 +78,4 @@ before the commit. A failing run must not be committed.
 2026-11-14 · B1 · design note written; awaiting review (gate: before)
 2026-11-14 · B1 · approved, implemented (14e3034), pytest 30 passed, apptest passed; raw-unit design answer: model inputs use raw_unit_factor, no raw-unit constants found in gating
 2026-11-14 · B2 · committed (5626ee8), pytest 30 passed, apptest passed; awaiting review (gate: after)
+2026-11-14 · B2 · approved, marked done (5626ee8)
