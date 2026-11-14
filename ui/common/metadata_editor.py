@@ -59,7 +59,8 @@ def _clean_blank(meta):
     for col in meta.columns:
         if col == sm.REPLICATE_COL:
             continue
-        meta[col] = meta[col].map(lambda v: "NA" if sm._is_blank(v) else str(v).strip())
+        blank = "HEK" if col == sm.CELL_LINE_COL else "NA"
+        meta[col] = meta[col].map(lambda v, b=blank: b if sm._is_blank(v) else str(v).strip())
     return meta
 
 

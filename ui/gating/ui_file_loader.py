@@ -28,7 +28,7 @@ def render_fill_down(state_key, key_prefix):
     """Expander that sets one column to a single value on all rows of ``state_key``'s table."""
     with st.expander("Fill down (apply one value to all rows)"):
         st.caption("Experiment Name defaults to the file name and Replicate is numbered "
-                   "automatically per name. Cell Line is left blank unless the path names a known line.")
+                   "automatically per name. Cell Line defaults to HEK unless the path names a known line.")
         c1, c2, c3 = st.columns([0.3, 0.5, 0.2])
         col = c1.selectbox("Column", ["Experiment_Name", "Cell_Line"], key=f"{key_prefix}_fd_col")
         val = c2.text_input("Value", key=f"{key_prefix}_fd_val")
@@ -48,11 +48,14 @@ def fill_down(df, column, value):
     df[column] = value
     return auto_format_replicates(df) if column == "Experiment_Name" else df
 
+DEFAULT_CELL_LINE = "HEK"
+
+
 # Helper for Cell Line Detection
 def detect_cell_line_from_path(path):
-    """Best guess of the cell line from the path; blank when no known name is present."""
+    """Best guess of the cell line from the path; DEFAULT_CELL_LINE when no known name is present."""
     if not path:
-        return ""
+        return DEFAULT_CELL_LINE
     filename = os.path.basename(path)
     dirname = os.path.basename(os.path.dirname(path))
     full_str = f"{dirname}_{filename}"
@@ -63,7 +66,7 @@ def detect_cell_line_from_path(path):
     for line in known_lines:
         if line.lower() in full_str.lower():
             return line.upper()
-    return ""
+    return DEFAULT_CELL_LINE
 
 # Mock Experiment Class to emulate Cytoflow structure for downstream compatibility
 class MockExperiment:
@@ -411,7 +414,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                                         "original_path": st.column_config.TextColumn("Original Path", disabled=True),
                                                         "Replicate": st.column_config.TextColumn("Replicate # (auto)", help="Numbered automatically per Experiment Name; updates when you edit names."),
                                                         "Experiment_Name": st.column_config.TextColumn("Experiment Name", help="Defaults to the file name; edit to group files."),
-                                                        "Cell_Line": st.column_config.TextColumn("Cell Line", help="Blank = one population (default model). Filled only when the path names a known line."),
+                                                        "Cell_Line": st.column_config.TextColumn("Cell Line", help="Defaults to HEK unless the path names a known line."),
                                                         "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
                                                     },
                                                     width="stretch",
@@ -470,7 +473,9 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                             loaded_files = loader.process_files(sanitized_meta_list, output_dir=str(glow_paths.processed_dir()))
                             st.session_state.loaded_files = loaded_files
                             st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
-                            st.write("Loaded Metadata Example:", pd.DataFrame(loaded_files).head())
+                            preview_df = pd.DataFrame(loaded_files).head()
+                            st.write("Loaded Metadata Example:", preview_df.drop(
+                                columns=[c for c in preview_df.columns if str(c).lower() == "condition"]))
 
     elif upload_option == "Upload Files / Drag & Drop Folder":
         st.info("You can drag and drop a folder containing FCS files directly into the box below. All files in the folder will be uploaded.")
@@ -583,7 +588,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                                         "original_path": st.column_config.TextColumn("Original Path", disabled=True),
                                                         "Replicate": st.column_config.TextColumn("Replicate # (auto)", help="Numbered automatically per Experiment Name; updates when you edit names."),
                                                         "Experiment_Name": st.column_config.TextColumn("Experiment Name", help="Defaults to the file name; edit to group files."),
-                                                        "Cell_Line": st.column_config.TextColumn("Cell Line", help="Blank = one population (default model). Filled only when the path names a known line."),
+                                                        "Cell_Line": st.column_config.TextColumn("Cell Line", help="Defaults to HEK unless the path names a known line."),
                                                         "Timepoint": st.column_config.NumberColumn("Time (h)", format="%d h")
                                                     },
                                                     width="stretch",
