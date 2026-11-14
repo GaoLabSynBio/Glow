@@ -4,7 +4,7 @@ import cytoflow
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple, cast
 import warnings
-from glow.utils import safe_log10
+from glow.utils import safe_log10, raw_unit_factor
 from glow import paths as glow_paths
 
 # Suppress Cytoflow PnR vs PnB warning (common in commercial FCS)
@@ -442,8 +442,9 @@ class MLPGating(AutomaticGating):
         data = experiment.data
 
         # Prepare Features: Model expects 2 columns, usually Log transformed.
-        xs = data[self.channels[0]].values
-        ys = data[self.channels[1]].values
+        _rf = raw_unit_factor(experiment)  # model features are computed in raw units
+        xs = data[self.channels[0]].values * _rf
+        ys = data[self.channels[1]].values * _rf
 
         # Heuristic Log Transform if data seems linear (max > 10)
         # The model 'gating_model_full.pkl' was trained on Log data.
@@ -499,8 +500,9 @@ class MLPSingletGating(AutomaticGating):
         data = experiment.data
 
         # Prepare Features: Model expects Log_FSC_A, Log_FSC_H
-        xs = data[self.channels[0]].values  # Area
-        ys = data[self.channels[1]].values  # Height
+        _rf = raw_unit_factor(experiment)  # model features are computed in raw units
+        xs = data[self.channels[0]].values * _rf  # Area
+        ys = data[self.channels[1]].values * _rf  # Height
 
         # Heuristic Log Transform if data seems linear
         if np.max(xs) > 10:

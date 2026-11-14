@@ -269,6 +269,12 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         # Clear any existing experiment state before loading new CSV
                         clear_experiment_state()
 
+                        # Raw CSV (GlowMetadata header or values > 1e6) is scaled once, like FCS loads.
+                        from glow.utils import scale_experiment_once
+                        _tmp = MockExperiment(df, metadata=metadata)
+                        scale_experiment_once(_tmp)
+                        metadata = _tmp.metadata
+
                         st.session_state.base_experiment = MockExperiment(df, metadata=metadata)
 
                         # Handle Gating Logic based on columns
@@ -282,7 +288,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                         else:
                             # Assume data is already the target population
                             st.warning("'cells' or 'singlets' annotations not found. Assuming imported data is the target population.")
-                            st.session_state.gated_experiment = MockExperiment(df)
+                            st.session_state.gated_experiment = MockExperiment(df, metadata=metadata)
 
                         st.session_state.loaded_files = [f"CSV: {uploaded_csv.name}"]
                         st.session_state.gating_complete = True # Auto-complete since we are skipping

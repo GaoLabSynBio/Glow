@@ -1,5 +1,67 @@
 import numpy as np
+import pandas as pd
 import warnings
+
+HIGH_RES_THRESHOLD = 1_000_000
+HIGH_RES_FACTOR = 10000.0
+
+# Columns that are metadata even when numeric; never rescaled.
+_NON_CHANNEL_COLS = {
+    'cells', 'singlets', 'sample', 'experiment_name', 'experiment name', 'replicate',
+    'cell_line', 'condition', 'timepoint', 'concentration', 'dose', 'group',
+}
+
+
+def _scalable_columns(df, channels=None):
+    """Numeric (non-bool, non-metadata) columns eligible for high-res scaling."""
+    cols = [c for c in (channels if channels else df.columns) if c in df.columns]
+    return [c for c in cols
+            if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])
+            and str(c).lower() not in _NON_CHANNEL_COLS and not str(c).startswith('_temp_')]
+
+
+def is_high_res_data(df, channels=None, threshold=HIGH_RES_THRESHOLD):
+    cols = _scalable_columns(df, channels)
+    return bool(cols) and bool((df[cols].max() > threshold).any())
+
+
+def scale_high_res_df(df, channels=None, factor=HIGH_RES_FACTOR, inverse=False):
+    """Divide (or multiply when inverse=True) channel columns by `factor`, in place."""
+    cols = _scalable_columns(df, channels)
+    if cols:
+        vals = df[cols].astype(float)
+        df[cols] = vals * factor if inverse else vals / factor
+    return df
+
+
+def scale_experiment_once(experiment):
+    """Scale a high-res experiment's channel columns at load time. Idempotent.
+
+    Sets metadata is_high_res / is_scaled / scaling_factor. Returns True if scaling was applied.
+    """
+    if experiment is None or getattr(experiment, 'data', None) is None:
+        return False
+    meta = dict(getattr(experiment, 'metadata', None) or {})
+    if meta.get('is_scaled', False):
+        return False
+    channels = list(getattr(experiment, 'channels', None) or [])
+    if not (meta.get('is_high_res', False) or is_high_res_data(experiment.data, channels)):
+        return False
+    factor = float(meta.get('scaling_factor', HIGH_RES_FACTOR))
+    scale_high_res_df(experiment.data, channels, factor)
+    meta.update(is_high_res=True, is_scaled=True, scaling_factor=factor)
+    experiment.metadata = meta
+    return True
+
+
+def raw_unit_factor(experiment):
+    """Factor that converts this experiment's loaded values back to raw instrument units.
+
+    1.0 unless the loader scaled the data. Model inputs (log10(x+1) features) must be computed
+    in raw units to match training.
+    """
+    meta = getattr(experiment, 'metadata', None) or {}
+    return float(meta.get('scaling_factor', HIGH_RES_FACTOR)) if meta.get('is_scaled') else 1.0
 
 
 def detect_and_scale_high_res(experiment):
@@ -18,59 +80,10 @@ def detect_and_scale_high_res(experiment):
     if experiment is None or experiment.data is None:
         return False
 
-    # Check if already scaled
-    if hasattr(experiment, 'metadata') and experiment.metadata.get('is_scaled', False):
+    # Idempotent fallback: the loader normally scales at load time (is_scaled=True).
+    if experiment is None or experiment.data is None:
         return False
-
-    # Heuristic: Check numeric columns for very large values
-    # Typical 18-bit flow data maxes around 262,144.
-    # 32-bit signed int max is ~2.14e9.
-    # If max > 1,000,000 (10^6), flag it.
-    threshold = 1000000
-
-    numeric_cols = experiment.data.select_dtypes(include=[np.number]).columns
-    if numeric_cols.empty:
-        return False
-
-    max_vals = experiment.data[numeric_cols].max()
-    is_high_res = (max_vals > threshold).any()
-
-    # Check metadata tag if loader already flagged it but didn't scale
-    if hasattr(experiment, 'metadata') and experiment.metadata.get('is_high_res', False):
-        is_high_res = True
-
-    if is_high_res:
-        scaling_factor = 10000.0
-        print(f"Detected high-resolution data. Applying in-place scaling (factor={scaling_factor}).")
-
-        # Apply scaling to numeric columns (filtering out internal boolean/string cols)
-        # Avoid scaling internal masks (usually boolean) or integer clusters if they are small
-        # But here checking max > threshold protects against scaling small IDs.
-
-        # Be careful not to scale channel columns that don't need it (e.g. Time?)
-        # Usually Time is monotone increasing, might be large. Scaling time? Usually OK.
-
-        # Also include other flow channels that might be low-signal but are part of the set (e.g. fluorophores).
-        # It's better to scale ALL flow channels or just the ones triggered?
-        # Usually, high-res applies to all detectors.
-        # But we don't want to scale 'Time' if it's just seconds.
-        # If Time is in ticks (large), scaling is fine.
-
-        # Safer strategy: Scale ALL numeric columns if we trigger the mode,
-        # except maybe known categorical ones (though numeric categorical is rare in raw flow).
-
-        experiment.data[numeric_cols] = experiment.data[numeric_cols] / scaling_factor
-
-        if experiment.metadata is None:
-            experiment.metadata = {}
-
-        experiment.metadata['is_high_res'] = True
-        experiment.metadata['is_scaled'] = True
-        experiment.metadata['scaling_factor'] = scaling_factor
-
-        return True
-
-    return False
+    return scale_experiment_once(experiment)
 
 
 def logicle_transform(x, cofactor=150):

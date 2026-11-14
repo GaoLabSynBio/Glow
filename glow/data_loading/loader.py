@@ -9,6 +9,7 @@ import numpy as np
 
 from ..logging_config import get_logger
 from .. import paths as glow_paths
+from ..utils import scale_experiment_once
 
 log = get_logger("loader")
 
@@ -268,24 +269,10 @@ class DataLoader:
         if experiment is None or experiment.data is None:
             return experiment
         
-        # Heuristic: Check numeric columns for very large values
-        # Typical 18-bit flow data maxes around 262,144.
-        # 32-bit signed int max is ~2.14e9.
-        # If max > 1,000,000 (10^6), flag it.
-        threshold = 1000000 
-        
-        numeric_cols = experiment.data.select_dtypes(include=[np.number]).columns
-        if numeric_cols.empty:
-            return experiment
-
-        max_vals = experiment.data[numeric_cols].max()
-        if (max_vals > threshold).any():
-            log.info("Detected high-resolution data. Tagging metadata.")
-            new_meta = experiment.metadata.copy() if experiment.metadata else {}
-            new_meta['is_high_res'] = True
-            new_meta['scaling_factor'] = 10000.0
-            experiment.metadata = new_meta
-            
+        # Scale once at load: all downstream tabs then see one unit convention.
+        if scale_experiment_once(experiment):
+            log.info("Detected high-resolution data; scaled channels once (factor=%s).",
+                     experiment.metadata.get('scaling_factor'))
         return experiment
 
     def load_as_cytoflow_experiment(self, metadata_list=None):

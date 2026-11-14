@@ -87,6 +87,13 @@ def main():
     check(bool(at.session_state["loaded_files"]), "loaded_files populated")
     check("base_experiment" in at.session_state.filtered_state, "base_experiment created")
 
+    base = at.session_state["base_experiment"]
+    chans = [c for c in getattr(base, "channels", []) if c in base.data.columns]
+    meta = getattr(base, "metadata", None) or {}
+    print(f"  base_experiment high_res={meta.get('is_high_res')} is_scaled={meta.get('is_scaled')}")
+    check(float(base.data[chans].max().max()) < 1e6, "loaded channel values < 1e6 (scaled once at load)")
+    check(meta.get("is_scaled", False) == meta.get("is_high_res", False), "is_scaled matches is_high_res")
+
     # --- Step 2: live gate
     acc = button(at, "✅ Accept") or button(at, "Accept")
     check(acc is not None, "live-gate Accept button present")

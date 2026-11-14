@@ -7,7 +7,7 @@ from .ui_active_learning import render_uncertainty_controls, get_uncertainty_tra
 from glow.canvas.functions import add_plot_to_canvas
 from .ui_file_loader import reset_live_gating, reset_singlet_gating
 import matplotlib.pyplot as plt
-from glow.utils import safe_log10, logicle_transform
+from glow.utils import safe_log10, logicle_transform, raw_unit_factor
 from common.errors import show_error
 from glow import paths as glow_paths
 from glow.data_loading.sample_metadata import label_map_from_data
@@ -60,7 +60,7 @@ def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
                     if not channels:
                         continue
 
-                    X_s = df.loc[subset_idxs, channels].values
+                    X_s = df.loc[subset_idxs, channels].values * raw_unit_factor(st.session_state.get('base_experiment'))
                     if np.max(X_s) > 10:
                         X_s = safe_log10(X_s + 1, min_val=1e-9)
 
@@ -2113,7 +2113,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     try:
                                         learner = get_active_learner("singlet")
                                         if learner:
-                                            X_lin = df_gated[[d_x, d_y]].values
+                                            X_lin = df_gated[[d_x, d_y]].values * raw_unit_factor(st.session_state.get('base_experiment'))
                                             X_pred = safe_log10(X_lin + 1, min_val=1e-9) if np.max(X_lin) > 10 else X_lin
                                             c_type = str(active_line_singlets).lower() if active_line_singlets else "colo"
                                             # Context
@@ -2123,7 +2123,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             # Viz
                                             subset_n = 5000
                                             viz_df = viz_df_full.sample(subset_n, random_state=42) if len(viz_df_full) > subset_n else viz_df_full
-                                            v_lin = viz_df[[d_x, d_y]].values
+                                            v_lin = viz_df[[d_x, d_y]].values * raw_unit_factor(st.session_state.get('base_experiment'))
                                             v_pred_in = safe_log10(v_lin + 1, min_val=1e-9) if np.max(v_lin) > 10 else v_lin
                                             v_ids = np.zeros(len(v_lin), dtype=int)
                                             v_types = np.array([c_type] * len(v_lin))
@@ -2957,6 +2957,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                             with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
                                                 # Inject Metadata header
+                                                base_meta = getattr(st.session_state.base_experiment, 'metadata', None) or {}
+                                                if base_meta.get('is_scaled'):
+                                                    # Exports are raw: undo the load-time scaling.
+                                                    from glow.utils import scale_high_res_df
+                                                    df_export = scale_high_res_df(
+                                                        df_export.copy(),
+                                                        list(getattr(st.session_state.base_experiment, 'channels', []) or []),
+                                                        float(base_meta.get('scaling_factor', 10000.0)), inverse=True)
                                                 csv_content = df_export.to_csv(index=False)
 
                                                 meta_parts = []
