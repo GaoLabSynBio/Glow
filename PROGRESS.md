@@ -23,7 +23,7 @@ before the commit. A failing run must not be committed.
 ## Phase B — One unit convention (UX_REVIEW §5.2, B2)
 
 - [x] (14e3034) B1  Scale high-res data once at load in `DataLoader` (divide channel columns by `scaling_factor`, set `is_scaled=True`); export writes raw (multiply back) with the `GlowMetadata` header; CSV import respects `is_scaled`; MLP inputs unaffected (models centre/standardise log inputs)   gate: before
-- [ ] B2  Remove per-tab scaling branches: `ui/plot/view.py:30-70`, `ui/plot/gating_component.py:199-243`, `ui/analysis/view.py` raw-toggle paths, `glow/analysis/positive.py:384-396`; replace the three yellow warnings with one caption "Values shown ÷10,000; exports are raw"; gates stored in displayed units everywhere   gate: after
+- [?] B2  Remove per-tab scaling branches: `ui/plot/view.py:30-70`, `ui/plot/gating_component.py:199-243`, `ui/analysis/view.py` raw-toggle paths, `glow/analysis/positive.py:384-396`; replace the three yellow warnings with one caption "Values shown ÷10,000; exports are raw"; gates stored in displayed units everywhere   gate: after
 
 ## Phase C — Gating tab layout (UX_REVIEW §3, §4)
 
@@ -77,3 +77,4 @@ before the commit. A failing run must not be committed.
 2026-11-14 · A5 · approved, marked done (3be5b46)
 2026-11-14 · B1 · design note written; awaiting review (gate: before)
 2026-11-14 · B1 · approved, implemented (14e3034), pytest 30 passed, apptest passed; raw-unit design answer: model inputs use raw_unit_factor, no raw-unit constants found in gating
+2026-11-14 · B2 · committed (5626ee8), pytest 30 passed, apptest passed; awaiting review (gate: after)
