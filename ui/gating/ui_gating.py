@@ -555,16 +555,25 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     if gating_method == "MLP":
                         cell_type_opts = ["colo", "hek", "hug1n", "snu", "b16", "cho"]
                         default_idx = 0
+                        known = False
                         if active_cell_line:
                             normalized_line = str(active_cell_line).lower()
                             if normalized_line in cell_type_opts:
                                 default_idx = cell_type_opts.index(normalized_line)
+                                known = True
                             else:
                                 for i, opt in enumerate(cell_type_opts):
                                     if opt in normalized_line:
                                         default_idx = i
+                                        known = True
                                         break
-                        mlp_cell_type = st.selectbox("Cell Line (Model Context)", cell_type_opts, index=default_idx, format_func=lambda x: x.upper(), key=f"ctype{ukey}")
+                        if known:
+                            # Derived from the metadata Cell Line; no second selector needed
+                            mlp_cell_type = cell_type_opts[default_idx]
+                            st.caption(f"Model context: {mlp_cell_type.upper()} (from Cell Line metadata)")
+                        else:
+                            mlp_cell_type = st.selectbox("Cell Line (Model Context)", cell_type_opts, index=default_idx, format_func=lambda x: x.upper(), key=f"ctype{ukey}",
+                                                         help="Cell line not recognised by the model; choose the closest model context.")
 
                     # Default values
                     eps = 0.05
@@ -587,13 +596,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     boundary_percentile = st.slider("Boundary Confidence (Percentile)", 50, 100, 90, 1, key=f"bound{ukey}")
                     use_outliers = st.checkbox("Remove Outliers before Estimation", value=False, key=f"outliers{ukey}")
 
-                st.divider()
-                st.subheader("Visualization")
-                scale_opt = st.radio("Scale", ["Linear", "Log"], index=1, horizontal=True, key=f"viz_scale{ukey}")
+            # Display toolbar sits directly above the plot it controls
+            with col_plots:
+                tb_scale, tb_interact, tb_cmap = st.columns(3)
+                scale_opt = tb_scale.radio("Scale", ["Linear", "Log"], index=1, horizontal=True, key=f"viz_scale{ukey}")
                 is_log = (scale_opt == "Log")
-                drag_tool = st.radio("Interaction", ["Pan", "Box Select"], index=0, horizontal=True, key=f"gating_interaction_mode{ukey}")
+                drag_tool = tb_interact.radio("Interaction", ["Pan", "Box Select"], index=0, horizontal=True, key=f"gating_interaction_mode{ukey}")
                 drag_mode = "pan" if drag_tool == "Pan" else "select"
-                cmap_selected = st.selectbox("Colormap", ["Viridis", "Plasma"], index=0, key=f"viz_cmap{ukey}")
+                cmap_selected = tb_cmap.selectbox("Colormap", ["Viridis", "Plasma"], index=0, key=f"viz_cmap{ukey}")
 
             # --- Reactive Auto-Gating ---
             # Detect parameter changes to trigger re-calculation automatically.
