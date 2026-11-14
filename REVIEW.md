@@ -11,27 +11,26 @@
        idle                         - nothing pending (runner resets to this after reading your decision)
 -->
 
-Decision: approved
-
+Decision: pending
 
 ## Item
 
-A4 — Shared metadata editor (gate: after) — original commit `e88cde8`, revision 2 below
+A5 — Replace write-once `base_experiment` with a file-list hash (gate: after) — commit `3be5b46`
 
 ## Request
 
-**Revision 2** (your notes: hide condition under "Loaded Metadata Example"; default cell line HEK, not NA)
-- "Loaded Metadata Example" table (`ui/gating/ui_file_loader.py`) now drops the `condition` column.
-- Cell line default is `HEK`: `detect_cell_line_from_path` returns `DEFAULT_CELL_LINE = "HEK"` when no known name is found;
-  the shared editor's blank-cleanup (`_clean_blank`) writes `HEK` (not `NA`) for a blanked Cell_Line. Captions/help text updated.
-- Not changed: `glow/data_loading/loader.py` still fills other missing keys with NA, and `sample_metadata`
-  still maps a blank Cell_Line to "" at read time (Step-1 now always supplies HEK, so this only affects legacy data).
+- `ui/gating/ui_gating.py`: new `_file_list_key(loaded_files)` (sha1 of sorted file paths). The gating tab
+  compares it with `st.session_state['_base_files_key']`; `base_experiment` is dropped and rebuilt only when
+  the file list differs. Metadata/label edits don't change the key, so they never rebuild.
+- `ui/gating/ui_file_loader.py`: `clear_experiment_state` also clears `_base_files_key`.
+- Removed the stale "Configuring Gating..." line (this was also C1's first bullet).
 
-**Tests**: `apptest_walk.py` → ALL CHECKS PASSED; `pytest tests -q` → 26 passed.
+**Tests**: `apptest_walk.py` → ALL CHECKS PASSED; `pytest tests -q` → 26 passed (tail: `26 passed in 1.43s`).
 
-**Unsure**: every file without a recognizable cell-line name is now "HEK", so they share one HEK gate set.
-This is what you asked for, but earlier "blank = one population" semantics are gone.
+**Unsure**: the hash uses paths only, so re-uploading a different file to the same path would not rebuild
+(upload paths are processed copies, so this seems unlikely). I added no dedicated test for the key;
+the walk only covers the unchanged-list path.
 
 ## Blocked tools / problems
 
-None. (A `python3` heredoc and a `sed -i` call needed approval and were not run; I used the Edit tool instead.)
+None. (A `python3` heredoc needed approval and was not run; I used the Edit tool instead.)
