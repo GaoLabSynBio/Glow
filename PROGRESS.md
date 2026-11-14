@@ -18,11 +18,11 @@ before the commit. A failing run must not be committed.
 - [x] (0cd4692) A2  Metadata editor defaults: Experiment Name ← file stem, Replicate ← inferred integer (re-inferred on name edit), Cell Line ← path guess or blank (never `HEK`), auto-filled values visibly marked, "fill down" helper   gate: none
 - [x] (11b06f6) A3  Stable `Sample` = file stem (folder-prefix only on collision); display label = Experiment Name (+ `rep N`) in gating file selectors, singlet selector, Analysis stats table, overlay multiselect, legends; remove `_`-join in `glow/analysis/stats.py:68`   gate: none
 - [x] (94d0dc4) A4  Shared `render_metadata_editor(context)`; used in Step 1 and as a collapsed "Edit metadata" expander on Gating / Analysis / Plot tabs; save → `apply_sample_metadata` on base/gated/analysis experiments, re-infer replicates, no re-gate; Cell_Line rename re-keys `cell_line_gates`/`cell_line_singlet_gates`; genuine reassignment flags only affected lines   gate: after
-- [?] (3be5b46) A5  Replace write-once `base_experiment` (`ui_gating.py:397`) with a file-list hash: rebuild only when the file list changes; label edits never rebuild   gate: after
+- [x] (3be5b46) A5  Replace write-once `base_experiment` (`ui_gating.py:397`) with a file-list hash: rebuild only when the file list changes; label edits never rebuild   gate: after
 
 ## Phase B — One unit convention (UX_REVIEW §5.2, B2)
 
-- [ ] B1  Scale high-res data once at load in `DataLoader` (divide channel columns by `scaling_factor`, set `is_scaled=True`); export writes raw (multiply back) with the `GlowMetadata` header; CSV import respects `is_scaled`; MLP inputs unaffected (models centre/standardise log inputs)   gate: before
+- [?] B1  Scale high-res data once at load in `DataLoader` (divide channel columns by `scaling_factor`, set `is_scaled=True`); export writes raw (multiply back) with the `GlowMetadata` header; CSV import respects `is_scaled`; MLP inputs unaffected (models centre/standardise log inputs)   gate: before
 - [ ] B2  Remove per-tab scaling branches: `ui/plot/view.py:30-70`, `ui/plot/gating_component.py:199-243`, `ui/analysis/view.py` raw-toggle paths, `glow/analysis/positive.py:384-396`; replace the three yellow warnings with one caption "Values shown ÷10,000; exports are raw"; gates stored in displayed units everywhere   gate: after
 
 ## Phase C — Gating tab layout (UX_REVIEW §3, §4)
@@ -74,3 +74,5 @@ before the commit. A failing run must not be committed.
 2026-11-14 · A4 revise · hid condition/folder column in metadata editors; pytest 26 passed, apptest passed; awaiting review
 2026-11-14 · A4 · approved, marked done (94d0dc4)
 2026-11-14 · A5 · committed (3be5b46), pytest 26 passed, apptest passed; awaiting review (gate: after)
+2026-11-14 · A5 · approved, marked done (3be5b46)
+2026-11-14 · B1 · design note written; awaiting review (gate: before)
