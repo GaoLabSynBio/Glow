@@ -11,18 +11,19 @@
        idle                         - nothing pending (runner resets to this after reading your decision)
 -->
 
-Decision: changes: here's a problem i observed at analysis phase. now the gate selection has a big (~2s) lag between I click or drag on the region to gate and the gate to be actually shown. Can you minimize the time lag?
+Decision: pending
 
 ## Item
-D1 Sidebar stepper (commit 807260f)
+D1 revise — analysis gate-selection lag (commit 123378c)
 
 ## Request
-- Sidebar radio labels: "Gating ✓" / "Analysis ✓" when complete; "(unavailable)" + reason caption (load files first / finish gating first). Navigation is NOT blocked (st.radio can't disable options, and the harness visits Plot before finalize).
-- 175 px sidebar CSS and "Navigation" title removed.
-- Full banner only on landing page; one-line "Glow · Flow Analysis Pipeline" once base_experiment exists.
-- Developer Mode → sidebar "Advanced" expander. Start New Experiment → sidebar popover with confirm button.
+Fixed the ~2s lag in Analysis → 1D Histogram when clicking/dragging to set a threshold (`ui/analysis/view.py`):
+- Removed the 5 `st.rerun()` calls after applying a selection (state is set before the inputs/figure render, so the extra full rerun only doubled the delay).
+- Cached the parent-gate data fetch (`get_channel_data_for_samples`) across reruns, keyed on experiment/channel/samples/parent gate/gates.
+- Cached KDE curves per (data signature, sample, log, axis range); KDE data capped at 20k points (fixed seed) for speed.
+- Replaced the per-element Python NaN filter with vectorised numpy.
 - Tests: apptest ALL CHECKS PASSED; pytest 30 passed.
-- Unsure: Plot/Canvas get no ✓ (no completion signal exists); popover/expander not exercised by apptest; Analysis is labelled "unavailable" after load until gating_complete, though it can partly work on a gated experiment.
+- Unsure: not timed in a real browser (no harness for it). Other analysis plots (quadrant/scatter paths around lines 990, 1326, 1417, 1615) still use `st.rerun()` after selection and were not touched; say if you see lag there too. KDE subsampling only changes curves for samples with >20k events.
 
 ## Blocked tools / problems
-An inline `python3 - <<EOF` edit script was denied by permissions; I did the edits with the Edit tool instead.
+Inline `python3 - <<EOF` edits are denied by permissions; used the Edit tool.

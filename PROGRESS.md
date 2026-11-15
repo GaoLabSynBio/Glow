@@ -87,3 +87,4 @@ before the commit. A failing run must not be committed.
 2026-11-14 · C6 · partial (635d5d9), pytest 30 passed, apptest passed; multiselect channels, completion header
 2026-11-14 · C7 · partial (67de006), pytest 30 passed, apptest passed; live/dead cache only (3 items this run: C5-C7)
 2026-11-14 · D1 · committed (807260f), pytest 30 passed, apptest passed; awaiting review (gate: after)
+- 2026-11-14 D1 revise (123378c): analysis selection lag fix; awaiting review
