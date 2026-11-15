@@ -31,7 +31,7 @@ before the commit. A failing run must not be committed.
 - [x] (567f222, partial: toolbar + read-only model context) C2 Live/Dead step card: compact toolbar (scale · colormap · interaction · representative file) directly above the plot; Accept / "Adjust gate manually" / Add-to-canvas row directly below; single result line under the plot; model-context selector read-only (derived from metadata Cell Line) with an override link only when unknown   gate: after
 - [x] (8938d93, partial: toolbar only; button row/result line unchanged like C2) C3  Singlet step: identical card layout to C2 (same column widths, toolbar, button row, result line)   gate: none
 - [x] (21e5d6e, partial: duplicate table removed + bulk upload collapsed; chips/collapse-after-load and moving upload below editor NOT done) C4  Collapse completed steps into summary chips with an Edit link ("Live/Dead ✓ MLP · 87.6 % · Edit"); collapse Step 1 after load into "12 files · N experiments · Edit metadata"; remove the duplicate "Loaded Metadata Example" table; bulk-metadata upload expander collapsed by default and placed below the editor   gate: none
-- [x] (pending-hash, partial: extra "Reset ALL" buttons removed, per-step buttons renamed "Redo"; chip-based Redo awaits C4 chips) C5  Consolidate resets: one "Redo" per step chip; remove the extra global reset buttons; keep per-cell-line reset inside the step   gate: none
+- [x] (b135dc8, partial: extra "Reset ALL" buttons removed, per-step buttons renamed "Redo"; chip-based Redo awaits C4 chips) C5  Consolidate resets: one "Redo" per step chip; remove the extra global reset buttons; keep per-cell-line reset inside the step   gate: none
 - [ ] C6  Rename "Final Data Settings" → "Channels to analyze" as a compact multiselect with structural channels as a caption; move Export and "Run compensation" onto a completion card ("Gating complete — Next: Analysis ▶ · Export CSV · Compensation"); sticky "Next ▶" in the stepper   gate: none
 - [ ] C7  Cache `auto_gate_live_cells` and singlet prediction by parameter hash (`st.cache_data`) so slider changes don't re-gate from scratch   gate: none
 
@@ -83,3 +83,4 @@ before the commit. A failing run must not be committed.
 2026-11-14 · C1 · done (58a9884), pytest 30 passed, apptest passed ("Configuring Gating..." was already gone)
 2026-11-14 · C2 · approved, marked done (567f222); C3 · done (8938d93), pytest 30 passed, apptest passed
 2026-11-14 · C4 · partial (21e5d6e), pytest 30 passed, apptest passed; step chips deferred (3 items this run: C2 ack, C3, C4)
+2026-11-14 · C5 · partial (b135dc8), pytest 30 passed, apptest passed; Reset-ALL buttons removed, Redo labels
