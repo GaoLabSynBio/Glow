@@ -28,7 +28,7 @@ before the commit. A failing run must not be committed.
 ## Phase C — Gating tab layout (UX_REVIEW §3, §4)
 
 - [x] (58a9884) C1  Remove stale/duplicate text: "Configuring Gating..." (`ui_gating.py:394`), duplicated headers before the plot, "Applying N filters..." leftovers in all four plot UIs, pandas `observed=False` warning in `bar_ui.py:305`   gate: none
-- [?] C2 (567f222, partial: toolbar + read-only model context) Live/Dead step card: compact toolbar (scale · colormap · interaction · representative file) directly above the plot; Accept / "Adjust gate manually" / Add-to-canvas row directly below; single result line under the plot; model-context selector read-only (derived from metadata Cell Line) with an override link only when unknown   gate: after
+- [x] (567f222, partial: toolbar + read-only model context) C2 Live/Dead step card: compact toolbar (scale · colormap · interaction · representative file) directly above the plot; Accept / "Adjust gate manually" / Add-to-canvas row directly below; single result line under the plot; model-context selector read-only (derived from metadata Cell Line) with an override link only when unknown   gate: after
 - [ ] C3  Singlet step: identical card layout to C2 (same column widths, toolbar, button row, result line)   gate: none
 - [ ] C4  Collapse completed steps into summary chips with an Edit link ("Live/Dead ✓ MLP · 87.6 % · Edit"); collapse Step 1 after load into "12 files · N experiments · Edit metadata"; remove the duplicate "Loaded Metadata Example" table; bulk-metadata upload expander collapsed by default and placed below the editor   gate: none
 - [ ] C5  Consolidate resets: one "Redo" per step chip; remove the extra global reset buttons; keep per-cell-line reset inside the step   gate: none

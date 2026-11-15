@@ -1665,11 +1665,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         # --- Per Cell Line Mode Detection for Singlets ---
                         active_line_singlets = None
                         if is_multi_line_meta:
-                            if len(unique_cell_lines) > 1:
-                                st.info("Detected multiple cell lines. Process singlets per cell line.")
-                            else:
-                                st.info("Processing singlets for detected cell line.")
-
                             # Selector for current cell line (independent from Step 1)
                             if 'pending_singlet_update' in st.session_state:
                                 st.session_state['singlet_cell_line_sel'] = st.session_state.pop('pending_singlet_update')
@@ -1780,21 +1775,21 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.markdown("#### Settings")
                                 d_x = st.selectbox("Area Channel (X)", d_channels, index=idx_a, key=f"dA{sukey}")
                                 d_y = st.selectbox("Height Channel (Y)", d_channels, index=idx_h, key=f"dH{sukey}")
-                                d_scale = st.radio("Scale", ["Linear", "Log"], index=0, key=f"dScale{sukey}") # Default Linear
+
+                            # Display toolbar sits directly above the plot (same layout as Live/Dead)
+                            with col_plots:
+                                tb_scale, tb_file = st.columns(2)
+                                d_scale = tb_scale.radio("Scale", ["Linear", "Log"], index=0, horizontal=True, key=f"dScale{sukey}") # Default Linear
                                 d_is_log = (d_scale == "Log")
 
                                 # --- Representative File Selection for Singlets ---
                                 rep_sample = None
+                                viz_df_full = df_gated
                                 if active_line_singlets and 'Sample' in df_gated.columns:
                                     unique_s_samples = sorted(df_gated['Sample'].unique())
                                     if len(unique_s_samples) > 1:
-                                        st.info(f"Multiple files for {active_line_singlets}. Select representative:")
-                                        rep_sample = st.selectbox("Representative File", unique_s_samples, format_func=_sample_label_fn(df_gated), key=f"s_sample_{sukey}")
+                                        rep_sample = tb_file.selectbox("Representative File", unique_s_samples, format_func=_sample_label_fn(df_gated), key=f"s_sample_{sukey}")
                                         viz_df_full = df_gated[df_gated['Sample'] == rep_sample].copy()
-                                    else:
-                                        viz_df_full = df_gated
-                                else:
-                                    viz_df_full = df_gated
 
                             # --- Determine Gated Status for UI Cleanup ---
                             is_gated = False
