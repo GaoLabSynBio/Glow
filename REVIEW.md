@@ -11,7 +11,7 @@
        idle                         - nothing pending (runner resets to this after reading your decision)
 -->
 
-Decision: pending
+Decision: changes: here's a problem i observed at analysis phase. now the gate selection has a big (~2s) lag between I click or drag on the region to gate and the gate to be actually shown. Can you minimize the time lag?
 
 ## Item
 D1 Sidebar stepper (commit 807260f)

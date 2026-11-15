@@ -463,17 +463,22 @@ def render_analysis_tab():
 
                 if selected_samples:
                     # Fetch Data, Filtered by Parent gate
-                    data_map = get_channel_data_for_samples(experiment, selected_channel, selected_samples, parent_gate_name=parent_gate, defined_gates=st.session_state.positive_gates)
+                    # Cache the (expensive) parent-gate masking per data selection: clicking the plot
+                    # reruns the script but should not recompute this.
+                    _dm_sig = (id(experiment), len(experiment.data), selected_channel, tuple(selected_samples),
+                               parent_gate, repr(st.session_state.positive_gates))
+                    _dm_cache = st.session_state.get("_analysis_hist_data_cache")
+                    if _dm_cache and _dm_cache[0] == _dm_sig:
+                        data_map = _dm_cache[1]
+                    else:
+                        data_map = get_channel_data_for_samples(experiment, selected_channel, selected_samples, parent_gate_name=parent_gate, defined_gates=st.session_state.positive_gates)
+                        st.session_state["_analysis_hist_data_cache"] = (_dm_sig, data_map)
 
                     # determine range for slider
-                    all_values = []
-                    for s in data_map:
-                        # Add check for valid arrays
-                        if len(data_map[s]) > 0:
-                             all_values.extend(data_map[s])
-
-                    # Robust NaN filtering
-                    all_values = np.array([x for x in all_values if not np.isnan(x)])
+                    # Vectorised concat + NaN filtering (a per-element Python loop was slow on big data)
+                    _arrs = [np.asarray(v, dtype=float) for v in data_map.values() if len(v) > 0]
+                    all_values = np.concatenate(_arrs) if _arrs else np.array([])
+                    all_values = all_values[~np.isnan(all_values)]
 
                     with col_opts:
                         st.markdown("#### Axis & Overlay")
@@ -560,13 +565,11 @@ def render_analysis_tab():
                                               abs(float(sel_max) - st.session_state[max_key]) > 0.0001:
                                                 st.session_state[min_key] = float(sel_min)
                                                 st.session_state[max_key] = float(sel_max)
-                                                st.rerun()
                                       else:
                                            # For binary, use box center or start? User likely wants box for range, click for binary.
                                            # But let's support box as threshold set too.
                                            if abs(float(sel_min) - st.session_state[thr_key]) > 0.0001:
                                                 st.session_state[thr_key] = float(sel_min)
-                                                st.rerun()
 
                             # 2. Point Click (Binary)
                             if sel.get("points"):
@@ -580,15 +583,12 @@ def render_analysis_tab():
                                            if dist_min < dist_max:
                                                 if abs(float(sel_x) - st.session_state[min_key]) > 0.0001:
                                                      st.session_state[min_key] = float(sel_x)
-                                                     st.rerun()
                                            else:
                                                 if abs(float(sel_x) - st.session_state[max_key]) > 0.0001:
                                                      st.session_state[max_key] = float(sel_x)
-                                                     st.rerun()
                                       else:
                                            if abs(float(sel_x) - st.session_state[thr_key]) > 0.0001:
                                                 st.session_state[thr_key] = float(sel_x)
-                                                st.rerun()
 
                         # Render Inputs
                         if is_range:
@@ -675,19 +675,25 @@ def render_analysis_tab():
                                     if len(qt_vals) < 2:
                                         continue
                                     dataset = np.log10(qt_vals)
-                                    # Eval on log domain
-                                    try:
-                                        kde = gaussian_kde(dataset)
-                                        y_vals = kde(np.log10(x_domain))
-                                    except Exception:
-                                        continue
+                                    eval_pts = np.log10(x_domain)
                                 else:
                                     dataset = vals
+                                    eval_pts = x_domain
+
+                                # KDE is O(n * 200); cache per data/axis signature and cap n for speed.
+                                _kde_key = (_dm_sig, s, use_log, float(x_domain[0]), float(x_domain[-1]))
+                                _kde_store = st.session_state.setdefault("_analysis_kde_cache", {})
+                                y_vals = _kde_store.get(_kde_key)
+                                if y_vals is None:
                                     try:
-                                        kde = gaussian_kde(dataset)
-                                        y_vals = kde(x_domain)
+                                        if len(dataset) > 20000:
+                                            dataset = np.random.default_rng(0).choice(dataset, 20000, replace=False)
+                                        y_vals = gaussian_kde(dataset)(eval_pts)
                                     except Exception:
                                         continue
+                                    if len(_kde_store) > 64:
+                                        _kde_store.clear()
+                                    _kde_store[_kde_key] = y_vals
 
                                 # Normalize Area? Gaussian_kde integrates to 1.
                                 # We can plot as is.
