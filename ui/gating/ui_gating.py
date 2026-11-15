@@ -1301,7 +1301,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 if done_lines:
                                     st.write(f"**Gated Lines:** {', '.join(done_lines)}")
                                     if active_cell_line in st.session_state.cell_line_gates:
-                                        if st.button(f"🔄 Reset Gate for {active_cell_line}", key=f"reset{ukey}"):
+                                        if st.button(f"↩️ Redo Live/Dead gate for {active_cell_line}", key=f"reset{ukey}"):
                                             del st.session_state.cell_line_gates[active_cell_line]
 
                                             # Also reset SINGLET gate for this cell line if it exists (Downstream dependency)
@@ -1319,13 +1319,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 del st.session_state['gated_experiment']
                                             st.rerun()
 
-                                if st.button("🗑️ Reset ALL Cell Line Gates", type="secondary"):
-                                    reset_live_gating()
-                                    st.rerun()
 
                         # Global Reset Logic (Mirroring Cell Line behavior)
                         elif st.session_state.get('gate_accepted'):
-                             if st.button("🔄 Reset Live Gating", key="reset_live_global"):
+                             if st.button("↩️ Redo Live/Dead gating", key="reset_live_global"):
                                  reset_live_gating()
                                  st.rerun()
 
@@ -2300,7 +2297,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     if done_s:
                                                         st.write(f"**Gated Singlets:** {', '.join(done_s)}")
                                                         if active_line_singlets in st.session_state.cell_line_singlet_gates:
-                                                            if st.button(f"🔄 Reset Singlet Gate for {active_line_singlets}", key=f"reset_mlp_s{active_line_singlets}"):
+                                                            if st.button(f"↩️ Redo singlet gate for {active_line_singlets}", key=f"reset_mlp_s{active_line_singlets}"):
                                                                 del st.session_state.cell_line_singlet_gates[active_line_singlets]
                                                                 if 'doublets_removed' in st.session_state:
                                                                     del st.session_state['doublets_removed']
@@ -2308,10 +2305,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                                     del st.session_state['singlet_gate_params']
                                                                 st.session_state.reconstruct_live_gate = True
                                                                 st.rerun()
-
-                                                    if st.button("🗑️ Reset ALL Singlet Gates", type="secondary", key="reset_all_mlp_s"):
-                                                        reset_singlet_gating(keep_live_gate=True)
-                                                        st.rerun()
                                         else:
                                             st.error("Failed to load MLP model.")
                                     except Exception as e:
@@ -2607,7 +2600,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 if done_s:
                                                     st.write(f"**Gated Singlets:** {', '.join(done_s)}")
                                                     if active_line_singlets in st.session_state.cell_line_singlet_gates:
-                                                        if st.button(f"🔄 Reset Singlet Gate for {active_line_singlets}", key=f"reset_s{active_line_singlets}"):
+                                                        if st.button(f"↩️ Redo singlet gate for {active_line_singlets}", key=f"reset_s{active_line_singlets}"):
                                                             del st.session_state.cell_line_singlet_gates[active_line_singlets]
                                                             if 'doublets_removed' in st.session_state:
                                                                 del st.session_state['doublets_removed']
@@ -2615,10 +2608,6 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                                 del st.session_state['singlet_gate_params']
                                                             st.session_state.reconstruct_live_gate = True
                                                             st.rerun()
-
-                                                    if st.button("🗑️ Reset ALL Singlet Gates", type="secondary", key="reset_all_s"):
-                                                        reset_singlet_gating(keep_live_gate=True)
-                                                        st.rerun()
 
                                     except Exception as e:
                                         show_error(
