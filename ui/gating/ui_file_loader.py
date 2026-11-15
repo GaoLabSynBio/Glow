@@ -479,9 +479,6 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                             loaded_files = loader.process_files(sanitized_meta_list, output_dir=str(glow_paths.processed_dir()))
                             st.session_state.loaded_files = loaded_files
                             st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
-                            preview_df = pd.DataFrame(loaded_files).head()
-                            st.write("Loaded Metadata Example:", preview_df.drop(
-                                columns=[c for c in preview_df.columns if str(c).lower() == "condition"]))
 
     elif upload_option == "Upload Files / Drag & Drop Folder":
         st.info("You can drag and drop a folder containing FCS files directly into the box below. All files in the folder will be uploaded.")
