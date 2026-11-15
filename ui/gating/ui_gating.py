@@ -2623,7 +2623,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.success(f"Final Singlets: {st.session_state.singlet_gate_stats}")
 
                             st.divider()
-                            st.subheader("5. Final Data Settings")
+                            st.subheader("5. Channels to analyze")
 
                             export_only_selected_channels = False # Initialize default
 
@@ -2654,49 +2654,23 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     if not defaults:
                                         defaults = all_channels
                                     st.session_state.persistent_selected_channels = defaults
-                                    # Init checkbox keys
-                                    for ch in all_channels:
-                                        st.session_state[f"checkbox_ch_{ch}"] = (ch in defaults)
 
                                 # --- UI Controls ---
-                                st.markdown("Select fluorescence channels to include in your analysis. Unselected channels will be hidden.")
-
-                                # Identify Mandatory Channels (FSC/SSC)
+                                # Structural channels (FSC/SSC) are always kept; only the rest is selectable.
                                 mandatory_channels = [c for c in all_channels if any(x in c.upper() for x in ["FSC", "SSC"])]
                                 selectable_channels = [c for c in all_channels if c not in mandatory_channels]
-
-                                b1, b2, _ = st.columns([1, 1, 2])
-                                if b1.button("Select All", key="gating_sel_all"):
-                                    st.session_state.persistent_selected_channels = list(all_channels)
-                                    for ch in selectable_channels:
-                                        st.session_state[f"checkbox_ch_{ch}"] = True
-                                    st.rerun()
-                                if b2.button("Clear All", key="gating_clear_all"):
-                                    st.session_state.persistent_selected_channels = list(mandatory_channels)
-                                    for ch in selectable_channels:
-                                        st.session_state[f"checkbox_ch_{ch}"] = False
-                                    st.rerun()
-
-                                # --- Checkbox Grid ---
-                                # Sync first: if persistent exists, ensure checkbox keys match (in case of rerun)
-                                current_selected = set(st.session_state.get('persistent_selected_channels', []))
-                                for ch in selectable_channels:
-                                    k = f"checkbox_ch_{ch}"
-                                    if k not in st.session_state:
-                                        st.session_state[k] = (ch in current_selected)
-
-                                new_selection = list(mandatory_channels)
-
                                 if mandatory_channels:
-                                    st.info(f"**Structural channels included automatically:** {', '.join(mandatory_channels)}")
+                                    st.caption(f"Structural channels always included: {', '.join(mandatory_channels)}")
 
-                                with st.expander("Select Fluorescence Channels", expanded=True):
-                                    n_cols = 3
-                                    grid_cols = st.columns(n_cols)
-                                    for i, ch in enumerate(selectable_channels):
-                                        with grid_cols[i % n_cols]:
-                                            if st.checkbox(ch, key=f"checkbox_ch_{ch}"):
-                                                new_selection.append(ch)
+                                kept = [c for c in st.session_state.persistent_selected_channels if c in selectable_channels]
+                                picked = st.multiselect(
+                                    "Fluorescence channels to include in your analysis",
+                                    selectable_channels,
+                                    default=kept,
+                                    key="channels_to_analyze",
+                                    help="Unselected channels are dropped from the analysis dataset.",
+                                )
+                                new_selection = list(mandatory_channels) + list(picked)
 
                                 # Update State
                                 st.session_state.persistent_selected_channels = new_selection
@@ -2706,13 +2680,15 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.session_state.filter_channels_active = export_only_selected_channels
 
                                 if export_only_selected_channels:
-                                     st.info(f"{len(new_selection)} channels selected. {len(all_channels) - len(new_selection)} channels dropped.")
+                                     st.caption(f"{len(new_selection)} channels selected, {len(all_channels) - len(new_selection)} dropped.")
 
                             else:
                                 st.info("Load data to enable channel selection.")
 
                             st.divider()
-                            with st.expander("6. Export Data (Optional)", expanded=False):
+                            st.subheader("Gating complete")
+                            st.caption("Next: Analysis. Optionally export the gated data or run compensation first.")
+                            with st.expander("Export CSV (optional)", expanded=False):
                                 st.write("Configure export options below.")
 
                                 export_mode = st.radio("Export Mode", ["Gated Population (Live + Singlets)", "Full Population (Annotated)"], horizontal=True)
