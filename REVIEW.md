@@ -11,10 +11,18 @@
        idle                         - nothing pending (runner resets to this after reading your decision)
 -->
 
-Decision: idle
+Decision: pending
 
 ## Item
+D1 Sidebar stepper (commit 807260f)
 
 ## Request
+- Sidebar radio labels: "Gating ✓" / "Analysis ✓" when complete; "(unavailable)" + reason caption (load files first / finish gating first). Navigation is NOT blocked (st.radio can't disable options, and the harness visits Plot before finalize).
+- 175 px sidebar CSS and "Navigation" title removed.
+- Full banner only on landing page; one-line "Glow · Flow Analysis Pipeline" once base_experiment exists.
+- Developer Mode → sidebar "Advanced" expander. Start New Experiment → sidebar popover with confirm button.
+- Tests: apptest ALL CHECKS PASSED; pytest 30 passed.
+- Unsure: Plot/Canvas get no ✓ (no completion signal exists); popover/expander not exercised by apptest; Analysis is labelled "unavailable" after load until gating_complete, though it can partly work on a gated experiment.
 
 ## Blocked tools / problems
+An inline `python3 - <<EOF` edit script was denied by permissions; I did the edits with the Edit tool instead.

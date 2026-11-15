@@ -37,7 +37,7 @@ before the commit. A failing run must not be committed.
 
 ## Phase D — Navigation (UX_REVIEW §1)
 
-- [ ] D1  Sidebar stepper with completion state (✓ marks, unavailable steps greyed with a reason); drop the fixed 175 px sidebar CSS; compact one-line header after the landing page; Developer Mode moved into an "Advanced" expander   gate: after
+- [?] (807260f) D1  Sidebar stepper with completion state (✓ marks, unavailable steps greyed with a reason); drop the fixed 175 px sidebar CSS; compact one-line header after the landing page; Developer Mode moved into an "Advanced" expander   gate: after
 - [ ] D2  "Start New Experiment" moved to the bottom of the sidebar behind a confirmation popover   gate: none
 
 ## Phase E — Plot tab (UX_REVIEW §6)
@@ -86,3 +86,4 @@ before the commit. A failing run must not be committed.
 2026-11-14 · C5 · partial (b135dc8), pytest 30 passed, apptest passed; Reset-ALL buttons removed, Redo labels
 2026-11-14 · C6 · partial (635d5d9), pytest 30 passed, apptest passed; multiselect channels, completion header
 2026-11-14 · C7 · partial (67de006), pytest 30 passed, apptest passed; live/dead cache only (3 items this run: C5-C7)
+2026-11-14 · D1 · committed (807260f), pytest 30 passed, apptest passed; awaiting review (gate: after)
