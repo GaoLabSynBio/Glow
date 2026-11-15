@@ -1,4 +1,8 @@
+import copy
 from typing import List
+
+import pandas as pd
+
 from .strategies import (
     CompensationManager,
     GatingStrategy,
@@ -46,6 +50,18 @@ class GatingWorkflow:
 # -----------------------------------------------------------------------------
 # Gating Manager (Facade/Compatibility Layer)
 # -----------------------------------------------------------------------------
+
+# Small module-level cache of live/dead gating results (GatingManager is re-created per call).
+_LIVE_GATE_CACHE = {}
+_LIVE_GATE_CACHE_SIZE = 8
+
+
+def _experiment_fingerprint(experiment):
+    """Content hash of an experiment's event data (used as a cache key)."""
+    data = experiment.data
+    return (data.shape, tuple(map(str, data.columns)),
+            int(pd.util.hash_pandas_object(data, index=True).sum()))
+
 
 class GatingManager:
     """
@@ -129,7 +145,30 @@ class GatingManager:
 
         return strategy.apply(experiment)
 
-    def auto_gate_live_cells(self, experiment, x_channel="FSC-A", y_channel="SSC-A", method="density", num_components=2, keep=0.9, sigma=2.0, outlier_low=0.01, outlier_high=0.99, return_model=False, use_outlier_removal=False, eps=0.05, min_samples=50, cell_type="colo"):
+    def auto_gate_live_cells(self, *args, **kwargs):
+        """
+        Cached front-end for ``_auto_gate_live_cells``: identical (data, parameters)
+        return a copy of the previous result instead of re-gating from scratch.
+        Calls with ``return_model=True`` are never cached.
+        """
+        experiment = args[0] if args else kwargs.get("experiment")
+        if kwargs.get("return_model") or experiment is None:
+            return self._auto_gate_live_cells(*args, **kwargs)
+        try:
+            key = (_experiment_fingerprint(experiment), args[1:], tuple(sorted(kwargs.items(), key=lambda kv: kv[0])))
+            hash(key)
+        except Exception:
+            return self._auto_gate_live_cells(*args, **kwargs)
+        hit = _LIVE_GATE_CACHE.get(key)
+        if hit is None:
+            hit = self._auto_gate_live_cells(*args, **kwargs)
+            _LIVE_GATE_CACHE[key] = copy.deepcopy(hit)
+            while len(_LIVE_GATE_CACHE) > _LIVE_GATE_CACHE_SIZE:
+                _LIVE_GATE_CACHE.pop(next(iter(_LIVE_GATE_CACHE)))
+            return hit
+        return copy.deepcopy(hit)
+
+    def _auto_gate_live_cells(self, experiment, x_channel="FSC-A", y_channel="SSC-A", method="density", num_components=2, keep=0.9, sigma=2.0, outlier_low=0.01, outlier_high=0.99, return_model=False, use_outlier_removal=False, eps=0.05, min_samples=50, cell_type="colo"):
         """
         Uses AutoGatingStrategy (GMM, Density).
         method: 'gmm', 'density', or 'smart' (legacy alias for density + outliers).
