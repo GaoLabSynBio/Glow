@@ -29,7 +29,7 @@ before the commit. A failing run must not be committed.
 
 - [x] (58a9884) C1  Remove stale/duplicate text: "Configuring Gating..." (`ui_gating.py:394`), duplicated headers before the plot, "Applying N filters..." leftovers in all four plot UIs, pandas `observed=False` warning in `bar_ui.py:305`   gate: none
 - [x] (567f222, partial: toolbar + read-only model context) C2 Live/Dead step card: compact toolbar (scale · colormap · interaction · representative file) directly above the plot; Accept / "Adjust gate manually" / Add-to-canvas row directly below; single result line under the plot; model-context selector read-only (derived from metadata Cell Line) with an override link only when unknown   gate: after
-- [ ] C3  Singlet step: identical card layout to C2 (same column widths, toolbar, button row, result line)   gate: none
+- [x] (8938d93, partial: toolbar only; button row/result line unchanged like C2) C3  Singlet step: identical card layout to C2 (same column widths, toolbar, button row, result line)   gate: none
 - [ ] C4  Collapse completed steps into summary chips with an Edit link ("Live/Dead ✓ MLP · 87.6 % · Edit"); collapse Step 1 after load into "12 files · N experiments · Edit metadata"; remove the duplicate "Loaded Metadata Example" table; bulk-metadata upload expander collapsed by default and placed below the editor   gate: none
 - [ ] C5  Consolidate resets: one "Redo" per step chip; remove the extra global reset buttons; keep per-cell-line reset inside the step   gate: none
 - [ ] C6  Rename "Final Data Settings" → "Channels to analyze" as a compact multiselect with structural channels as a caption; move Export and "Run compensation" onto a completion card ("Gating complete — Next: Analysis ▶ · Export CSV · Compensation"); sticky "Next ▶" in the stepper   gate: none
@@ -81,3 +81,4 @@ before the commit. A failing run must not be committed.
 2026-11-14 · B2 · approved, marked done (5626ee8)
 2026-11-14 · C2 · committed (567f222), pytest 30 passed, apptest passed; awaiting review (gate: after)
 2026-11-14 · C1 · done (58a9884), pytest 30 passed, apptest passed ("Configuring Gating..." was already gone)
+2026-11-14 · C2 · approved, marked done (567f222); C3 · done (8938d93), pytest 30 passed, apptest passed
