@@ -16,25 +16,12 @@ st.set_page_config(
 )
 
 # Import tab views
-from gating.view import render_gating_tab
+from gating.view import render_gating_tab, clear_all_cache
 from analysis.view import render_analysis_tab
 from plot.view import render_plot_tab
 from canvas.view import render_canvas_tab
 from compensation.view import render_compensation_tab
 from common import session as glow_session
-
-# Custom CSS to set sidebar width to 175px (Fixed, no resizing)
-st.markdown(
-    """
-    <style>
-    section[data-testid="stSidebar"] {
-        min-width: 175px !important;
-        max-width: 175px !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 try:
     from glow.data_loading.loader import DataLoader
@@ -53,12 +40,6 @@ try:
 except ImportError:
     ActiveLearningLogger = None
 
-col1, col2 = st.columns([1, 2.5], vertical_alignment="center")
-with col1:
-    st.image(str(glow_paths.asset_path("glow_icon_breath.svg")), width=500)
-with col2:
-    st.markdown('<h1 style="padding-top: 0px; position: relative; top: 1px;">   Flow Analysis Pipeline</h1>', unsafe_allow_html=True)
-
 # Initialize Session State for Workflow
 if 'gating_complete' not in st.session_state:
     st.session_state.gating_complete = False
@@ -70,14 +51,13 @@ if 'current_tab' not in st.session_state:
 
 # Ensure writable data directories exist. We intentionally do NOT clear the upload
 # cache here: keeping the files lets the user refresh or come back later and pick
-# up where they left off. Use "Start New Experiment" (Gating tab) to clear.
+# up where they left off. Use "Start new experiment" (sidebar) to clear.
 if 'startup_done' not in st.session_state:
     glow_paths.uploads_dir()
     st.session_state.startup_done = True
 
 # Sidebar Navigation
-st.sidebar.image(str(glow_paths.asset_path("glow_icon.png")), width=80)
-st.sidebar.title("Navigation")
+st.sidebar.image(str(glow_paths.asset_path("glow_icon.png")), width=64)
 
 # Determine available tabs based on state
 # User request: Always show Analysis, Plot, and Canvas
@@ -94,7 +74,28 @@ if st.session_state.current_tab not in tabs:
 
 # Use a key to sync state, but handle manual changes via callback if needed.
 # Simple approach: use the radio value.
-selected_tab = st.sidebar.radio("Go to", tabs, index=tabs.index(st.session_state.current_tab))
+_has_data = "base_experiment" in st.session_state
+_gated = bool(st.session_state.get("gating_complete"))
+_done = {"Gating": _gated, "Analysis": bool(st.session_state.get("analysis_complete"))}
+_reason = {}
+if not _has_data:
+    _reason["Analysis"] = _reason["Plot"] = _reason["Canvas"] = "load files first"
+elif not _gated:
+    _reason["Analysis"] = "finish gating first"
+
+
+def _step_label(tab):
+    if _done.get(tab):
+        return f"{tab} ✓"
+    return f"{tab} (unavailable)" if tab in _reason else tab
+
+
+selected_tab = st.sidebar.radio(
+    "Go to", tabs, index=tabs.index(st.session_state.current_tab),
+    format_func=_step_label,
+)
+if selected_tab in _reason:
+    st.sidebar.caption(f"{selected_tab}: {_reason[selected_tab]}.")
 
 # Keep the URL in sync so a refresh restores the current tab.
 if st.query_params.get("tab") != selected_tab:
@@ -128,6 +129,27 @@ with st.sidebar.expander("💾 Session", expanded=False):
             st.error(f"Could not restore session: {e}")
 
 st.sidebar.divider()
+
+# --- Advanced + new experiment (bottom of sidebar) -------------------------
+with st.sidebar.expander("Advanced", expanded=False):
+    st.toggle("Developer Mode", key="developer_mode", value=False,
+              help="Show advanced tools and validation plots.")
+
+with st.sidebar.popover("🔄 Start new experiment", width="stretch"):
+    st.warning("This clears all loaded data, gates and settings.")
+    if st.button("Yes, clear everything", key="refresh_experiment", type="primary"):
+        clear_all_cache()
+        st.rerun()
+
+# Compact one-line header once data is loaded; full banner on the landing page.
+if _has_data:
+    st.markdown("##### Glow · Flow Analysis Pipeline")
+else:
+    _c1, _c2 = st.columns([1, 2.5], vertical_alignment="center")
+    with _c1:
+        st.image(str(glow_paths.asset_path("glow_icon_breath.svg")), width=500)
+    with _c2:
+        st.markdown('<h1 style="padding-top: 0px; position: relative; top: 1px;">   Flow Analysis Pipeline</h1>', unsafe_allow_html=True)
 
 # Render Selected Tab
 if selected_tab == "Gating":
