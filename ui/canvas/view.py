@@ -1,8 +1,16 @@
 import streamlit as st
 import io
+import json
+import pickle
+import threading
 import numpy as np
 import warnings
-from glow.canvas.functions import get_canvas_plots, remove_plot_from_canvas, move_plot_in_canvas
+from glow.canvas.functions import (
+    get_canvas_plots, remove_plot_from_canvas, move_plot_in_canvas,
+    build_canvas_zip, safe_filename,
+)
+import matplotlib.text as mpl_text
+from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from matplotlib.collections import PolyCollection, PathCollection
@@ -488,6 +496,360 @@ def _apply_plotly_category_colors(fig, category_colors):
             trace_idx = cat_info["trace_idx"]
             fig.data[trace_idx].marker.color = new_color
 
+
+# ============================================================
+# Canvas settings, rendering and export
+# ============================================================
+
+_TIGHT_LAYOUT_WARNING = "This figure includes Axes that are not compatible with tight_layout"
+_FONT_FAMILIES = ["default", "sans-serif", "serif", "monospace"]
+_CMAPS = ["viridis", "plasma", "inferno", "magma", "cividis", "Greys", "Purples", "Blues", "Greens",
+          "Oranges", "Reds", "YlOrBr", "YlOrRd", "OrRd", "PuRd", "RdPu", "BuPu", "GnBu", "PuBu",
+          "YlGnBu", "PuBuGn", "BuGn", "YlGn", "jet", "rainbow", "Spectral"]
+_DEFAULT_SETTINGS = {"width_scale": 1.0, "height_scale": 1.0, "font_scale": 1.0, "dot_scale": 1.0,
+                     "font_family": "default", "main_cmap": "viridis"}
+_TYPE_LABELS = {"plotly": "Interactive plot (Plotly)", "asperatio": "Asperatio table"}
+_MIME = {"png": "image/png", "svg": "image/svg+xml", "pdf": "application/pdf",
+         "html": "text/html", "csv": "text/csv"}
+
+# Figures are mutated when settings are applied; "Export all" runs on Streamlit's download
+# thread, so figure access from both sides goes through this lock.
+_FIG_LOCK = threading.Lock()
+
+
+def _settings(plot_data):
+    """The plot's settings dict, with defaults filled in and legacy keys dropped."""
+    settings = plot_data.setdefault("settings", {})
+    for key, value in _DEFAULT_SETTINGS.items():
+        settings.setdefault(key, value)
+    for legacy in ("override_color_en", "override_line_color_en"):
+        settings.pop(legacy, None)
+    return settings
+
+
+def _mpl_bytes(fig, fmt, dpi=None):
+    buf = io.BytesIO()
+    kwargs = {"format": fmt, "bbox_inches": "tight"}
+    if dpi is not None:
+        kwargs["dpi"] = dpi
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, message=_TIGHT_LAYOUT_WARNING)
+        fig.savefig(buf, **kwargs)
+    return buf.getvalue()
+
+
+def _has_mappable(plot_data):
+    """True if the plot maps values to a colormap (density scatter / colorscale)."""
+    if plot_data.get("type") == "matplotlib":
+        for ax in plot_data["fig"].axes:
+            for c in ax.collections:
+                if hasattr(c, "get_cmap") and hasattr(c, "get_array"):
+                    arr = c.get_array()
+                    if arr is not None and len(arr) > 1:
+                        return True
+    elif plot_data.get("type") == "plotly":
+        for t in getattr(plot_data["data"], "data", []):
+            if "marker" in t and ("color" in t.marker or "colorscale" in t.marker):
+                if "colorscale" in t.marker or (
+                        isinstance(t.marker.color, (list, tuple, np.ndarray)) and len(t.marker.color) > 1):
+                    return True
+    return False
+
+
+# ---------- controls ----------
+
+def _color_picker_rows(plot_id, prefix, items, store):
+    """One name + colour-picker row per distinct name; changed colours are written to `store`.
+
+    Colours are applied by name, so repeated names (e.g. "Group 1" on every pairwise subplot)
+    share one picker.
+    """
+    seen = set()
+    for info in items:
+        name = info["name"]
+        if name in seen:
+            continue
+        seen.add(name)
+        current = store.get(name, _color_to_hex(info["original_color"]))
+        col_name, col_picker = st.columns([2, 1])
+        col_name.text(name)
+        new_color = col_picker.color_picker("Color", value=current, key=f"{prefix}_{plot_id}_{name}",
+                                            label_visibility="collapsed")
+        if new_color != current:
+            store[name] = new_color
+
+
+def _render_color_controls(plot_id, plot_data):
+    """Per-sample / per-category colour pickers, depending on what the figure contains."""
+    ptype = plot_data.get("type")
+    title, items = None, []
+    if ptype == "matplotlib":
+        f = plot_data["fig"]
+        if _has_categorical_scatter(f):  # e.g. Singlet/Doublet scatter
+            title, prefix, store_key = "Category Colors", "mplcat", "mpl_category_colors"
+            items = _extract_categorical_scatter(f)
+        else:
+            prefix, store_key = "sc", "sample_colors"
+            has_density = _has_density_scatter(f)
+            if has_density and _has_colorable_lines(f):  # facet plot: trend lines only
+                title, items = "Trend Line Colors", _extract_colorable_samples(f, lines_only=True)
+            elif not has_density:  # histogram or bar plot
+                title, items = "Sample Colors", _extract_colorable_samples(f, lines_only=False)
+    elif ptype == "plotly":
+        title, prefix, store_key = "Category Colors", "pcat", "category_colors"
+        items = _extract_plotly_categories(plot_data["data"])
+    if not items:
+        return
+    st.markdown(f"**{title}**")
+    _color_picker_rows(plot_id, prefix, items, plot_data["settings"].setdefault(store_key, {}))
+
+
+def _render_customize_controls(plot_id, plot_data):
+    settings = _settings(plot_data)
+    st.markdown("**Customize**")
+    c_w, c_h = st.columns(2)
+    settings["width_scale"] = c_w.slider("Width Scale", 0.5, 3.0, float(settings["width_scale"]), 0.1,
+                                         key=f"ws_{plot_id}")
+    settings["height_scale"] = c_h.slider("Height Scale", 0.5, 3.0, float(settings["height_scale"]), 0.1,
+                                          key=f"hs_{plot_id}")
+    settings["font_scale"] = st.slider("Font/Zoom Scale", 0.5, 3.0, float(settings["font_scale"]), 0.1,
+                                       key=f"fs_{plot_id}")
+    settings["dot_scale"] = st.slider("Dot Scale", 0.1, 5.0, float(settings["dot_scale"]), 0.1,
+                                      key=f"ds_{plot_id}")
+    family = settings["font_family"] if settings["font_family"] in _FONT_FAMILIES else "default"
+    settings["font_family"] = st.selectbox("Font Family", _FONT_FAMILIES,
+                                           index=_FONT_FAMILIES.index(family), key=f"ff_{plot_id}")
+    if _has_mappable(plot_data):
+        cmap = settings["main_cmap"] if settings["main_cmap"] in _CMAPS else "viridis"
+        settings["main_cmap"] = st.selectbox("Select Colormap", _CMAPS, index=_CMAPS.index(cmap),
+                                             key=f"mc_{plot_id}")
+    else:
+        settings["main_cmap"] = "viridis"
+    _render_color_controls(plot_id, plot_data)
+
+
+# ---------- applying settings ----------
+
+def _apply_mpl_settings(fig, settings):
+    """Resize, restyle and recolour a matplotlib figure in place according to `settings`."""
+    if not hasattr(fig, "_glow_orig_size"):
+        fig._glow_orig_size = fig.get_size_inches()
+    w_orig, h_orig = fig._glow_orig_size
+    font_scale = settings["font_scale"]
+    # Font scaling: shrink the figure in inches (and raise the dpi when rendering) so text grows
+    # relative to the data area.
+    fig.set_size_inches(w_orig * settings["width_scale"] / font_scale,
+                        h_orig * settings["height_scale"] / font_scale)
+
+    if settings["font_family"] != "default":
+        for txt in fig.findobj(match=mpl_text.Text):
+            txt.set_fontfamily(settings["font_family"])
+
+    for ax in fig.axes:
+        for coll in ax.collections:
+            if isinstance(coll, PolyCollection):  # keep ridge/fill colours as they are
+                continue
+            if hasattr(coll, "get_sizes") and hasattr(coll, "set_sizes"):
+                if not hasattr(coll, "_glow_orig_sizes"):
+                    sizes = coll.get_sizes()
+                    coll._glow_orig_sizes = sizes.copy() if len(sizes) > 0 else [10]
+                coll.set_sizes([s * settings["dot_scale"] for s in coll._glow_orig_sizes])
+            if hasattr(coll, "set_cmap") and hasattr(coll, "get_array"):
+                arr = coll.get_array()
+                if arr is not None and len(arr) > 1:
+                    coll.set_cmap(settings["main_cmap"])
+
+    if settings.get("sample_colors"):
+        _apply_sample_colors(fig, settings["sample_colors"])
+    if settings.get("mpl_category_colors"):
+        _apply_mpl_category_colors(fig, settings["mpl_category_colors"])
+    # Redraw so fills/polygons on log axes follow the resize.
+    fig.canvas.draw()
+
+
+def _apply_plotly_settings(fig, settings):
+    font = {"size": 12 * settings["font_scale"]}
+    if settings["font_family"] != "default":
+        font["family"] = settings["font_family"]
+    fig.update_layout(font=font)
+    if not _has_plotly_categories(fig):  # colorscale only for continuous colouring
+        fig.update_traces(marker=dict(colorscale=settings["main_cmap"]))
+    if settings.get("category_colors"):
+        _apply_plotly_category_colors(fig, settings["category_colors"])
+    if settings["dot_scale"] != 1.0:
+        fig.update_traces(marker=dict(size=8 * settings["dot_scale"]), selector=dict(type="scatter"))
+    # Width follows the container, so the aspect ratio is expressed through the height.
+    fig.update_layout(height=int(450 * settings["height_scale"] / settings["width_scale"]), width=None)
+
+
+# ---------- export ----------
+
+def _export_files(plot_data):
+    """{extension: bytes} for one canvas entry, with its settings applied. Caller holds _FIG_LOCK."""
+    ptype = plot_data.get("type")
+    settings = _settings(plot_data)
+    files = {}
+    if ptype == "matplotlib":
+        fig = plot_data["fig"]
+        _apply_mpl_settings(fig, settings)
+        files["png"] = _mpl_bytes(fig, "png", dpi=300)
+        files["svg"] = _mpl_bytes(fig, "svg")
+        files["pdf"] = _mpl_bytes(fig, "pdf")
+    elif ptype == "plotly":
+        fig = plot_data["data"]
+        _apply_plotly_settings(fig, settings)
+        for fmt, scale in (("png", 2), ("pdf", 1)):
+            try:
+                files[fmt] = fig.to_image(format=fmt, scale=scale)  # needs kaleido
+            except Exception:
+                pass
+        if not files:
+            files["html"] = fig.to_html(include_plotlyjs="cdn").encode()
+    elif ptype == "asperatio" and hasattr(plot_data.get("data"), "to_csv"):
+        files["csv"] = plot_data["data"].to_csv(index=False).encode()
+    return files
+
+
+def _detached_copy(plot_data):
+    """Copy of a canvas entry with its own figure object, so export can't disturb the page."""
+    copy = dict(plot_data)
+    copy["settings"] = dict(plot_data.get("settings", {}))
+    key = "fig" if plot_data.get("type") == "matplotlib" else "data"
+    if key in plot_data:
+        try:
+            copy[key] = pickle.loads(pickle.dumps(plot_data[key]))
+        except Exception:
+            pass  # unpicklable figure: export the original (still under the lock)
+    return copy
+
+
+def _export_all_zip(entries):
+    """ZIP of every canvas plot (canvas order) plus one multi-page PDF of the matplotlib plots."""
+    with _FIG_LOCK:
+        exported, pdf_figs = [], []
+        for plot_data in entries:
+            plot_data = _detached_copy(plot_data)
+            files = _export_files(plot_data)
+            if files:
+                exported.append((plot_data.get("title", "plot"), files))
+            if plot_data.get("type") == "matplotlib":
+                pdf_figs.append(plot_data["fig"])
+        extra = {}
+        if pdf_figs:
+            buf = io.BytesIO()
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning, message=_TIGHT_LAYOUT_WARNING)
+                with PdfPages(buf) as pdf:
+                    for fig in pdf_figs:
+                        pdf.savefig(fig, bbox_inches="tight")
+            extra["canvas_all_plots.pdf"] = buf.getvalue()
+    return build_canvas_zip(exported, extra)
+
+
+# ---------- layout ----------
+
+def _thumbnail(plot_data):
+    """Small PNG of a matplotlib plot, cached until its settings change; None for other types."""
+    if plot_data.get("type") != "matplotlib":
+        return None
+    key = json.dumps(plot_data.get("settings", {}), sort_keys=True, default=str)
+    cached = plot_data.get("_thumb")
+    if cached and cached[0] == key:
+        return cached[1]
+    try:
+        with _FIG_LOCK:
+            png = _mpl_bytes(plot_data["fig"], "png", dpi=30)
+    except Exception:
+        return None
+    plot_data["_thumb"] = (key, png)
+    return png
+
+
+def _selected_plot_id(plots):
+    selected = st.session_state.get("canvas_selected")
+    if selected not in plots:
+        selected = next(iter(plots))
+        st.session_state["canvas_selected"] = selected
+    return selected
+
+
+def _render_plot_list(plots, selected_id):
+    """Left pane: one thumbnail card per plot; clicking its title selects it."""
+    for i, (plot_id, plot_data) in enumerate(plots.items(), start=1):
+        with st.container(border=True):
+            thumb = _thumbnail(plot_data)
+            if thumb is not None:
+                st.image(thumb, width="stretch")
+            else:
+                st.caption(_TYPE_LABELS.get(plot_data.get("type"), "Plot"))
+            marker = "▸ " if plot_id == selected_id else ""
+            if st.button(f"{marker}{i}. {plot_data.get('title', plot_id)}", key=f"sel_{plot_id}",
+                         width="stretch", disabled=plot_id == selected_id):
+                st.session_state["canvas_selected"] = plot_id
+                st.rerun()
+
+
+def _render_selected_header(plot_id, title, position, count):
+    """Title of the selected plot with Move up / Move down / Delete (confirmed)."""
+    c_title, c_up, c_down, c_del = st.columns([4, 1.2, 1.2, 1], vertical_alignment="center")
+    c_title.markdown(f"#### {title}")
+    if c_up.button("↑ Move up", key=f"up_{plot_id}", disabled=position == 0, width="stretch"):
+        move_plot_in_canvas(plot_id, "up")
+        st.rerun()
+    if c_down.button("↓ Move down", key=f"down_{plot_id}", disabled=position == count - 1, width="stretch"):
+        move_plot_in_canvas(plot_id, "down")
+        st.rerun()
+    with c_del.popover("Delete", width="stretch"):
+        st.write(f"Remove **{title}** from the canvas? This cannot be undone.")
+        if st.button("Yes, delete", key=f"rm_{plot_id}", type="primary"):
+            remove_plot_from_canvas(plot_id)
+            st.session_state.pop("canvas_selected", None)
+            st.rerun()
+
+
+def _render_download_row(plot_id, title, files):
+    if not files:
+        st.caption("No download available for this plot type.")
+        return
+    stem = safe_filename(title)
+    for col, (ext, data) in zip(st.columns(len(files)), files.items()):
+        col.download_button(f"Download {ext.upper()}", data, f"{stem}.{ext}",
+                            _MIME.get(ext, "application/octet-stream"),
+                            key=f"dl_{ext}_{plot_id}", width="stretch")
+
+
+def _render_plot_body(plot_id, plot_data):
+    ptype = plot_data.get("type")
+    if ptype == "matplotlib":
+        with _FIG_LOCK:
+            files = _export_files(plot_data)
+            preview = _mpl_bytes(plot_data["fig"], "png", dpi=100 * plot_data["settings"]["font_scale"])
+        st.image(preview, width="stretch")
+    elif ptype == "plotly":
+        with _FIG_LOCK:
+            files = _export_files(plot_data)
+        st.plotly_chart(plot_data["data"], width="stretch", key=f"canvas_chart_{plot_id}")
+    elif ptype == "asperatio":
+        st.dataframe(plot_data["data"])
+        files = _export_files(plot_data)
+    else:
+        st.warning(f"Unsupported plot type: {ptype}")
+        return
+    _render_download_row(plot_id, plot_data.get("title", "plot"), files)
+
+
+def _render_selected_plot(plot_id, plot_data):
+    """Right pane: the selected plot large, its customize controls beside it."""
+    plot_col, ctrl_col = st.columns([3, 1.3])
+    with ctrl_col:  # controls first so this rerun renders with the new settings
+        _render_customize_controls(plot_id, plot_data)
+    with plot_col:
+        try:
+            _render_plot_body(plot_id, plot_data)
+        except Exception as e:
+            st.error(f"Error rendering plot: {e}")
+
+
 def render_canvas_tab():
     st.header("Plot Canvas")
 
@@ -496,442 +858,23 @@ def render_canvas_tab():
         st.info("No plots added to canvas yet. Use 'Add to Canvas' buttons from other tabs.")
         return
 
-    # Global Canvas Layout Settings
-    with st.expander("Canvas Layout Settings", expanded=False):
-        n_cols = st.slider("Number of Columns", 1, 4, 2, key="canvas_n_cols")
+    selected_id = _selected_plot_id(plots)
+    order = list(plots)
+    entries = [plots[pid] for pid in order]
 
-    # Creates columns for grid layout
-    cols = st.columns(n_cols)
+    c_info, c_export = st.columns([3, 1], vertical_alignment="center")
+    c_info.caption(f"{len(order)} plot(s). Select one on the left to customize it; "
+                   "Export all downloads every plot (PNG/SVG/PDF) and one multi-page PDF as a ZIP.")
+    c_export.download_button("Export all (ZIP)", data=lambda: _export_all_zip(entries),
+                             file_name="glow_canvas.zip", mime="application/zip",
+                             key="canvas_export_all", on_click="ignore", width="stretch")
 
-    # Iterate over plots
-    # keys are now UUIDs, values are dicts containing 'title'
-    for i, (plot_id, plot_data) in enumerate(plots.items()):
-        col = cols[i % n_cols]
+    list_col, main_col = st.columns([1, 3])
+    # Fill the right pane first so thumbnails reflect settings changed in this rerun.
+    with main_col:
+        _render_selected_header(selected_id, plots[selected_id].get("title", selected_id),
+                                order.index(selected_id), len(order))
+        _render_selected_plot(selected_id, plots[selected_id])
+    with list_col:
+        _render_plot_list(plots, selected_id)
 
-        # Extract Display Title
-        title = plot_data.get("title", plot_id)
-
-        with col:
-            st.markdown(f"### {title}")
-
-            if "settings" not in plot_data:
-                plot_data["settings"] = {"font_scale": 1.0, "dot_scale": 1.0}
-            settings = plot_data["settings"]
-
-            # Control Toolbar
-            # Use unique plot_id for keys to avoid collisions if titles were (hypothetically) same
-            # although usually unique per run, now definitely unique.
-            c1, c2, c3, c4 = st.columns([1, 1, 2, 1])
-            with c1:
-                if st.button("⬆", key=f"up_{plot_id}", help="Move Backward"):
-                    move_plot_in_canvas(plot_id, "up")
-                    st.rerun()
-            with c2:
-                if st.button("⬇", key=f"down_{plot_id}", help="Move Forward"):
-                    move_plot_in_canvas(plot_id, "down")
-                    st.rerun()
-
-            with st.expander("Customize"):
-                # Aspect Ratio Controls
-                c_ar1, c_ar2 = st.columns(2)
-                with c_ar1:
-                    width_scale = st.slider("Width Scale", 0.5, 3.0, settings.get("width_scale", 1.0), 0.1, key=f"ws_{plot_id}")
-                with c_ar2:
-                    height_scale = st.slider("Height Scale", 0.5, 3.0, settings.get("height_scale", 1.0), 0.1, key=f"hs_{plot_id}")
-
-                # Font & Markers
-                font_scale = st.slider("Font/Zoom Scale", 0.5, 3.0, settings.get("font_scale", 1.0), 0.1, key=f"fs_{plot_id}")
-                dot_scale = st.slider("Dot Scale", 0.1, 5.0, settings.get("dot_scale", 1.0), 0.1, key=f"ds_{plot_id}")
-
-                # Introspection to determine controls
-                has_mappable = False
-
-                # We need to peek at the object to know what controls to show
-                if plot_data.get("type") == "matplotlib":
-                    f = plot_data["fig"]
-                    for ax in f.axes:
-                         for c in ax.collections:
-                             # Check for ScalarMappable characteristics
-                             # It must have a colormap and an array of values mapping to it
-                             if hasattr(c, "get_cmap") and hasattr(c, "get_array"):
-                                 arr = c.get_array()
-                                 if arr is not None and len(arr) > 1: # Must have data to map
-                                     has_mappable = True
-                                     break
-                         if has_mappable:
-                             break
-
-                elif plot_data.get("type") == "plotly":
-                    f = plot_data["data"]
-                    # Check traces
-                    if hasattr(f, "data"):
-                        for t in f.data:
-                            if "marker" in t and ("color" in t.marker or "colorscale" in t.marker):
-                                # check if color is array or colorscale present
-                                if "colorscale" in t.marker or (isinstance(t.marker.color, (list, tuple, np.ndarray)) and len(t.marker.color) > 1):
-                                     has_mappable = True
-                                     break
-
-                # Font Family
-                font_families = ["default", "sans-serif", "serif", "monospace"]
-                font_family = st.selectbox("Font Family", font_families, index=font_families.index(settings.get("font_family", "default")), key=f"ff_{plot_id}")
-
-                # Colormap Override (If Mappable)
-                # Ensure override is always active if detected
-                main_cmap = "viridis"
-                if has_mappable:
-                    # User requested default to "viridis" (which is coincidentally detecting as default anyway)
-                    # And allow changing.
-
-                    cmaps = ["viridis", "plasma", "inferno", "magma", "cividis", "Greys", "Purples", "Blues", "Greens", "Oranges", "Reds", "YlOrBr", "YlOrRd", "OrRd", "PuRd", "RdPu", "BuPu", "GnBu", "PuBu", "YlGnBu", "PuBuGn", "BuGn", "YlGn", "jet", "rainbow", "Spectral"]
-                    current_cmap = settings.get("main_cmap", "viridis")
-                    if current_cmap not in cmaps:
-                        current_cmap = "viridis"
-
-                    main_cmap = st.selectbox("Select Colormap", cmaps, index=cmaps.index(current_cmap), key=f"mc_{plot_id}")
-
-                # Save settings
-                plot_data["settings"]["width_scale"] = width_scale
-                plot_data["settings"]["height_scale"] = height_scale
-                plot_data["settings"]["font_scale"] = font_scale
-                plot_data["settings"]["dot_scale"] = dot_scale
-                plot_data["settings"]["font_family"] = font_family
-                plot_data["settings"]["main_cmap"] = main_cmap
-                # Force cleanup of old keys if present
-                if "override_color_en" in plot_data["settings"]:
-                    del plot_data["settings"]["override_color_en"]
-                if "override_line_color_en" in plot_data["settings"]:
-                    del plot_data["settings"]["override_line_color_en"]
-
-                # ============================================================
-                # Sample Color Customization (for histograms, bar plots, 
-                # trend lines in facet plots, and categorical scatter)
-                # ============================================================
-                if plot_data.get("type") == "matplotlib":
-                    f = plot_data["fig"]
-                    has_density = _has_density_scatter(f)
-                    has_lines = _has_colorable_lines(f)
-                    has_categorical = _has_categorical_scatter(f)
-                    
-                    # Determine what to show
-                    colorable_samples = []
-                    section_title = "Sample Colors"
-                    
-                    if has_categorical:
-                        # Categorical scatter plot (like Singlet/Doublet)
-                        # Show category colors
-                        categorical_samples = _extract_categorical_scatter(f)
-                        section_title = "Category Colors"
-                        
-                        if categorical_samples:
-                            st.markdown("---")
-                            st.markdown(f"**{section_title}**")
-                            
-                            # Initialize category_colors in settings if not present
-                            if "mpl_category_colors" not in plot_data["settings"]:
-                                plot_data["settings"]["mpl_category_colors"] = {}
-                            
-                            mpl_cat_colors = plot_data["settings"]["mpl_category_colors"]
-                            
-                            for cat_info in categorical_samples:
-                                cat_name = cat_info["name"]
-                                original_color = cat_info["original_color"]
-                                
-                                # Get current color (either customized or original)
-                                current_hex = mpl_cat_colors.get(cat_name, _color_to_hex(original_color))
-                                
-                                col_name, col_picker = st.columns([2, 1])
-                                with col_name:
-                                    st.text(cat_name)
-                                with col_picker:
-                                    new_color = st.color_picker(
-                                        "Color",
-                                        value=current_hex,
-                                        key=f"mplcat_{plot_id}_{cat_name}",
-                                        label_visibility="collapsed"
-                                    )
-                                    if new_color != current_hex:
-                                        mpl_cat_colors[cat_name] = new_color
-                    
-                    elif has_density and has_lines:
-                        # Facet plot: show line colors only
-                        colorable_samples = _extract_colorable_samples(f, lines_only=True)
-                        section_title = "Trend Line Colors"
-                    elif not has_density:
-                        # Pure histogram or bar plot
-                        colorable_samples = _extract_colorable_samples(f, lines_only=False)
-                        section_title = "Sample Colors"
-                    
-                    # Show sample/line colors if applicable (non-categorical)
-                    if colorable_samples and not has_categorical:
-                        st.markdown("---")
-                        st.markdown(f"**{section_title}**")
-                        
-                        # Initialize sample_colors in settings if not present
-                        if "sample_colors" not in plot_data["settings"]:
-                            plot_data["settings"]["sample_colors"] = {}
-                        
-                        sample_colors = plot_data["settings"]["sample_colors"]
-                        
-                        for sample_info in colorable_samples:
-                            sample_name = sample_info["name"]
-                            original_color = sample_info["original_color"]
-                            
-                            # Get current color (either customized or original)
-                            current_hex = sample_colors.get(sample_name, _color_to_hex(original_color))
-                            
-                            col_name, col_picker = st.columns([2, 1])
-                            with col_name:
-                                st.text(sample_name)
-                            with col_picker:
-                                new_color = st.color_picker(
-                                    "Color",
-                                    value=current_hex,
-                                    key=f"sc_{plot_id}_{sample_name}",
-                                    label_visibility="collapsed"
-                                )
-                                if new_color != current_hex:
-                                    sample_colors[sample_name] = new_color
-
-                # ============================================================
-                # Plotly Category Color Customization (for categorical scatter plots)
-                # ============================================================
-                if plot_data.get("type") == "plotly":
-                    f = plot_data["data"]
-                    plotly_categories = _extract_plotly_categories(f)
-                    
-                    if plotly_categories:
-                        st.markdown("---")
-                        st.markdown("**Category Colors**")
-                        
-                        # Initialize category_colors in settings if not present
-                        if "category_colors" not in plot_data["settings"]:
-                            plot_data["settings"]["category_colors"] = {}
-                        
-                        category_colors = plot_data["settings"]["category_colors"]
-                        
-                        for cat_info in plotly_categories:
-                            cat_name = cat_info["name"]
-                            original_color = cat_info["original_color"]
-                            
-                            # Get current color (either customized or original)
-                            current_hex = category_colors.get(cat_name, _color_to_hex(original_color))
-                            
-                            col_name, col_picker = st.columns([2, 1])
-                            with col_name:
-                                st.text(cat_name)
-                            with col_picker:
-                                new_color = st.color_picker(
-                                    "Color",
-                                    value=current_hex,
-                                    key=f"pcat_{plot_id}_{cat_name}",
-                                    label_visibility="collapsed"
-                                )
-                                if new_color != current_hex:
-                                    category_colors[cat_name] = new_color
-
-            with c4:
-                if st.button("🗑", key=f"rm_{plot_id}", help="Remove Plot"):
-                    remove_plot_from_canvas(plot_id)
-                    st.rerun()
-
-            # Render logic
-            ptype = plot_data.get("type")
-            try:
-                if ptype == "matplotlib":
-                    fig = plot_data["fig"]
-
-                    # Logic to simulate "Font Scaling" by resizing the figure in inches
-                    # while maintaining pixel density.
-                    if not hasattr(fig, "_glow_orig_size"):
-                        fig._glow_orig_size = fig.get_size_inches()
-
-                    w_orig, h_orig = fig._glow_orig_size
-
-                    # Apply Aspect Ratio & Font Scale
-                    # To effectively scale font UP, we shrink the figure size (inches) so that relative text size is larger
-                    # To stretch width, we multiply width inches
-                    target_w = (w_orig * width_scale) / font_scale
-                    target_h = (h_orig * height_scale) / font_scale
-
-                    fig.set_size_inches(target_w, target_h)
-
-                    # Update Font Family
-                    # Changing global params often tricky, let's iterate text objects
-                    if font_family != "default":
-                        # Use introspection or a more robust find method if matplotlib.text is not directly exposed
-                        # usually available as matplotlib.text.Text
-                        import matplotlib.text as mpl_text
-                        for txt in fig.findobj(match=mpl_text.Text):
-                             txt.set_fontfamily(font_family)
-
-                    # Apply Dot Scaling & Color Override for Matplotlib
-                    # Iterate through axes and collections
-                    for ax in fig.axes:
-                        # Update Axis Labels/Title Colors if needed? Usually we just color data.
-
-                        for collection in ax.collections:
-                            # Skip PolyCollections (like fill_between/ridgelines) to preserve their specific facecolors
-                            # Importing here to assume matplotlib is available if we have a fig
-                            from matplotlib.collections import PolyCollection
-                            if isinstance(collection, PolyCollection):
-                                continue
-
-                            # Only apply to PathCollections (Scatter) which have sizes
-                            if hasattr(collection, "get_sizes") and hasattr(collection, "set_sizes"):
-                                # Check if we stored original sizes
-                                if not hasattr(collection, "_glow_orig_sizes"):
-                                    sizes = collection.get_sizes()
-                                    if len(sizes) > 0:
-                                        collection._glow_orig_sizes = sizes.copy()
-                                    else:
-                                        collection._glow_orig_sizes = [10] # Default s=10
-
-                                # Apply scale
-                                if hasattr(collection, "_glow_orig_sizes"):
-                                    new_sizes = [s * dot_scale for s in collection._glow_orig_sizes]
-                                    collection.set_sizes(new_sizes)
-
-                            # Color Override (Colormap) - Always Active if detected logic applies
-                            # We re-check the mappable condition here to be safe and avoid breaking non-mappables
-                            if hasattr(collection, "set_cmap") and hasattr(collection, "get_array"):
-                                 arr = collection.get_array()
-                                 if arr is not None and len(arr) > 1:
-                                     collection.set_cmap(main_cmap)
-                        # Automatic "Enabling" without user action might be intrusive if they already liked their plot.
-                        # Showing the option is the "Enablement".
-
-                    # Apply custom sample colors if any
-                    sample_colors = settings.get("sample_colors", {})
-                    if sample_colors:
-                        _apply_sample_colors(fig, sample_colors)
-                    
-                    # Apply custom matplotlib category colors (for categorical scatter)
-                    mpl_cat_colors = settings.get("mpl_category_colors", {})
-                    if mpl_cat_colors:
-                        _apply_mpl_category_colors(fig, mpl_cat_colors)
-
-                    # Force redraw after all modifications to ensure artists are updated
-                    # This is critical for proper rendering of polygons/fills on log scale after resizing
-                    fig.canvas.draw()
-
-                    # Render to PNG buffer
-                    buf = io.BytesIO()
-                    # Increase DPI with scale to maintain sharpness/resolution
-                    with warnings.catch_warnings():
-                         warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
-                         fig.savefig(buf, format="png", bbox_inches="tight", dpi=100 * font_scale)
-
-                    st.image(buf, width="stretch")
-
-                    # Reset buffer for downloading SVG (optional, or reuse fig)
-                    # Stack buttons vertically
-                    buf_svg = io.BytesIO()
-                    try:
-                        with warnings.catch_warnings():
-                            warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
-                            fig.savefig(buf_svg, format="svg", bbox_inches="tight")
-                        st.download_button("Download SVG", buf_svg.getvalue(), f"{title}.svg", "image/svg+xml", key=f"dl_svg_{plot_id}")
-                    except Exception:
-                        pass
-
-                    buf_png = io.BytesIO()
-                    try:
-                        with warnings.catch_warnings():
-                            warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
-                            fig.savefig(buf_png, format="png", bbox_inches="tight", dpi=300)
-                        st.download_button("Download PNG", buf_png.getvalue(), f"{title}.png", "image/png", key=f"dl_png_{plot_id}")
-                    except Exception:
-                        pass
-
-                    buf_pdf = io.BytesIO()
-                    try:
-                        with warnings.catch_warnings():
-                            warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
-                            fig.savefig(buf_pdf, format="pdf", bbox_inches="tight")
-                        st.download_button("Download PDF", buf_pdf.getvalue(), f"{title}.pdf", "application/pdf", key=f"dl_pdf_{plot_id}")
-                    except Exception:
-                        pass
-
-                elif ptype == "plotly":
-                    fig = plot_data["data"]
-
-                    # Update Font Size & Family
-                    update_font = dict(size=12 * font_scale)
-                    if font_family != "default":
-                        update_font["family"] = font_family
-
-                    fig.update_layout(font=update_font)
-
-                    # Check if this has categorical traces (don't apply colorscale to those)
-                    has_categories = _has_plotly_categories(fig)
-                    
-                    # Color Override - Only for density/continuous plots, not categorical
-                    if not has_categories:
-                        # Detection logic was: has colorscale or color array.
-                        # Update colorscale on traces that have continuous data
-                        fig.update_traces(marker=dict(colorscale=main_cmap))
-
-                    # Apply custom category colors if any
-                    category_colors = settings.get("category_colors", {})
-                    if category_colors:
-                        _apply_plotly_category_colors(fig, category_colors)
-
-                    # Update Markers logic for plotly
-                    if dot_scale != 1.0:
-                        # We don't have easy original size tracking here like mpl object reference
-                        # We just apply a fixed size modifier or assume default=8
-                        # Simplification: Set size explicitly
-                        fig.update_traces(marker=dict(size=8 * dot_scale), selector=dict(type='scatter'))
-
-                    # Usage of Aspect Ratio
-                    # We always use container width to ensure fitting
-
-                    layout_updates = {}
-
-                    # To adjust aspect ratio while fitting width:
-                    # Width is fixed (Container Width).
-                    # If WidthScale increases (Wants wider), we must DECREASE HEIGHT.
-                    # If HeightScale increases (Wants taller), we INCREASE HEIGHT.
-
-                    base_h = 450 # Default Plotly height standard
-
-                    # New Height = Base * HeightScale / WidthScale
-                    new_height = base_h * (height_scale / width_scale)
-                    layout_updates["height"] = int(new_height)
-                    layout_updates["width"] = None # Let container handle it
-
-                    fig.update_layout(**layout_updates)
-
-                    st.plotly_chart(fig, width="stretch")
-
-                    # Download Buttons for Plotly
-                    # Stack vertically
-                    try:
-                        # Requires kaleido
-                        img_bytes = fig.to_image(format="png", scale=2)
-                        st.download_button("Download PNG", img_bytes, f"{title}.png", "image/png", key=f"dl_p_png_{plot_id}")
-                    except Exception:
-                        pass
-                        # st.caption("PNG export needs 'kaleido'")
-
-                    try:
-                        img_bytes = fig.to_image(format="pdf")
-                        st.download_button("Download PDF", img_bytes, f"{title}.pdf", "application/pdf", key=f"dl_p_pdf_{plot_id}")
-                    except Exception:
-                        pass
-                        # st.caption("PDF export needs 'kaleido'")
-
-                elif ptype == "asperatio":
-                    # Custom rendering for asperatio data
-                    asp_data = plot_data["data"]
-                    st.write("**Asperatio Plot**")
-                    st.dataframe(asp_data)
-
-                else:
-                    st.warning(f"Unsupported plot type: {ptype}")
-
-            except Exception as e:
-                st.error(f"Error rendering plot: {e}")
-
-            st.divider()

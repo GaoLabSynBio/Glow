@@ -1,6 +1,33 @@
 import streamlit as st
+import io
 import pickle
+import re
 import uuid
+import zipfile
+
+
+def safe_filename(title: str, max_len: int = 60) -> str:
+    """Turn a plot title into a filesystem-safe file stem."""
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", str(title)).strip("._")
+    return (stem or "plot")[:max_len]
+
+
+def build_canvas_zip(entries, extra_files=None) -> bytes:
+    """Pack canvas exports into one ZIP.
+
+    entries: ordered list of (title, {extension: bytes}); files are named
+    ``NN_<title>.<ext>`` in canvas order so the archive sorts like the canvas.
+    extra_files: optional {filename: bytes} written at the archive root.
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for i, (title, files) in enumerate(entries, start=1):
+            stem = f"{i:02d}_{safe_filename(title)}"
+            for ext, data in files.items():
+                zf.writestr(f"{stem}.{ext}", data)
+        for name, data in (extra_files or {}).items():
+            zf.writestr(name, data)
+    return buf.getvalue()
 
 def add_plot_to_canvas(fig, title: str):
     """Store a plot in Streamlit session state for display in the Canvas tab.

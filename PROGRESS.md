@@ -48,11 +48,11 @@ before the commit. A failing run must not be committed.
 ## Phase F — Analysis tab (UX_REVIEW §5)
 
 - [x] (02336e5) F1  Summary table: Experiment Name first, Replicate, other condition columns, then metrics; `Sample` hidden by default; CSV download; "group by experiment" toggle (mean ± SD across replicates)   gate: none
-- [?] (b5cb584, partial: no draggable line — click-to-set kept, see REVIEW.md) F2  Gate creator as one card: channel + parent on one row, draggable threshold line (Plotly editable shape), percentile quick-picks from a chosen control sample, live % positive per sample before saving   gate: after
+- [x] (b5cb584, partial: no draggable line — click-to-set kept, see REVIEW.md) F2  Gate creator as one card: channel + parent on one row, draggable threshold line (Plotly editable shape), percentile quick-picks from a chosen control sample, live % positive per sample before saving   gate: after
 
 ## Phase G — Canvas & polish (UX_REVIEW §7, §8)
 
-- [ ] G1  Canvas: text ↑/↓ buttons, delete confirmation, two-pane layout (thumbnail list + selected plot with its controls), "Export all" ZIP   gate: none
+- [~] G1  Canvas: text ↑/↓ buttons, delete confirmation, two-pane layout (thumbnail list + selected plot with its controls), "Export all" ZIP   gate: none
 - [ ] G2  Messaging pass: one button system (primary = next step, secondary = other, destructive = confirm), sticky infos → captions, `st.progress` during file loading, consistent toast/success usage   gate: none
 - [ ] G3  Wrap-up: README workflow section updated, UX_REVIEW.md items annotated with commit hashes, full `tools/apptest_walk.py` + pytest run, final summary in REVIEW.md   gate: after
 

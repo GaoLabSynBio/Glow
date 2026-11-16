@@ -59,6 +59,38 @@ def widget(coll, label):
     return None
 
 
+def canvas_order(at):
+    return list(at.session_state["canvas_plots"]) if "canvas_plots" in at.session_state.filtered_state else []
+
+
+def check_canvas(at):
+    """Two-pane canvas: list of plots, text move buttons, confirmed delete, Export all."""
+    order = canvas_order(at)
+    check(len(order) == 2, f"canvas holds the 2 added plots (has {len(order)})")
+    if len(order) != 2:
+        return
+    check(all(button(at, key=f"sel_{pid}") is not None for pid in order), "thumbnail list entry per plot")
+    check(any(e.proto.label == "Export all (ZIP)" for e in at.get("download_button")),
+          "Export all (ZIP) button present")
+    check(not any(b.label in ("⬆", "⬇", "🗑") for b in at.button), "no glyph-only canvas buttons")
+    up, down = button(at, key=f"up_{order[0]}"), button(at, key=f"down_{order[0]}")
+    check(up is not None and up.disabled and down is not None and not down.disabled,
+          "first plot selected: Move up disabled, Move down enabled")
+    if down is not None:
+        down.click(); run(at, "canvas move down")
+        check(canvas_order(at) == [order[1], order[0]], "Move down reorders the canvas")
+    sel = button(at, key=f"sel_{order[1]}")
+    if sel is not None:
+        sel.click(); run(at, "canvas select other plot")
+        check(at.session_state["canvas_selected"] == order[1], "clicking a list entry selects it")
+    check(len(canvas_order(at)) == 2, "nothing deleted without confirmation")
+    rm = button(at, key=f"rm_{order[1]}")
+    check(rm is not None and rm.label == "Yes, delete", "delete confirmation button inside popover")
+    if rm is not None:
+        rm.click(); run(at, "canvas delete confirmed")
+        check(canvas_order(at) == [order[0]], "confirmed delete removes only the selected plot")
+
+
 def main():
     if not os.path.isdir(DATA_DIR):
         print(f"Test data directory missing: {DATA_DIR}")
@@ -131,6 +163,13 @@ def main():
             else:
                 print(f"  (no Generate button for {pt}; assuming live preview)")
 
+        # Pairwise is the last generated plot: add it to the canvas twice for the Canvas checks.
+        for n in (1, 2):
+            ab = button(at, key="btn_add_pairwise_canvas")
+            check(ab is not None, f"pairwise Add to Canvas button present ({n})")
+            if ab is not None:
+                ab.click(); run(at, f"added pairwise to canvas ({n})")
+
         # --- Analysis tab
         nav = widget(at.sidebar.radio, "Go to") or widget(at.radio, "Go to")
         nav.set_value("Analysis"); run(at, "analysis tab")
@@ -164,6 +203,7 @@ def main():
         # --- Canvas
         nav = widget(at.sidebar.radio, "Go to") or widget(at.radio, "Go to")
         nav.set_value("Canvas"); run(at, "canvas tab")
+        check_canvas(at)
 
     print("\n" + ("ALL CHECKS PASSED" if not FAILURES else f"{len(FAILURES)} CHECK(S) FAILED:"))
     for f in FAILURES:
