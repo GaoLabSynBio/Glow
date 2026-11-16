@@ -11,7 +11,7 @@
        idle                         - nothing pending (runner resets to this after reading your decision)
 -->
 
-Decision: pending
+Decision: changes: now the response is slightly faster but still a noticable lag. Moreover, sometimes (around half of the time) clicking on the region to select range does not work. I have to click multiple times to set the gate, which is not smooth.
 
 ## Item
 D1 revise — analysis gate-selection lag (commit 123378c)

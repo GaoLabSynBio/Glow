@@ -647,16 +647,7 @@ def render_analysis_tab():
 
                         # Add an invisible "Click Catcher" trace for binary mode to make the whole plot area clickable
                         # (Plotly point selection only triggers on actual traces)
-                        if not is_range:
-                            fig.add_trace(go.Scatter(
-                                x=x_domain,
-                                y=[0] * len(x_domain),
-                                mode='markers',
-                                marker=dict(size=20, opacity=0),
-                                showlegend=False,
-                                hoverinfo='none',
-                                name="click_catcher"
-                            ))
+                        # (the catcher grid is added after the KDE traces, once the y extent is known)
 
                         # Iterate samples and plot KDE
                         for i, s in enumerate(selected_samples):
@@ -746,6 +737,21 @@ def render_analysis_tab():
                                         opacity=0.5,
                                         hovertemplate=f"<b>{s}</b><br>Intensity: %{{x}}<br>Density: %{{y}}<extra></extra>"
                                     ))
+
+                        # Invisible click-catcher grid covering the whole plot area (both modes), so a click
+                        # anywhere registers a point instead of only when it lands on a curve/marker.
+                        _y_top = max([float(np.nanmax(t.y)) for t in fig.data if t.y is not None and len(t.y) > 0] or [1.0])
+                        _y_grid = np.linspace(0, _y_top * 1.05, 12)
+                        _x_grid = np.asarray(x_domain, dtype=float)  # already log-spaced in log mode
+                        fig.add_trace(go.Scatter(
+                            x=np.tile(_x_grid, len(_y_grid)),
+                            y=np.repeat(_y_grid, len(_x_grid)),
+                            mode='markers',
+                            marker=dict(size=24, opacity=0),
+                            showlegend=False,
+                            hoverinfo='none',
+                            name="click_catcher"
+                        ))
 
                         # Update Layout
                         # Range determined by logic above
