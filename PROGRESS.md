@@ -54,7 +54,7 @@ before the commit. A failing run must not be committed.
 
 - [x] (bb3963e) G1  Canvas: text ↑/↓ buttons, delete confirmation, two-pane layout (thumbnail list + selected plot with its controls), "Export all" ZIP   gate: none
 - [x] (d66bd3c, partial: progress is per file for copying and the per-tube fallback, but only start/end for the single ImportOp read) G2  Messaging pass: one button system (primary = next step, secondary = other, destructive = confirm), sticky infos → captions, `st.progress` during file loading, consistent toast/success usage   gate: none
-- [~] G3  Wrap-up: README workflow section updated, UX_REVIEW.md items annotated with commit hashes, full `tools/apptest_walk.py` + pytest run, final summary in REVIEW.md   gate: after
+- [?] (6948fb7) G3  Wrap-up: README workflow section updated, UX_REVIEW.md items annotated with commit hashes, full `tools/apptest_walk.py` + pytest run, final summary in REVIEW.md   gate: after
 
 ---
 
@@ -99,3 +99,4 @@ before the commit. A failing run must not be committed.
 - 2026-11-16 F2 · approved, marked done (b5cb584)
 - 2026-11-16 G1 · done (bb3963e), pytest 42 passed, apptest passed (walk now exercises canvas select/move/confirmed delete/Export all); fixed duplicate colour-picker keys that crashed the canvas for pairwise plots. Note: `sed -i` and a Write to /tmp needed approval (denied unattended); used the Edit tool instead
 - 2026-11-16 G2 · done (d66bd3c), pytest 44 passed, apptest passed (walk checks no emoji buttons, 'Adjust gate manually', primary Accept); progress callback added to DataLoader
+- 2026-11-16 G3 · committed (6948fb7), pytest 44 passed, apptest passed; awaiting review (gate: after)
