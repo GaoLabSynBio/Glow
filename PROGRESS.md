@@ -42,7 +42,7 @@ before the commit. A failing run must not be committed.
 
 ## Phase E — Plot tab (UX_REVIEW §6)
 
-- [ ] E1  Plot type selector moves from the sidebar to the top of the settings panel; "Gating (Optional)" → collapsed "Filter events" expander with an active-filter chip; remove the redundant "Grouping by" info box; scatter default Y ≠ X; actionable notice when the only group is `NA` (link to metadata editor); standardise scale options and download buttons across plot types   gate: none
+- [x] (partial: scale-option/download-set standardisation and sidebar-to-settings-panel grouping NOT done; plot type now a horizontal radio at top of page) E1  Plot type selector moves from the sidebar to the top of the settings panel; "Gating (Optional)" → collapsed "Filter events" expander with an active-filter chip; remove the redundant "Grouping by" info box; scatter default Y ≠ X; actionable notice when the only group is `NA` (link to metadata editor); standardise scale options and download buttons across plot types   gate: none
 - [ ] E2  Live preview: histogram/bar/scatter re-render on settings change using a ≤50k-event subsample, with "Render full" for canvas/export   gate: after
 
 ## Phase F — Analysis tab (UX_REVIEW §5)
@@ -91,3 +91,4 @@ before the commit. A failing run must not be committed.
 - 2026-11-15 D1 revise #2 (ab6a024): click-catcher grid for reliable gate clicks; awaiting review
 - 2026-11-15 D1 revise #3 (837ebb6): chart key nonce so a click never toggles off a stale selection; awaiting review
 - 2026-11-15 D1 · reviewer: revert #3 — restored ui/analysis/view.py to ab6a024, D1 marked done; D2 already satisfied by D1 (ui/app.py:138), marked done
+- 2026-11-15 E1 · partial, pytest 30 passed, apptest passed (walk script updated for the new "Plot type" radio)

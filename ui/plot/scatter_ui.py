@@ -38,6 +38,10 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                 default_y_index = i
                 break
 
+        # Never default Y to the same channel as X
+        if default_y_index == default_x_index and len(channels) > 1:
+            default_y_index = next(i for i in range(len(channels)) if i != default_x_index)
+
         x_channel = st.selectbox("X Axis Channel", channels, index=default_x_index)
         y_channel = st.selectbox("Y Axis Channel", channels, index=default_y_index)
         scale = st.selectbox("Scale", ["log", "linear", "logicle"], index=0, help="Axis scale transformation.")

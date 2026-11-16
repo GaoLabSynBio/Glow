@@ -120,7 +120,7 @@ def main():
         check(not any("Raw Values" in t.label for t in at.toggle), "no raw-values toggle on Plot tab")
         for pt, gen_prefix in [("1D Histogram", "Generate"), ("2D Scatter", "Generate"),
                                ("Bar Plot", "Generate"), ("Pairwise Plot", "Generate")]:
-            sel = widget(at.sidebar.selectbox, "Select Plot Type") or widget(at.selectbox, "Select Plot Type")
+            sel = widget(at.radio, "Plot type")
             if sel is None:
                 check(False, f"plot type selector present for {pt}")
                 break

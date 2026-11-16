@@ -39,7 +39,6 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
 
         if found_col:
             hue_var = found_col
-            st.info(f"Grouping by: {hue_var}")
         else:
              # Default to "None" for rendering options purposes (will be overridden by "Configuration" column selection)
              hue_var = None

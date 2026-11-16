@@ -10,6 +10,18 @@ from .scatter_ui import render_scatter_ui
 from .bar_ui import render_bar_ui
 from .pairwise_ui import render_pairwise_ui
 
+def _render_na_group_notice(experiment, conditions):
+    """Explain the fix when the only available group is 'NA' (metadata never filled in)."""
+    df = experiment.data
+    for col in ("Experiment_Name", "Experiment Name"):
+        if col in conditions and col in df.columns:
+            vals = set(df[col].dropna().astype(str).unique())
+            if vals <= {"NA", ""}:
+                st.info("No Experiment Name was entered, so every event falls in a single group "
+                        "(`NA`). Open **Edit metadata** above to name your experiments.")
+            return
+
+
 def render_plot_tab():
     st.header("Plotting")
 
@@ -67,13 +79,13 @@ def render_plot_tab():
         # If not using comp, ensure we don't show comp_cols (if they leaked into all_available)
         channels = [c for c in raw_channels if not c.startswith("comp_")]
 
-    with st.sidebar:
-        st.subheader("Plot Settings")
-        plot_type = st.selectbox(
-            "Select Plot Type",
-            ["1D Histogram", "2D Scatter", "Bar Plot", "Pairwise Plot"]
-        )
-        st.divider()
+    plot_type = st.radio(
+        "Plot type",
+        ["1D Histogram", "2D Scatter", "Bar Plot", "Pairwise Plot"],
+        horizontal=True,
+        key="plot_type_select",
+    )
+    _render_na_group_notice(filtered_experiment, conditions)
 
     # Exclude FSC/FC, SSC, and Metadata-like channels for Plotting
     if plot_type in ["1D Histogram", "2D Scatter", "Bar Plot", "Pairwise Plot"]:

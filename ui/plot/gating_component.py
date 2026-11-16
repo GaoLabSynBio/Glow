@@ -2,20 +2,48 @@ import streamlit as st
 import pandas as pd
 from glow.plotting import utils, plots
 
+def _active_filter_chip(filtered_experiment, key_prefix):
+    """Short summary of the filters that will be applied, e.g. 'Live ✓ Singlets ✓ 1 local'."""
+    cols = filtered_experiment.data.columns
+    built_in = [lbl for col, lbl in (("cells", "Pre-Gate: Live Cells"), ("singlets", "Pre-Gate: Singlets"))
+                if col in cols]
+    selected = st.session_state.get(f"{key_prefix}_analysis_gates_select", built_in)
+    parts = []
+    for lbl in selected:
+        parts.append(lbl.replace("Pre-Gate: ", "").replace("Live Cells", "Live") + " ✓")
+    n_local = len(st.session_state.get(f"{key_prefix}_local_gates", []))
+    if n_local:
+        parts.append(f"{n_local} local")
+    return " ".join(parts)
+
+
+def _section(title):
+    """Bordered sub-section (expanders cannot be nested inside the 'Filter events' expander)."""
+    box = st.container(border=True)
+    box.markdown(f"**{title}**")
+    return box
+
+
 def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
     """
-    Renders the shared Gating UI component (Analysis Gates + Local Gates).
+    Renders the shared event filter (Analysis Gates + Local Gates) in a collapsed
+    "Filter events" expander with a chip summarising the active filters.
     Returns (local_gates, analysis_gates_resolved)
     """
-    st.markdown("#### Gating (Optional)")
+    chip = _active_filter_chip(filtered_experiment, key_prefix)
+    label = f"Filter events · {chip}" if chip else "Filter events"
+    with st.expander(label, expanded=False):
+        return _render_gating_body(filtered_experiment, channels, key_prefix)
+
+
+def _render_gating_body(filtered_experiment, channels, key_prefix):
 
     # 1. Import Analysis Gates
     analysis_gates_to_apply = []
     if ('positive_gates' in st.session_state and st.session_state.positive_gates) or \
        ('cells' in filtered_experiment.data.columns) or ('singlets' in filtered_experiment.data.columns):
 
-        with st.expander("Import Gates from Analysis Tab"):
-            st.info("You can choose to apply gates defined in the Analysis tab to this plot.")
+        with _section("Gates from Analysis / pre-gating"):
 
             # Fundamental Gates
             built_in_options = []
@@ -80,9 +108,9 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
     if gate_key not in st.session_state:
         st.session_state[gate_key] = []
 
-    with st.expander("Active Local Gates", expanded=True):
+    with _section("Local gates"):
         if not st.session_state[gate_key]:
-            st.info("No local gates defined for this plot.")
+            st.caption("None defined for this plot.")
         else:
             def del_gate_callback(index_to_del, g_key):
                 if 0 <= index_to_del < len(st.session_state[g_key]):
@@ -101,7 +129,7 @@ def render_gating_component(filtered_experiment, channels, key_prefix="plot"):
                         args=(i, gate_key)
                     )
 
-    with st.expander("Add New Local Gate"):
+    with _section("Add local gate"):
 
         # Ensure different new gate channel per plot type if possible to avoid clashes?
         # Actually standard widget keys should be uniqueified by prefix.
