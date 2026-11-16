@@ -11,26 +11,17 @@
        idle                         - nothing pending (runner resets to this after reading your decision)
 -->
 
-Decision: changes: still sometimes clicking on the histogram to set range does not lead to a response. It's probably a different cause, because if I do not move my mouse and click on the same spot again, the second time it works. please investigate into this issue and fix it. drag range selection seems to work well.
+Decision: pending
 
 ## Item
-D1 revise #2 — unreliable gate click + residual lag (commit ab6a024)
+D1 revise #3 — first click sometimes ignored (commit 837ebb6)
 
 ## Request
-Your feedback: still some lag; clicks to set range fail ~half the time.
-- Click failure (root cause found): Plotly only reports a click when it lands on a trace point. Range mode had no click catcher at all (only curve markers), and binary mode's catcher only covered the y=0 baseline. Now one invisible marker grid (200 x-points × 12 y-levels, spanning the full y extent) covers the whole plot in both modes, so a click anywhere registers. Log mode uses the log-spaced x_domain.
-- Lag: no additional change this round beyond the previous one; the remaining cost is the full-script Streamlit rerun that any selection triggers. Not timed in a browser. If still laggy, next step is wrapping the Analysis plot area in `st.fragment` so only it reruns — larger change, say if you want it.
+Your feedback: a click on the histogram sometimes does nothing; clicking the same spot again works.
+- Likely cause (not browser-verified): after a click, Plotly keeps that point "selected" in the chart's widget state. The next click on that same point, or on a neighbouring invisible catcher marker that Plotly resolves to the same point, toggles the selection off. That sends an empty selection, so nothing changes. The second click re-selects it, which matches what you saw.
+- Fix (`ui/analysis/view.py`): the chart's widget key now includes a nonce. The nonce is bumped each time a point click is consumed, so the chart is rebuilt with no lingering selection and every click is a fresh select. Box (drag) selection is unchanged, since it already works.
 - Tests: apptest ALL CHECKS PASSED; pytest 30 passed.
-- Unsure: the click fix can't be exercised by apptest (no browser); please try it. Clicking an already-selected point toggles it off in Plotly (harmless, value stays).
-
-## Previous round (commit 123378c)
-Fixed the ~2s lag in Analysis → 1D Histogram when clicking/dragging to set a threshold (`ui/analysis/view.py`):
-- Removed the 5 `st.rerun()` calls after applying a selection (state is set before the inputs/figure render, so the extra full rerun only doubled the delay).
-- Cached the parent-gate data fetch (`get_channel_data_for_samples`) across reruns, keyed on experiment/channel/samples/parent gate/gates.
-- Cached KDE curves per (data signature, sample, log, axis range); KDE data capped at 20k points (fixed seed) for speed.
-- Replaced the per-element Python NaN filter with vectorised numpy.
-- Tests: apptest ALL CHECKS PASSED; pytest 30 passed.
-- Unsure: not timed in a real browser (no harness for it). Other analysis plots (quadrant/scatter paths around lines 990, 1326, 1417, 1615) still use `st.rerun()` after selection and were not touched; say if you see lag there too. KDE subsampling only changes curves for samples with >20k events.
+- Unsure: apptest has no browser, so I couldn't reproduce or confirm the fix. Please try rapid clicks at the same spot and at nearby spots. Side effect: the chart remounts after each click, so there may be a brief flicker. If clicks still drop, the next step is `st.fragment` or a custom click component.
 
 ## Blocked tools / problems
-Inline `python3 - <<EOF` edits are denied by permissions; used the Edit tool.
+Inline `python3 - <<EOF` edits, `sed -i` and shell redirects are denied by permissions; used the Edit and Write tools.

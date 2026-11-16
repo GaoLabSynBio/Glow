@@ -89,3 +89,4 @@ before the commit. A failing run must not be committed.
 2026-11-14 · D1 · committed (807260f), pytest 30 passed, apptest passed; awaiting review (gate: after)
 - 2026-11-14 D1 revise (123378c): analysis selection lag fix; awaiting review
 - 2026-11-15 D1 revise #2 (ab6a024): click-catcher grid for reliable gate clicks; awaiting review
+- 2026-11-15 D1 revise #3 (837ebb6): chart key nonce so a click never toggles off a stale selection; awaiting review
