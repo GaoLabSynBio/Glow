@@ -1,7 +1,7 @@
 # Glow UI revamp — progress checklist
 
 Spec: `UX_REVIEW.md`. Branch: `revamp` (off `update`). One commit per item: `revamp: <id> <title>`.
-Protocol for the automated runner: `tools/revamp_prompt.md`. Review handshake: `REVIEW.md`.
+Protocol for the automated runner: `revamp_prompt.md`. Review handshake: `REVIEW.md`.
 
 Status: `[ ]` todo · `[~]` in progress · `[x] (<hash>)` done · `[?]` waiting for review.
 Gate: `before` = design note must be approved before any edit · `after` = commit, then wait

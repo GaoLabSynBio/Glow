@@ -39,4 +39,4 @@ singlet_training_data*
 # Claude Code personal settings
 .claude/settings.local.json
 # Revamp runner logs
-revamp.log
+/revamp.log
