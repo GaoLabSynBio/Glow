@@ -137,6 +137,15 @@ def main():
         check(len(at.dataframe) >= 1, "summary statistics table rendered")
         check(any("exports are raw" in c.value for c in at.caption), "units caption on Analysis tab")
         check(not any("Raw Values" in t.label for t in at.toggle), "no raw-values toggle on Analysis tab")
+        gt = next((t for t in at.toggle if t.label.startswith("Group by experiment")), None)
+        _dbg = at.session_state["analysis_experiment"] if "analysis_experiment" in at.session_state.filtered_state else at.session_state["base_experiment"]
+        check(gt is not None, "group-by-experiment toggle present")
+        if gt is not None and not gt.disabled:
+            gt.set_value(True); run(at, "summary grouped by experiment")
+            check(any("Replicates" in d.value.columns for d in at.dataframe),
+                  "grouped summary shows Replicates column")
+            gt = next(t for t in at.toggle if t.label.startswith("Group by experiment"))
+            gt.set_value(False); run(at, "summary ungrouped")
         ag = button(at, "Add New Gate")
         if ag is not None:
             ag.click(); run(at, "add new gate")

@@ -105,3 +105,52 @@ def get_summary_statistics(experiment):
         results.append(row)
 
     return pd.DataFrame(results)
+
+
+_LEADING_CONDITIONS = ['Experiment_Name', 'Replicate']
+
+
+def summary_condition_columns(experiment):
+    """Condition columns (excluding the ``Sample`` key) that label rows of the summary table."""
+    if experiment is None:
+        return []
+    data = experiment.data
+    return condition_columns(experiment, data, resolve_group_cols(experiment, data))
+
+
+def order_summary_columns(df, condition_cols):
+    """Experiment Name, Replicate, other conditions, ``Sample``, then metric columns."""
+    present = [c for c in condition_cols if c in df.columns]
+    leading = [c for c in _LEADING_CONDITIONS if c in present]
+    leading += [c for c in present if c not in leading]
+    if 'Sample' in df.columns:
+        leading.append('Sample')
+    metrics = [c for c in df.columns if c not in leading]
+    return df[leading + metrics]
+
+
+def group_by_experiment(df, condition_cols):
+    """Mean and SD of every numeric metric per Experiment Name across replicates.
+
+    Other conditions are kept when constant within an experiment. Returns ``df`` unchanged
+    when there is no ``Experiment_Name`` column.
+    """
+    if df.empty or 'Experiment_Name' not in df.columns:
+        return df
+    key = 'Experiment_Name'
+    skip = set(condition_cols) | {'Sample', 'Replicate', key}
+    metrics = [c for c in df.columns
+               if c not in skip and pd.api.types.is_numeric_dtype(df[c])]
+    grouped = df.groupby(key, sort=False, observed=True, dropna=False)
+
+    sizes = grouped.size()
+    out = pd.DataFrame(index=sizes.index)
+    for c in condition_cols:
+        if c in df.columns and c not in (key, 'Replicate', 'Sample'):
+            if (grouped[c].nunique(dropna=False) <= 1).all():
+                out[c] = grouped[c].first()
+    out['Replicates'] = sizes
+    for m in metrics:
+        out[f'{m} mean'] = grouped[m].mean().round(2)
+        out[f'{m} SD'] = grouped[m].std(ddof=1).round(2)
+    return out.reset_index()

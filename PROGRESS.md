@@ -43,7 +43,7 @@ before the commit. A failing run must not be committed.
 ## Phase E — Plot tab (UX_REVIEW §6)
 
 - [x] (1f8a6b5, partial: scale-option/download-set standardisation and sidebar-to-settings-panel grouping NOT done; plot type now a horizontal radio at top of page) E1  Plot type selector moves from the sidebar to the top of the settings panel; "Gating (Optional)" → collapsed "Filter events" expander with an active-filter chip; remove the redundant "Grouping by" info box; scatter default Y ≠ X; actionable notice when the only group is `NA` (link to metadata editor); standardise scale options and download buttons across plot types   gate: none
-- [?] (40b87a7) E2  Live preview: histogram/bar/scatter re-render on settings change using a ≤50k-event subsample, with "Render full" for canvas/export   gate: after
+- [x] (40b87a7) E2  Live preview: histogram/bar/scatter re-render on settings change using a ≤50k-event subsample, with "Render full" for canvas/export   gate: after
 
 ## Phase F — Analysis tab (UX_REVIEW §5)
 

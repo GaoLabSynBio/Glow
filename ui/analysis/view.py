@@ -6,7 +6,9 @@ import plotly.graph_objects as go
 import plotly.express as px
 from scipy.stats import gaussian_kde
 from scipy.ndimage import gaussian_filter
-from glow.analysis.stats import get_summary_statistics
+from glow.analysis.stats import (
+    get_summary_statistics, group_by_experiment, order_summary_columns, summary_condition_columns,
+)
 from glow.analysis.positive import get_channel_data_for_samples, calculate_positive_stats_recursive
 from glow.canvas.functions import add_plot_to_canvas
 from glow.utils import logicle_transform
@@ -18,6 +20,34 @@ from ui.common.metadata_editor import render_metadata_editor
 def sample_label(sample_id):
     """Display label for a stable Sample id (falls back to the id itself)."""
     return st.session_state.get('_sample_labels', {}).get(str(sample_id), str(sample_id))
+
+def render_summary_table(df, condition_cols):
+    """Summary table: Experiment Name first, optional per-experiment grouping, CSV download."""
+    if df.empty:
+        st.info("No summary statistics available.")
+        return
+    df = order_summary_columns(df, condition_cols)
+    can_group = 'Experiment_Name' in df.columns
+    c1, c2 = st.columns(2)
+    grouped = c1.toggle("Group by experiment (mean ± SD across replicates)",
+                        key="summary_group_by_experiment", disabled=not can_group)
+    show_ids = c2.toggle("Show file IDs (Sample)", key="summary_show_sample_ids",
+                         disabled=grouped or 'Sample' not in df.columns)
+
+    if grouped and can_group:
+        table = group_by_experiment(df, condition_cols)
+        file_name = "summary_by_experiment.csv"
+    else:
+        table = df
+        file_name = "summary_statistics.csv"
+
+    column_config = {}
+    if 'Sample' in table.columns and not show_ids:
+        column_config['Sample'] = None  # hidden in view, kept in the CSV
+    st.dataframe(table, width="stretch", hide_index=True, column_config=column_config)
+    st.download_button("Download CSV", table.to_csv(index=False).encode("utf-8"),
+                       file_name=file_name, mime="text/csv", key="summary_csv_download")
+
 
 def update_threshold_value(model_key, widget_key):
     """Callback to sync widget value to model state."""
@@ -81,6 +111,7 @@ def render_analysis_tab():
 
     # Calculate base stats
     stats_df = get_summary_statistics(experiment)
+    summary_conditions = summary_condition_columns(experiment)
 
     # --- Row Exclusion for Sub-Gating & Visualization ---
     # Apply "Exclusion" (filter for Live/Singlets if flags present) for the REST of analysis
@@ -133,7 +164,7 @@ def render_analysis_tab():
         if not pos_df.empty:
             full_df = pd.merge(full_df, pos_df, on='Sample', how='left')
 
-    st.dataframe(full_df, width="stretch")
+    render_summary_table(full_df, summary_conditions)
 
     st.divider()
 
