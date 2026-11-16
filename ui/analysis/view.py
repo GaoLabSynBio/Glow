@@ -549,11 +549,7 @@ def render_analysis_tab():
 
                         # Capture selection events BEFORE rendering chart to avoid "select twice" bug
                         # We check the session state key directly
-                        # A nonce is part of the widget key: once a point click is consumed the key changes,
-                        # so Plotly starts with no selected point. Otherwise clicking a point still "selected"
-                        # from the previous click toggles it OFF and nothing happens (second click works).
-                        nonce_key = f"plot_nonce_{selected_channel}_{parent_gate}"
-                        plot_key = f"plot_{selected_channel}_{parent_gate}_{st.session_state.get(nonce_key, 0)}"
+                        plot_key = f"plot_{selected_channel}_{parent_gate}"
                         selection_data = st.session_state.get(plot_key)
 
                         if selection_data and selection_data.get("selection"):
@@ -593,9 +589,6 @@ def render_analysis_tab():
                                       else:
                                            if abs(float(sel_x) - st.session_state[thr_key]) > 0.0001:
                                                 st.session_state[thr_key] = float(sel_x)
-                                      # Consumed: render the chart under a fresh key (no lingering selection)
-                                      st.session_state[nonce_key] = st.session_state.get(nonce_key, 0) + 1
-                                      plot_key = f"plot_{selected_channel}_{parent_gate}_{st.session_state[nonce_key]}"
 
                         # Render Inputs
                         if is_range:
@@ -848,7 +841,7 @@ def render_analysis_tab():
                         # Enable box selection
                         # Add unique KEY to prevent state leakage
                         with col_plots:
-                             st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=plot_key)
+                             st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
 
                              _, col_add = st.columns([3, 1])
                              if col_add.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):

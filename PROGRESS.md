@@ -37,8 +37,8 @@ before the commit. A failing run must not be committed.
 
 ## Phase D — Navigation (UX_REVIEW §1)
 
-- [?] (807260f) D1  Sidebar stepper with completion state (✓ marks, unavailable steps greyed with a reason); drop the fixed 175 px sidebar CSS; compact one-line header after the landing page; Developer Mode moved into an "Advanced" expander   gate: after
-- [ ] D2  "Start New Experiment" moved to the bottom of the sidebar behind a confirmation popover   gate: none
+- [x] (807260f; revises 123378c, ab6a024 kept; 837ebb6 nonce change reverted per reviewer) D1  Sidebar stepper with completion state (✓ marks, unavailable steps greyed with a reason); drop the fixed 175 px sidebar CSS; compact one-line header after the landing page; Developer Mode moved into an "Advanced" expander   gate: after
+- [x] (done within D1 commit 807260f: sidebar-bottom popover with confirmation) D2  "Start New Experiment" moved to the bottom of the sidebar behind a confirmation popover   gate: none
 
 ## Phase E — Plot tab (UX_REVIEW §6)
 
@@ -90,3 +90,4 @@ before the commit. A failing run must not be committed.
 - 2026-11-14 D1 revise (123378c): analysis selection lag fix; awaiting review
 - 2026-11-15 D1 revise #2 (ab6a024): click-catcher grid for reliable gate clicks; awaiting review
 - 2026-11-15 D1 revise #3 (837ebb6): chart key nonce so a click never toggles off a stale selection; awaiting review
+- 2026-11-15 D1 · reviewer: revert #3 — restored ui/analysis/view.py to ab6a024, D1 marked done; D2 already satisfied by D1 (ui/app.py:138), marked done
