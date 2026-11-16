@@ -11,7 +11,7 @@
        idle                         - nothing pending (runner resets to this after reading your decision)
 -->
 
-Decision: pending
+Decision: changes: still sometimes clicking on the histogram to set range does not lead to a response. It's probably a different cause, because if I do not move my mouse and click on the same spot again, the second time it works. please investigate into this issue and fix it. drag range selection seems to work well.
 
 ## Item
 D1 revise #2 — unreliable gate click + residual lag (commit ab6a024)
