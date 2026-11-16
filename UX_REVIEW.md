@@ -52,6 +52,41 @@ time. Details and a phased plan follow.
 
 ---
 
+## Implementation status (branch `revamp`, Nov 2026)
+
+Item ids and full notes are in `PROGRESS.md`. "Partial" means the listed part is done and
+the rest is still open.
+
+| § / finding | What was done | Commit(s) | Status |
+|---|---|---|---|
+| §1 · 1.1, 1.2, 1.3, 1.5 | Sidebar stepper with ✓ / greyed steps, default sidebar width, one-line header after landing, Developer Mode moved to "Advanced" (D1) | 807260f, 123378c, ab6a024 | Done |
+| §1 · 1.4 | "Start new experiment" at the bottom of the sidebar behind a confirmation popover (D2) | 807260f | Done |
+| §2 · 2.2, 2.3, B4 | Metadata defaults: Experiment Name ← file stem, Replicate inferred, Cell Line guessed or blank (never `HEK`), auto values marked, fill down (A1, A2) | 427f508, 0cd4692 | Done |
+| §2 · 2.4, 5.1 | Stable `Sample` = file stem; Experiment Name (+ rep N) shown in selectors, stats, legends; no `_`-joined names (A3) | 11b06f6 | Done |
+| §2 · 2.5, 2.7 | Duplicate "Loaded Metadata Example" removed; bulk upload collapsed (C4) | 21e5d6e | Partial: no step-1 chip after load; upload not moved below the editor |
+| §2 · 2.1, 2.6, 2.8, 2.9 | — | — | Open |
+| §2b | `sample_metadata` as the source of truth, shared "Edit metadata" expander on every tab, relabel without re-gating, cell-line rename re-keys gates (A4); `base_experiment` rebuilt only when the file list changes (A5) | 94d0dc4, 3be5b46 | Done |
+| §3 · 3.3, 3.4, B5, B6, B7 | Stale "Configuring…" / "Applying N filters…" texts, duplicate headers and the pandas `observed` warning removed (C1) | 58a9884 | Done |
+| §3 · 3.1, 3.6 | Compact toolbar above the live/dead plot; model context read-only, derived from Cell Line (C2) | 567f222 | Partial: button row / result line not moved |
+| §3 · 3.9 | Live/dead auto-gate cached by data hash + parameters (C7) | 67de006 | Partial: singlet prediction not cached |
+| §3 · 3.10 | Extra "Reset ALL" buttons removed; per-step buttons are "Redo" (C5) | b135dc8 | Partial: no chip-based Redo |
+| §3 · 3.2, 3.5, 3.7, 3.8 | — | — | Open (3.7 partly via C2) |
+| §4 · 4.1 | Singlet step uses the same toolbar layout as live/dead (C3) | 8938d93 | Partial |
+| §4 · 4.3, 4.4 | "Channels to analyze" multiselect, structural channels as a caption, "Gating complete" header (C6) | 635d5d9 | Partial: export/compensation not merged into one completion card |
+| §4 · 4.5, 4.6 | — | — | Open (sticky Next not done) |
+| §5 · 5.2, B2 | One unit convention: high-res data scaled once at load, exports raw (B1); per-tab scaling branches removed, one caption "Values shown ÷10,000; exports are raw" (B2) | 14e3034, 5626ee8 | Done |
+| §5 · 5.1 | Summary table: Experiment Name, Replicate, conditions, then metrics; Sample hidden; CSV download; group-by-experiment mean ± SD (F1) | 02336e5 | Done |
+| §5 · 5.3, 5.4 | Gate creator as one card; percentile quick-picks from a control sample; live % in gate per overlaid sample (F2) | b5cb584 | Partial: no draggable threshold line (Streamlit returns no relayout events); click-to-set kept |
+| §5 · 5.5, 5.6 | — | — | Open |
+| §6 · 6.1, 6.2, 6.4, 6.5, B3 | Plot type as a radio at the top; "Filter events" expander with active chip; "Grouping by" box removed; scatter Y ≠ X; actionable `NA` notice (E1) | 1f8a6b5 | Partial: scale options / download sets not standardised (6.7, 6.9) |
+| §6 · 6.3 | Live preview for histogram / bar / scatter on a ≤50k-event subsample, "Render full" for canvas/export (E2) | 40b87a7 | Done |
+| §7 · 7.1, 7.4 | Two-pane canvas (thumbnail list + selected plot with controls beside it), ↑/↓ text buttons, confirmed delete, "Export all (ZIP)" with PNG/SVG/PDF per plot + one multi-page PDF (G1) | bb3963e | Done |
+| §7 · 7.2 | Customize controls now sit beside the plot, always visible (G1) | bb3963e | Partial: font list unchanged |
+| §7 · 7.3 | Covered by the single unit convention (B1/B2) | 14e3034, 5626ee8 | Done |
+| §8 | Emoji prefixes dropped from buttons; Accept/Apply primary; "Adjust gate manually"; toast for action confirmations, success only for lasting results; always-on infos turned into captions; `st.progress` while preparing/loading files (G2) | d66bd3c | Partial: during the single bulk FCS read, progress shows only start and end |
+
+---
+
 ## 1. Navigation & global layout
 
 | # | Finding | Where | Sev |

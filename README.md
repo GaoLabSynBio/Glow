@@ -50,59 +50,84 @@ Please ensure the .app file is moved into your Applications folder.
 
 ### 2. Workflow
 
+The sidebar works as a stepper: **Gating → Analysis → Plot → Canvas**. Finished steps get a ✓,
+and steps that are not available yet are marked with the reason (for example, "load files first").
+"Start new experiment" at the bottom of the sidebar clears everything, after a confirmation.
+
+**Units.** High-resolution data are divided by 10,000 once, at load time. Every tab shows the
+same scaled values, and exported CSVs are written back in raw units.
+
 1. **File Loading & Metadata**:
 
-   * Select "Enter Directory Path" to scan a folder of `.fcs` files.
-   * **Or select "Upload Files / Drag & Drop Folder"** to upload from your local machine.
-   * For metadata, you have two options:
-     - **Upload your metadata spreadsheet** (e.g., CSV or Excel) and the app will read it.
-     - **Manually input all metadata** in the UI.
-   * When entering metadata, make sure to provide **Cell Line** and **Experiment Name** (these are important for distinguishing conditions; the same condition for different samples should have consistent names).
-   * Click "Generate Preview" to review and edit metadata (Sample Name, Replicate, **Cell Line**, etc.).
-   * Confirm to load files.
-   * The loader can also automatically detect cell line info from file names.
+   * Select "Enter Directory Path" and click "Scan Directory" to scan a folder of `.fcs` files,
+     **or** select "Upload Files / Drag & Drop Folder" to upload from your machine.
+   * Click "Generate Preview" to open the metadata editor. Every field has a default, so you
+     can confirm right away:
+     - **Experiment Name** defaults to the file name (`D1`, `E2`, …).
+     - **Replicate** is inferred: rows that share an Experiment Name are numbered 1, 2, 3, …
+       (it is re-inferred when you edit names).
+     - **Cell Line** is guessed from the path when a known name appears; otherwise it is left blank,
+       which means one population.
+     - Auto-filled values are marked, and a "Fill down" helper applies one value to all rows.
+   * A metadata spreadsheet (CSV / Excel) can be imported from the collapsed bulk-upload section.
+   * Click "Confirm and Load". A progress bar shows the files being prepared and read.
+   * Metadata stays editable: an **"Edit metadata"** expander on the Gating, Analysis and Plot
+     tabs relabels samples **without re-gating**. Renaming a cell line keeps its gates.
 2. **Live/Dead Gating**:
 
-   * The app attempts to Auto-Gate using one of the options: **a pre-trained MLP model**, Density-based selection, Gaussian Mixture Model (GMM), or DBSCAN-based clustering on the left side.
-   * **Accept Auto**: If the suggestion is good, click "✅ Accept Gate". This logs the live and dead cells.
-   * **Manual Gate**: Click "❌ Reject / Manual Gate".
-     * Click roughly **5 points** on the plot around your population.
-     * Confirm the selection. This logs the custom polygon for selection. There could be a lag in manual selection, be patient.
+   * The app auto-gates with **a pre-trained MLP model**, density-based selection, a Gaussian
+     Mixture Model (GMM) or DBSCAN. Pick the method on the left. The toolbar above the plot
+     sets the scale, colormap, interaction mode and representative file.
+   * **Accept**: if the suggestion looks right, click "Accept Auto-Gate" (or "Accept Gate for
+     <cell line>").
+   * **Manual gate**: click "Adjust gate manually", click roughly **5 points** around your
+     population, then "Apply Manual Gate".
+   * "Redo" buttons let you redo the gate for one cell line or for all of them.
 3. **Singlet Gating**:
 
-   * After Live gating, the app discriminates Singlets vs Doublets.
-   * **Default Strategy**: Uses either **a pre-trained MLP model** or Gaussian Mixture Model (GMM) on user-selected channels (e.g., FSC-A vs FSC-H) on the left side.
-   * **Accept Auto**: If the suggestion is good, click "✅ Accept Singlets". This logs the singlet and doublet cells.
-   * **Manual Detection**: Revert to manual polygon selection if the auto detection fails.
-4. **Final Data Settings (Export)**:
+   * Singlets vs doublets are detected with **a pre-trained MLP model** or a GMM on the chosen
+     channels (e.g., FSC-A vs FSC-H). The card layout matches the Live/Dead step.
+   * Click "Accept Singlets", or "Adjust gate manually" to draw the gate yourself.
+4. **Gating complete**:
 
-   * Once Singlets are accepted, the export options appear.
-   * **Channel Selection**: You can modify this to include/exclude specific channels.
-   * **Export**: Save the "Gated Population" (Live + Singlets) or generate a full annotated dataset. You can also change the names of file to download here.
-
+   * **Channels to analyze**: a multiselect of the fluorescence channels shown in Analysis and
+     Plot. Structural channels are included automatically.
+   * **Export** (optional): download the gated population (Live + Singlets) or a full annotated
+     dataset as a ZIP, in raw units.
+   * Optionally run compensation, then click "Finalize Gating & Proceed to Analysis".
 5. **Analysis**:
 
-   * After exporting or selecting your data, you can perform further analysis within the app:
-   * **Transfection Efficiency Gate**: Specialized gating for transfection efficiency assessment. You can do gating for binary or just binary.
-   * **2D Quadratic Gating**: Use quadratic boundaries for more complex population separation in 2D plots.
-   * Additional analysis tools and visualizations are available to support your experimental needs.
-
-
+   * **Summary table**: Experiment Name, Replicate and your condition columns come first, then the
+     metrics. The file-level `Sample` column is hidden by default. "Group by experiment" shows
+     mean ± SD across replicates, and "Download CSV" saves the table.
+   * **Add New Gate** opens the gate creator in one card, with parent population, mode and
+     channel on one row:
+     - **1D Histogram**: click on the plot (or type a value) to set the threshold, or use the
+       **P95 / P99 / P99.9** quick-picks computed from a chosen control sample. A live
+       "% in gate" table for the overlaid samples updates before you save.
+     - **2D Quadrant / Polygon** gates for two-channel populations.
 6. **Plotting**:
 
-   * Glow supports a variety of plotting options to help visualize your data:
-   * **1D Stack Plot**: Visualize distributions across samples or conditions in a stacked format.
-   * **2D Running Means**: Display trends and relationships between two variables using running means in 2D plots.
-   * **Bar Plots**: Summarize and compare data across groups or conditions with customizable bar plots.
-   * Additional plotting features are available for in-depth data exploration.
+   * Choose the plot type at the top: **1D Histogram**, **2D Scatter**, **Bar Plot** or
+     **Pairwise Plot**.
+   * Histogram, scatter and bar plots preview **live** on a subsample of up to 50k events as you
+     change settings. "Render full data" draws the final plot from every event, for the canvas
+     or export.
+   * Optional per-plot event filters live in the collapsed **"Filter events"** expander. A chip
+     shows which filters are active.
+   * If no Experiment Name was entered, the plot says so and points you to "Edit metadata".
 
-### 3. Canvas Customization
+### 3. Canvas
 
-Glow provides a canvas feature where you can customize the appearance of your plots, all plots are able to added to canvas to tune or directly downloaded as svg to be further modified in illustrator easily:
+Every plot has an "Add to Canvas" button. The Canvas tab has two panes:
 
-* Change fonts to match your presentation or publication style.
-* Select different color palettes for better visualization and accessibility.
-* Adjust other visual elements to tailor the output to your needs.
+* **Left**: a thumbnail list of your plots. Click a plot to select it.
+* **Right**: the selected plot at full size, with its controls beside it: width/height,
+  font/zoom, dot size, font family, colormap, and per-sample or per-category colours.
+  "↑ Move up" / "↓ Move down" reorder plots, and "Delete" asks for confirmation.
+* Download the selected plot as PNG, SVG or PDF. SVG and PDF stay editable in Illustrator.
+* **"Export all (ZIP)"** downloads every plot (PNG/SVG/PDF, numbered in canvas order) plus one
+  multi-page PDF of all plots.
 
 ## Acknowledgements
 
