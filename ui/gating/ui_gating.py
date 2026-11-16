@@ -13,6 +13,7 @@ from common.progress import file_progress
 from glow import paths as glow_paths
 from glow.data_loading.sample_metadata import label_map_from_data
 from ui.common.metadata_editor import render_metadata_editor
+from ui.common.plot_style import flowjo_layout, flowjo_axes, MAIN_SIZE, PREVIEW_SIZE
 
 
 def _file_list_key(loaded_files) -> str:
@@ -95,7 +96,7 @@ def calculate_per_cell_line_stats(base_exp, gates, cell_line_col):
 
 def create_canvas_figure(df, x_col, y_col, title, is_log=False, color_col=None, boundaries=None, cmap='plasma', color_map=None):
     try:
-        fig, ax = plt.subplots(figsize=(6, 5))
+        fig, ax = plt.subplots(figsize=(5.5, 5.5))
 
         # Scatter
         if color_col and color_col in df.columns:
@@ -138,14 +139,9 @@ def create_canvas_figure(df, x_col, y_col, title, is_log=False, color_col=None, 
                 lw = b.get('width', 2)
                 ax.plot(bx, by, color=col, linewidth=lw)
 
-        if is_log:
-            ax.set_xscale('log')
-            ax.set_yscale('log')
-
         ax.set_xlabel(x_col)
         ax.set_ylabel(y_col)
-        ax.set_title(title)
-        ax.grid(True, alpha=0.3)
+        flowjo_axes(ax, log=is_log, title=title)
         return fig
     except Exception as e:
         print(f"Fig error: {e}")
@@ -308,22 +304,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                         if color_c:
                             f.update_traces(marker=dict(size=5))
-                            f.update_layout(coloraxis_colorbar=dict(title=dict(text='Count', font=dict(color='black')), len=0.6, yanchor='bottom', y=0.0, tickfont=dict(color='black')))
+                            f.update_layout(coloraxis_colorbar=dict(title=dict(text='Count')))
 
+                        flowjo_layout(f, size=PREVIEW_SIZE, title=plot_title)
                         # Apply fixed ranges if provided (ensures comparison scale)
-                        layout_args = dict(
-                             plot_bgcolor='white', paper_bgcolor='white', height=500,
-                             margin=dict(l=40, r=40, t=60, b=40),
-                             xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
-                             yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black'),
-                             font=dict(color="black"), legend=dict(font=dict(color="black"))
-                        )
                         if x_range:
-                            layout_args['xaxis']['range'] = x_range
+                            f.update_xaxes(range=x_range)
                         if y_range:
-                            layout_args['yaxis']['range'] = y_range
-
-                        f.update_layout(**layout_args)
+                            f.update_yaxes(range=y_range)
                         return f, df_p
 
                     # --- Display Logic ---
@@ -373,14 +361,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             st.write("#### Full Population")
                             fig1, df1 = make_density_plot(exp.data, x_axis, y_axis, is_log, cmap_selected, "Full Population", range_x, range_y)
                             if fig1:
-                                st.plotly_chart(fig1, width="stretch")
+                                st.plotly_chart(fig1, width="content")
 
                         with col2:
                             st.write("#### Gated Population")
                             df_gated = exp.data[exp.data['cells'] & exp.data['singlets']]
                             fig2, df2 = make_density_plot(df_gated, x_axis, y_axis, is_log, cmap_selected, "Gated Population (Live+Singlets)", range_x, range_y)
                             if fig2:
-                                st.plotly_chart(fig2, width="stretch")
+                                st.plotly_chart(fig2, width="content")
 
                         if st.button("Save Plots to Canvas", key="btn_save_csv_density_dual"):
                             if df1 is not None:
@@ -394,7 +382,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                         st.write("#### Population Density (Singlets)")
                         fig, df_p = make_density_plot(exp.data, x_axis, y_axis, is_log, cmap_selected, "Population Density")
                         if fig:
-                            st.plotly_chart(fig, width="stretch")
+                            st.plotly_chart(fig, width="content")
 
                         if st.button("Save Pop Density to Canvas", key="btn_save_csv_density"):
                             mpl_fig = create_canvas_figure(df_p, x_axis, y_axis, "Processed Population Density",
@@ -767,20 +755,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     # Improve marker style for density look
                     if continuous_color:
                         fig.update_traces(marker=dict(size=6)) # Increased size for easier clicking
-                        fig.update_layout(coloraxis_colorbar=dict(
-                            title=dict(text="Count", font=dict(color="black")),
-                            tickfont=dict(color="black")
-                        ))
+                        fig.update_layout(coloraxis_colorbar=dict(title=dict(text="Count")))
 
-                    # Improved Plot Layout (White Background)
-                    fig.update_layout(
-                        plot_bgcolor='white',
-                        paper_bgcolor='white',
-                        xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
-                        yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
-                        font=dict(color="black"),
-                        legend=dict(font=dict(color="black"))
-                    )
+                    # FlowJo-like square plot: solid frame, no grid, minor ticks
+                    flowjo_layout(fig, size=MAIN_SIZE, title="Gating Result")
 
                     # Enable Click Selection by default (Shift+Click for multi)
                     # dragmode='pan' disables the "rectangle" box select, so clicks are registered as point selections.
@@ -981,18 +959,8 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             log_x=is_log, log_y=is_log,
                                             render_mode='svg')
 
-                        # White background for validation plot too
-                        fig_val.update_layout(
-                            plot_bgcolor='white',
-                            paper_bgcolor='white',
-                            xaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
-                            yaxis=dict(showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
-                            font=dict(color="black"),
-                            legend=dict(
-                                font=dict(color="black"),
-                                title=dict(font=dict(color="black"))
-                            )
-                        )
+                        flowjo_layout(fig_val, size=MAIN_SIZE,
+                                      title=f"{gating_method} Classification (Points) vs. Computed Gate (Line)")
 
                         # Draw the same boundary on this plot for verification
                         if boundary_x is not None:
@@ -1006,7 +974,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             fig_val.data = tuple(val_data)
 
                         if st.session_state.get('developer_mode', False):
-                            col_plots.plotly_chart(fig_val, width="stretch")
+                            col_plots.plotly_chart(fig_val, width="content")
 
                             # Add to Canvas button for Classification Plot
                             canvas_title_val = f"{gating_method} Classification Validation"
@@ -1051,17 +1019,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 marker=dict(size=8, color="cyan"),
                                                 name="New Selection (Pending)"))
 
-                    # Interactive Plot
-                    # Legend layout adjustment to prevent overlapping
-                    fig.update_layout(
-                        height=700,
-                        legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        xanchor="right",
-                        x=1
-                    ))
+                    # Interactive Plot (size + horizontal legend already set by flowjo_layout)
 
                     # Render Plot
                     # Use selection_mode='points' for clicking individual cells
@@ -1070,7 +1028,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     param_str = str(sorted(current_gating_params.items()))
                     param_hash = hashlib.md5(param_str.encode()).hexdigest()
 
-                    selection = col_plots.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode="points" if drag_mode=="pan" else "box", key=f"live_gating_plot_{param_hash}")
+                    selection = col_plots.plotly_chart(fig, width="content", on_select="rerun", selection_mode="points" if drag_mode=="pan" else "box", key=f"live_gating_plot_{param_hash}")
 
                     if st.session_state.get('developer_mode', False):
                         canvas_title = "Live/Dead Gating"
@@ -1890,38 +1848,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         fig_m.add_trace(go.Scatter(x=pvx, y=pvy, mode='lines+markers',
                                                                 line=dict(color='#f0f921', width=3), name="Manual Selection"))
 
-                                    fig_m.update_layout(
-                                        title="Manual Singlet Gating",
-                                        xaxis_title=d_x + (" (Log)" if d_is_log else ""),
-                                        yaxis_title=d_y + (" (Log)" if d_is_log else ""),
-                                        plot_bgcolor="white", paper_bgcolor="white",
-                                        font=dict(color="black"),
-                                        xaxis=dict(
-                                            color="black",
-                                            tickfont=dict(color="black"),
-                                            title_font=dict(color="black"),
-                                            showgrid=True,
-                                            gridcolor="lightgray",
-                                            type="log" if d_is_log else "linear"
-                                        ),
-                                        yaxis=dict(
-                                            color="black",
-                                            tickfont=dict(color="black"),
-                                            title_font=dict(color="black"),
-                                            showgrid=True,
-                                            gridcolor="lightgray",
-                                            type="log" if d_is_log else "linear"
-                                        ),
-                                        legend=dict(
-                                            title=dict(font=dict(color="black")),
-                                            font=dict(color="black")
-                                        ),
-                                        height=700,
-                                        dragmode="pan"
-                                    )
+                                    flowjo_layout(fig_m, x_log=d_is_log, y_log=d_is_log, size=MAIN_SIZE,
+                                                  title="Manual Singlet Gating",
+                                                  x_title=d_x + (" (Log)" if d_is_log else ""),
+                                                  y_title=d_y + (" (Log)" if d_is_log else ""))
+                                    fig_m.update_layout(dragmode="pan")
 
                                     # Render Plot
-                                    sel_m = st.plotly_chart(fig_m, width="stretch", on_select="rerun", selection_mode="points", key="singlet_manual_plot")
+                                    sel_m = st.plotly_chart(fig_m, width="content", on_select="rerun", selection_mode="points", key="singlet_manual_plot")
 
                                     # --- Action Buttons ---
                                     st.divider()
@@ -2153,31 +2087,11 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             # Legend Title logic
                                             l_title = "Prediction" if not is_gated else "Density"
 
+                                            flowjo_layout(fig_mlp, size=MAIN_SIZE, title="Singlet Detection")
                                             fig_mlp.update_layout(
-                                                height=700,
-                                                plot_bgcolor="white",
-                                                paper_bgcolor="white",
                                                 dragmode="pan",
                                                 clickmode="event+select",
-                                                font=dict(color="black"),
-                                                xaxis=dict(
-                                                    color="black",
-                                                    tickfont=dict(color="black"),
-                                                    title_font=dict(color="black"),
-                                                    showgrid=True,
-                                                    gridcolor="lightgray"
-                                                ),
-                                                yaxis=dict(
-                                                    color="black",
-                                                    tickfont=dict(color="black"),
-                                                    title_font=dict(color="black"),
-                                                    showgrid=True,
-                                                    gridcolor="lightgray"
-                                                ),
-                                                legend=dict(
-                                                    title=dict(text=l_title if not is_gated else "", font=dict(color="black")),
-                                                    font=dict(color="black")
-                                                )
+                                                legend_title=dict(text=l_title if not is_gated else "")
                                             )
                                             unc_trace = get_uncertainty_trace(st.session_state.gated_experiment if "gated_experiment" in st.session_state else base_exp, d_x, d_y)
                                             if unc_trace:
@@ -2207,7 +2121,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 pass
 
                                             with col_plots:
-                                                selection = st.plotly_chart(fig_mlp, width="stretch", on_select="rerun", selection_mode="box", key="mlp_singlet_plot")
+                                                selection = st.plotly_chart(fig_mlp, width="content", on_select="rerun", selection_mode="box", key="mlp_singlet_plot")
 
                                                 st.divider()
                                                 col_sa, col_sr, col_sc = st.columns(3)
@@ -2433,31 +2347,12 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                         # User Req: "when i zoom in i want to keep the visual the same"
                                         # USER REQ: "background to be transparent"
 
-                                        fig_d.update_layout(
-                                            title="Singlet Identification " + ("(Manual Mode)" if is_manual_active else "(Auto Mode)"),
-                                            xaxis_title=d_x + (" (Log)" if d_is_log else ""),
-                                            yaxis_title=d_y + (" (Log)" if d_is_log else ""),
-                                            dragmode="pan",
-                                            clickmode="event+select",
-                                            plot_bgcolor="white",
-                                            paper_bgcolor="white",
-                                            font=dict(color="black"),
-                                            xaxis=dict(color="black", tickfont=dict(color="black"), title_font=dict(color="black"), showgrid=True, gridcolor="lightgray"),
-                                            yaxis=dict(color="black", tickfont=dict(color="black"), title_font=dict(color="black"), showgrid=True, gridcolor="lightgray"),
-                                            legend=dict(
-                                                font=dict(color="black"),
-                                                orientation="h",
-                                                yanchor="bottom",
-                                                y=1.02,
-                                                xanchor="right",
-                                                x=1
-                                            ),
-                                            height=700,
-                                            # xaxis=dict(range=...), # Commented out to match MLP auto-range
-                                            uirevision="constant"
-                                        )
-                                        # fig_d.update_xaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
-                                        # fig_d.update_yaxes(showgrid=True, gridcolor='rgba(0,0,0,0.1)', linecolor='black', zeroline=False)
+                                        # Data are pre-transformed to log10 when d_is_log, so the axes stay linear.
+                                        flowjo_layout(fig_d, x_log=False, y_log=False, size=MAIN_SIZE,
+                                                      title="Singlet Identification " + ("(Manual Mode)" if is_manual_active else "(Auto Mode)"),
+                                                      x_title=d_x + (" (Log)" if d_is_log else ""),
+                                                      y_title=d_y + (" (Log)" if d_is_log else ""))
+                                        fig_d.update_layout(dragmode="pan", clickmode="event+select", uirevision="constant")
 
                                         canvas_title_gmm = "Singlet Gating (GMM)"
                                         if active_line_singlets:
@@ -2465,7 +2360,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                         with col_plots:
                                             # Fixed: Render the plot inside the column
-                                            st.plotly_chart(fig_d, width="stretch", key=f"singlet_gmm_plot_{ukey}")
+                                            st.plotly_chart(fig_d, width="content", key=f"singlet_gmm_plot_{ukey}")
 
                                             st.divider() # Separate controls
                                             col_da, col_dr, col_dc = st.columns([1, 1, 1])
