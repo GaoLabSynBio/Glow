@@ -16,6 +16,11 @@ from glow.utils import logicle_transform
 from glow.data_loading.sample_metadata import label_map_from_data
 from ui.common.units import render_units_caption
 from ui.common.metadata_editor import render_metadata_editor
+from ui.common.plot_style import (
+    flowjo_layout, flowjo_axes, flowjo_hist_layout, flowjo_hist_axes, add_threshold_line,
+    MAIN_SIZE, HIST_WIDTH, HIST_PREVIEW_WIDTH,
+)
+from glow.plotting.fluor_colors import fluor_palette, muted_fill, muted_fill_rgba
 
 
 def sample_label(sample_id):
@@ -306,8 +311,9 @@ def render_analysis_tab():
                                  x_min_v, x_max_v = np.percentile(all_vals_v, 0.1), np.percentile(all_vals_v, 99.9)
                                  d_dom = np.linspace(x_min_v, x_max_v, 200)
 
-                            # Plot KDEs
-                            colors_v = px.colors.qualitative.Plotly
+                            # Plot KDEs: fluorophore-matched colours (shades of one hue), solid
+                            # outline with a muted half-transparent fill
+                            colors_v = fluor_palette(ch, len(disp_samples)) or px.colors.qualitative.Plotly
                             for idx, s in enumerate(disp_samples):
                                 if s in data_map_v:
                                     v = data_map_v[s]
@@ -327,7 +333,10 @@ def render_analysis_tab():
                                             y_dom = kde(d_dom)
 
                                         c = colors_v[idx % len(colors_v)]
-                                        fig_g.add_trace(go.Scatter(x=d_dom, y=y_dom, mode='lines', line=dict(color=c), name=sample_label(s), fill='tozeroy', opacity=0.3))
+                                        fig_g.add_trace(go.Scatter(x=d_dom, y=y_dom, mode='lines',
+                                                                   line=dict(color=c, width=1.5),
+                                                                   fill='tozeroy', fillcolor=muted_fill(c, 0.35),
+                                                                   name=sample_label(s)))
                                     except Exception:
                                         pass
 
@@ -356,19 +365,10 @@ def render_analysis_tab():
                                  else:
                                      fig_g.add_vrect(x0=dom_min, x1=thr, fillcolor="red", opacity=0.1, layer="below", line_width=0)
 
-                            fig_g.update_layout(
-                                margin=dict(l=0, r=0, t=20, b=0),
-                                height=200,
-                                xaxis_type="log" if use_log_v else "linear",
-                                showlegend=True, # Show legend to identify samples
-                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10, color="black")),
-                                plot_bgcolor='white',
-                                paper_bgcolor='white',
-                                font=dict(color="black"),
-                                xaxis=dict(showgrid=True, gridcolor='lightgrey', color='black', tickfont=dict(color='black')),
-                                yaxis=dict(showgrid=False, showticklabels=False, color='black', tickfont=dict(color='black'))
-                            )
-                            st.plotly_chart(fig_g, width="stretch")
+                            flowjo_hist_layout(fig_g, width=HIST_PREVIEW_WIDTH, x_log=use_log_v, x_title=ch)
+                            fig_g.update_layout(showlegend=True, legend_font_size=10,
+                                                yaxis=dict(showticklabels=False, ticks=""))
+                            st.plotly_chart(fig_g, width="content")
                     except Exception as e:
                         st.error(f"Could not load visualization: {e}")
 
@@ -682,11 +682,14 @@ def render_analysis_tab():
                              curr_threshold = curr_val
 
                         # D. Interactive KDE Plot
-                        # Colors
-                        if len(selected_samples) > 0:
-                             colors = px.colors.sample_colorscale("Viridis", np.linspace(0, 1, len(selected_samples)))
-                        else:
-                             colors = px.colors.qualitative.Plotly
+                        # Colors: shades of the channel's fluorophore colour (EGFP → greens, PE → reds …);
+                        # fall back to a Viridis ramp for channels that are not fluorophores.
+                        colors = fluor_palette(selected_channel, len(selected_samples))
+                        if not colors:
+                            if len(selected_samples) > 0:
+                                colors = px.colors.sample_colorscale("Viridis", np.linspace(0, 1, len(selected_samples)))
+                            else:
+                                colors = px.colors.qualitative.Plotly
 
 
                         # Generate support points for KDE
@@ -763,7 +766,8 @@ def render_analysis_tab():
                                         y_vals = y_vals / np.max(y_vals)
 
                                     # Apply Offset
-                                    base_y = i * ridgeline_offset
+                                    # First selected sample on top; each newly added sample goes below
+                                    base_y = (len(selected_samples) - 1 - i) * ridgeline_offset
                                     y_plotted = y_vals + base_y
 
                                     # Create filled area (Pseudo-Ridgeline)
@@ -776,18 +780,17 @@ def render_analysis_tab():
                                         y=y_poly,
                                         fill='toself',
                                         mode='lines',
-                                        line=dict(color='white', width=0.1),
-                                        fillcolor=color,
+                                        line=dict(width=0),
+                                        fillcolor=muted_fill(color, 0.45),
                                         name=sample_label(s),
-                                        opacity=0.5,
                                         hoverinfo='skip' # Simplify hover for filled area
                                     ))
-                                    # Add Line on top for clarity
+                                    # Solid outline on top
                                     fig.add_trace(go.Scatter(
                                         x=x_domain,
                                         y=y_plotted,
                                         mode='lines',
-                                        line=dict(color='black', width=1.5),
+                                        line=dict(color=color, width=1.8),
                                         showlegend=False,
                                         hoverinfo='skip'
                                     ))
@@ -797,10 +800,10 @@ def render_analysis_tab():
                                         y=y_vals,
                                         mode='lines+markers', # Markers needed for click targeting
                                         marker=dict(size=20, color=color, opacity=0), # Invisible markers but hit-testable
-                                        line=dict(color=color, width=2),
+                                        line=dict(color=color, width=2),   # solid outline
                                         name=sample_label(s),
                                         fill='tozeroy',
-                                        opacity=0.5,
+                                        fillcolor=muted_fill(color, 0.4),  # half-transparent, muted fill
                                         hovertemplate=f"<b>{s}</b><br>Intensity: %{{x}}<br>Density: %{{y}}<extra></extra>"
                                     ))
 
@@ -840,10 +843,10 @@ def render_analysis_tab():
                              # Add shaded region
                              fig.add_vrect(x0=rmin, x1=rmax, fillcolor="green", opacity=0.1, layer="below", line_width=0)
 
-                             fig.add_vline(x=rmin, line_width=2, line_dash="dash", line_color="green",
-                                          annotation_text=f"Min: {rmin:.1f}", annotation_position="top left")
-                             fig.add_vline(x=rmax, line_width=2, line_dash="dash", line_color="green",
-                                          annotation_text=f"Max: {rmax:.1f}", annotation_position="top right")
+                             add_threshold_line(fig, rmin, log=use_log, line_width=2, line_dash="dash", line_color="green",
+                                                annotation_text=f"Min: {rmin:.1f}", annotation_position="top left")
+                             add_threshold_line(fig, rmax, log=use_log, line_width=2, line_dash="dash", line_color="green",
+                                                annotation_text=f"Max: {rmax:.1f}", annotation_position="top right")
                         else:
                              # Usually Positive = Green/Blue, Negative = Red/Gray.
                              # Let's use Green for Positive, Red for Negative shading.
@@ -864,42 +867,41 @@ def render_analysis_tab():
                                  fig.add_vrect(x0=curr_val_for_line, x1=plot_max*10, fillcolor=shade_color, opacity=0.1, layer="below", line_width=0)
                                  annot_pos = "top right"
 
-                             fig.add_vline(x=curr_val_for_line, line_width=2, line_dash="dash", line_color="red",
-                                          annotation_text=f"Threshold: {curr_val_for_line:.1f}", annotation_position=annot_pos)
+                             add_threshold_line(fig, curr_val_for_line, log=use_log, line_width=2, line_dash="dash", line_color="red",
+                                                annotation_text=f"Threshold: {curr_val_for_line:.1f}", annotation_position=annot_pos)
 
-                        # Dynamic Height and Y-Axis for Ridgeline
-                        plot_height = 600
+                        # FlowJo-like wide histogram box (2.5 : 1); ridgeline mode grows with the
+                        # number of samples instead of keeping the aspect ratio.
+                        plot_height = None
                         y_title = "Density"
-                        yaxis_dict: dict[str, Any] = dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black'))
+                        # Curves sit directly on the x axis: no autorange padding below zero
+                        # (the invisible click-target markers would otherwise add some).
+                        yaxis_dict: dict[str, Any] = dict(fixedrange=True, range=[0, _y_top * 1.08])
 
                         if use_ridgeline and len(selected_samples) > 0:
-                             total_y_span = 1.0 + (len(selected_samples) - 1) * ridgeline_offset
+                             n_s = len(selected_samples)
+                             total_y_span = 1.0 + (n_s - 1) * ridgeline_offset
                              # Increase per-sample height allocation to prevent squeezing
-                             plot_height = int(max(400, total_y_span * 200 + 200))
+                             plot_height = int(max(HIST_WIDTH / 2.5, total_y_span * 160 + 60))
 
-                             y_title = "Samples"
-                             yaxis_dict['tickvals'] = [i * ridgeline_offset for i in range(len(selected_samples))]
-                             yaxis_dict['ticktext'] = [str(i) for i in range(len(selected_samples))]
+                             y_title = ""
+                             # Baseline of each ridge (first sample on top), labelled with the experiment name
+                             yaxis_dict['tickvals'] = [(n_s - 1 - i) * ridgeline_offset for i in range(n_s)]
+                             yaxis_dict['ticktext'] = [sample_label(s) for s in selected_samples]
+                             yaxis_dict['range'] = [0, total_y_span + 0.08]
 
+                        flowjo_hist_layout(fig, width=HIST_WIDTH, height=plot_height, x_log=use_log,
+                                           title=f"Density Plot: {selected_channel} (Subset: {parent_gate})",
+                                           x_title=selected_channel, y_title=y_title)
                         fig.update_layout(
-                            height=plot_height,
-                            title=f"Density Plot: {selected_channel} (Subset: {parent_gate})",
-                            xaxis_title=selected_channel,
-                            yaxis_title=y_title,
-                            plot_bgcolor="white",
-                            paper_bgcolor="white",
-                            # Log axes if requested
-                            xaxis_type="log" if use_log else "linear",
                             xaxis_range=layout_xaxis_range,
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color="black")),
                             hovermode="x unified",
                             clickmode='event+select', # Allow clicking to select points
                             # Dragmode 'select' enables box selection
                             # Fixed range prevents accidental zoom toggling
                             dragmode='select' if is_range else 'zoom',
-                            xaxis=dict(fixedrange=True, showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey', color='black', tickfont=dict(color='black'), title_font=dict(color='black')),
+                            xaxis=dict(fixedrange=True),
                             yaxis=yaxis_dict,
-                            font=dict(color="black")
                         )
 
                         # Capture selection events
@@ -907,7 +909,7 @@ def render_analysis_tab():
                         # Enable box selection
                         # Add unique KEY to prevent state leakage
                         with col_plots:
-                             st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
+                             st.plotly_chart(fig, width="content", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
                              render_live_gate_stats(data_map, selected_samples, curr_threshold,
                                                     "negative" if is_negative else "positive")
 
@@ -915,7 +917,7 @@ def render_analysis_tab():
                              if col_add.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
                                  # Create Matplotlib Figure for Canvas
                                  import matplotlib.pyplot as plt
-                                 mpl_fig, mpl_ax = plt.subplots(figsize=(6, 4))
+                                 mpl_fig, mpl_ax = plt.subplots(figsize=(7.5, 3.6))
 
                                  for i, s in enumerate(selected_samples):
                                      if s in data_map:
@@ -959,22 +961,22 @@ def render_analysis_tab():
                                                  if np.max(y_norm) > 0:
                                                      y_norm = y_norm / np.max(y_norm)
 
-                                                 base_y = i * ridgeline_offset
+                                                 base_y = (len(selected_samples) - 1 - i) * ridgeline_offset
                                                  y_shifted = y_norm + base_y
 
                                                  # Fill comes first (for legend label logic)
                                                  # Use zorder to manage stacking (higher index on top or bottom?)
                                                  # Let's stack naturally
                                                  # Use explicit facecolor and alpha to guarantee visibility
-                                                 mpl_ax.fill_between(x_domain, y_shifted, y2=base_y, facecolor=color, alpha=0.6, zorder=10+i, label=sample_label(s))
-                                                 # Outline in black/dark on top of fill
-                                                 mpl_ax.plot(x_domain, y_shifted, color='black', linewidth=1, zorder=10+i+0.1)
+                                                 mpl_ax.fill_between(x_domain, y_shifted, y2=base_y, facecolor=muted_fill_rgba(raw_color, 0.45), zorder=10+i, label=sample_label(s))
+                                                 # Solid outline in the sample colour on top of the fill
+                                                 mpl_ax.plot(x_domain, y_shifted, color=color, linewidth=1.5, zorder=10+i+0.1)
 
                                              else:
-                                                 # Standard Overlay
+                                                 # Standard Overlay: solid outline, muted half-transparent fill
                                                  mpl_ax.plot(x_domain, y_vals, color=color, label=sample_label(s), linewidth=2, zorder=10)
                                                  try:
-                                                     mpl_ax.fill_between(x_domain, y_vals, y2=0, color=color, alpha=0.3, zorder=5)
+                                                     mpl_ax.fill_between(x_domain, y_vals, y2=0, facecolor=muted_fill_rgba(raw_color, 0.4), zorder=5)
                                                  except Exception as e:
                                                      st.warning(f"Fill error for {s}: {e}")
 
@@ -982,26 +984,25 @@ def render_analysis_tab():
                                              st.warning(f"Plot error for {s}: {e}")
                                              continue
 
-                                 if use_log:
-                                     mpl_ax.set_xscale('log')
+                                 flowjo_hist_axes(mpl_ax, log=use_log)
 
                                  if use_ridgeline:
                                      # Remove ticks and labels for cleaner ridgeline
-                                     mpl_ax.set_yticks([])
-                                     mpl_ax.set_yticklabels([])
-                                     mpl_ax.set_ylabel("") # Remove 'Sample' label too
+                                     # Label each ridge baseline with its experiment name (first sample on top)
+                                     n_s = len(selected_samples)
+                                     mpl_ax.set_yticks([(n_s - 1 - i) * ridgeline_offset for i in range(n_s)])
+                                     mpl_ax.set_yticklabels([sample_label(s) for s in selected_samples])
+                                     mpl_ax.set_ylabel("")
 
                                      # Adjust y-limit to show top plot
-                                     total_height = (len(selected_samples) - 1) * ridgeline_offset + 1.2
+                                     total_height = (n_s - 1) * ridgeline_offset + 1.08
                                      mpl_ax.set_ylim(bottom=0, top=total_height)
                                  else:
-                                     mpl_ax.set_title(f"Density Plot: {selected_channel} (Subset: {parent_gate})", pad=40)
+                                     mpl_ax.set_title(f"Density Plot: {selected_channel} (Subset: {parent_gate})", pad=40, loc="left")
                                      mpl_ax.set_ylabel("Density")
                                      mpl_ax.set_ylim(bottom=0)
 
                                  mpl_ax.set_xlabel(selected_channel)
-                                 mpl_ax.spines['top'].set_visible(False)
-                                 mpl_ax.spines['right'].set_visible(False)
 
                                  # Add Threshold Line (Background)
                                  if is_range:
@@ -1281,23 +1282,13 @@ def render_analysis_tab():
                                  pad_y = (max_y - min_y) * 0.05
                                  range_y = [min_y - pad_y, max_y + pad_y]
 
-                             fig.update_layout(
-                                 title=f"Quadrant: {sel_x} vs {sel_y}",
-                                 plot_bgcolor="white",
-                                 paper_bgcolor="white",
-                                 height=800,
-                                 xaxis_title=sel_x, yaxis_title=sel_y,
-                                 xaxis_type="log" if use_log else "linear",
-                                 yaxis_type="log" if use_log else "linear",
-                                 xaxis_range=range_x,
-                                 yaxis_range=range_y,
-                                 dragmode="pan", clickmode="event+select",
-                                 font=dict(color="black"),
-                                 xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                                 yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey')
-                             )
+                             flowjo_layout(fig, x_log=use_log, y_log=use_log, size=MAIN_SIZE,
+                                           title=f"Quadrant: {sel_x} vs {sel_y}",
+                                           x_title=sel_x, y_title=sel_y)
+                             fig.update_layout(xaxis_range=range_x, yaxis_range=range_y,
+                                               dragmode="pan", clickmode="event+select")
 
-                             st.plotly_chart(fig, width="stretch", on_select="rerun", key=q_plot_key)
+                             st.plotly_chart(fig, width="content", on_select="rerun", key=q_plot_key)
 
                     # Add to Canvas & Controls to Options
                     with col_opts:
@@ -1336,10 +1327,7 @@ def render_analysis_tab():
                                                mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=sample_label(s), edgecolors="none")
                                 mpl_ax.legend()
 
-                            if use_log:
-                                mpl_ax.set_xscale("log")
-                                mpl_ax.set_yscale("log")
-                            mpl_ax.set_title(f"{sel_x} vs {sel_y}")
+                            flowjo_axes(mpl_ax, log=use_log, title=f"{sel_x} vs {sel_y}")
                             mpl_ax.set_xlabel(sel_x)
                             mpl_ax.set_ylabel(sel_y)
                             mpl_ax.axvline(x=curr_tx, color="black", linestyle="--")
@@ -1597,25 +1585,13 @@ def render_analysis_tab():
                             pad_y = (max_y - min_y) * 0.05
                             range_y = [min_y - pad_y, max_y + pad_y]
 
-                        fig.update_layout(
-                            title=f"Polygon: {sel_x} vs {sel_y} (Click on points to define vertices)",
-                            plot_bgcolor="white",
-                            paper_bgcolor="white",
-                            height=800,
-                            xaxis_title=sel_x, yaxis_title=sel_y,
-                            xaxis_type="log" if use_log else "linear",
-                            yaxis_type="log" if use_log else "linear",
-                            xaxis_range=range_x,
-                            yaxis_range=range_y,
-                            dragmode="pan",
-                            clickmode="event+select",
-                            font=dict(color="black"),
-                            xaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                            yaxis=dict(color='black', tickfont=dict(color='black'), title_font=dict(color='black'), showgrid=True, gridcolor='lightgrey', zeroline=True, zerolinecolor='lightgrey'),
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                        )
+                        flowjo_layout(fig, x_log=use_log, y_log=use_log, size=MAIN_SIZE,
+                                      title=f"Polygon: {sel_x} vs {sel_y} (Click on points to define vertices)",
+                                      x_title=sel_x, y_title=sel_y)
+                        fig.update_layout(xaxis_range=range_x, yaxis_range=range_y,
+                                          dragmode="pan", clickmode="event+select")
 
-                        st.plotly_chart(fig, width="stretch", on_select="rerun", key=plot_key, selection_mode="points")
+                        st.plotly_chart(fig, width="content", on_select="rerun", key=plot_key, selection_mode="points")
 
                     # Add to Canvas Button & Controls
                     with col_opts:
@@ -1651,11 +1627,7 @@ def render_analysis_tab():
                                                mpl_ax.scatter(vx, vy, s=10, color=c, alpha=0.6, label=sample_label(s), edgecolors="none")
                                 mpl_ax.legend()
 
-                            if use_log:
-                                 mpl_ax.set_xscale("log")
-                                 mpl_ax.set_yscale("log")
-
-                            mpl_ax.set_title(f"Polygon: {sel_x} vs {sel_y}")
+                            flowjo_axes(mpl_ax, log=use_log, title=f"Polygon: {sel_x} vs {sel_y}")
                             mpl_ax.set_xlabel(sel_x)
                             mpl_ax.set_ylabel(sel_y)
 
