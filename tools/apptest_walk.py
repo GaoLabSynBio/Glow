@@ -150,6 +150,16 @@ def main():
         if ag is not None:
             ag.click(); run(at, "add new gate")
             check(widget(at.selectbox, "Analysis Mode") is not None, "gate creator opened")
+            check(any("% in gate" in d.value.columns for d in at.dataframe),
+                  "live % in gate shown before saving")
+            thr = widget(at.number_input, "Threshold Value")
+            qp = button(at, key="quick_pick_p99")
+            check(qp is not None and thr is not None, "percentile quick-pick and threshold input present")
+            if qp is not None and thr is not None:
+                before = thr.value
+                qp.click(); run(at, "quick-pick P99")
+                thr = widget(at.number_input, "Threshold Value")
+                check(thr is not None and thr.value != before, "quick-pick moved the threshold")
 
         # --- Canvas
         nav = widget(at.sidebar.radio, "Go to") or widget(at.radio, "Go to")

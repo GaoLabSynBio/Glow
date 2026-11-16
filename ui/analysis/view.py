@@ -9,6 +9,7 @@ from scipy.ndimage import gaussian_filter
 from glow.analysis.stats import (
     get_summary_statistics, group_by_experiment, order_summary_columns, summary_condition_columns,
 )
+from glow.analysis.threshold import percent_in_gate, percentile_threshold
 from glow.analysis.positive import get_channel_data_for_samples, calculate_positive_stats_recursive
 from glow.canvas.functions import add_plot_to_canvas
 from glow.utils import logicle_transform
@@ -47,6 +48,42 @@ def render_summary_table(df, condition_cols):
     st.dataframe(table, width="stretch", hide_index=True, column_config=column_config)
     st.download_button("Download CSV", table.to_csv(index=False).encode("utf-8"),
                        file_name=file_name, mime="text/csv", key="summary_csv_download")
+
+
+_QUICK_PICK_PERCENTILES = (95, 99, 99.9)
+
+
+def _set_threshold_from_percentile(thr_key, values, pct):
+    value = percentile_threshold(values, pct)
+    if value is not None:
+        st.session_state[thr_key] = value
+
+
+def render_percentile_quick_picks(data_map, samples, thr_key):
+    """Buttons that set the threshold at a percentile of a chosen control sample."""
+    controls = [s for s in samples if len(data_map.get(s, [])) > 0]
+    if not controls:
+        return
+    control = st.selectbox("Control sample", controls, format_func=sample_label,
+                           key="analysis_quick_pick_control")
+    cols = st.columns(len(_QUICK_PICK_PERCENTILES))
+    for col, pct in zip(cols, _QUICK_PICK_PERCENTILES):
+        col.button(f"P{pct:g}", key=f"quick_pick_p{pct:g}",
+                   help=f"Set the threshold at the {pct:g}th percentile of the control sample",
+                   on_click=_set_threshold_from_percentile,
+                   args=(thr_key, data_map[control], pct))
+
+
+def render_live_gate_stats(data_map, samples, threshold, direction):
+    """Per-sample % of events inside the gate being drawn (before it is saved)."""
+    rows = []
+    for s in samples:
+        vals = data_map.get(s, [])
+        pct = percent_in_gate(vals, threshold, direction)
+        if pct is not None:
+            rows.append({"Sample": sample_label(s), "Events": len(vals), "% in gate": round(pct, 2)})
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
 
 def update_threshold_value(model_key, widget_key):
@@ -353,20 +390,18 @@ def render_analysis_tab():
             st.rerun()
     else:
         st.divider()
-        st.markdown("#### New Gate Definition")
+        st.markdown("#### New Gate")
 
+        # Gate card header: parent, mode and (1D) channel on one row
+        row_parent, row_mode, row_channel = st.columns(3)
         col_opts, col_plots = st.columns([1, 3])
 
-        with col_opts:
-            # --- PARENT SELECTION ---
-            # Options: Singlets + any defined gates
-            parent_options = ['Singlets'] + [g['label'] for g in st.session_state.positive_gates]
-            parent_gate = st.selectbox("Select Parent Population", parent_options, index=0)
+        # Options: Singlets + any defined gates
+        parent_options = ['Singlets'] + [g['label'] for g in st.session_state.positive_gates]
+        parent_gate = row_parent.selectbox("Select Parent Population", parent_options, index=0)
+        analysis_mode = row_mode.selectbox("Analysis Mode", ["1D Histogram", "2D Quadrant", "2D Polygon"], index=0)
 
-            # --- MODE SELECTION ---
-            st.divider()
-            st.markdown("#### Analysis Settings")
-            analysis_mode = st.selectbox("Analysis Mode", ["1D Histogram", "2D Quadrant", "2D Polygon"], index=0)
+        with col_opts:
 
             # --- CHANNEL SELECTION ---
             # Identify all numeric channels in the dataset
@@ -478,10 +513,7 @@ def render_analysis_tab():
             # =========================================================
             # 1D HISTOGRAM / DENSITY LOGIC (Legacy)
             # =========================================================
-            with col_opts:
-                st.markdown("#### Hist Parameters")
-                # Use a key to prevent reset issues, though usually fine
-                selected_channel = st.selectbox("Select X-Axis Channel", valid_channels, key="analysis_channel_select")
+            selected_channel = row_channel.selectbox("Select X-Axis Channel", valid_channels, key="analysis_channel_select")
 
             if selected_channel:
                 # B. Sample Selection for Visualization
@@ -512,7 +544,6 @@ def render_analysis_tab():
                     all_values = all_values[~np.isnan(all_values)]
 
                     with col_opts:
-                        st.markdown("#### Axis & Overlay")
                         use_log = st.checkbox("Log Scale Plot", value=True)
                         use_ridgeline = st.checkbox("Ridgeline Mode", value=True)
 
@@ -551,7 +582,7 @@ def render_analysis_tab():
                             plot_max = plot_min + 1.0
 
                         # C. Threshold Selection
-                        st.markdown("#### Threshold Selection")
+                        st.markdown("**Threshold**")
 
                         # 1. Gate Type Selection
                         gate_type = st.radio("Gate Type", ["Binary (Threshold)", "Range (Min - Max)"], horizontal=True)
@@ -563,12 +594,16 @@ def render_analysis_tab():
                             gate_direction = st.radio("Population Direction", ["Positive (-->)", "Negative (<--)"], horizontal=True)
                             is_negative = (gate_direction == "Negative (<--)")
 
-                        st.info("Tip: Select a point on the plot to automatically set the threshold.")
+                        st.caption("Click anywhere on the plot to move the threshold"
+                                   + (" (or drag a box to set the range)." if is_range else "."))
 
                         # keys for session state - INCLUDE PARENT NAME to avoid collisions
                         thr_key = f"thresh_val_{selected_channel}_p{parent_gate}"
                         min_key = f"range_min_{selected_channel}_p{parent_gate}"
                         max_key = f"range_max_{selected_channel}_p{parent_gate}"
+
+                        if not is_range:
+                            render_percentile_quick_picks(data_map, selected_samples, thr_key)
 
                         # Initialize logic
                         if thr_key not in st.session_state:
@@ -873,6 +908,8 @@ def render_analysis_tab():
                         # Add unique KEY to prevent state leakage
                         with col_plots:
                              st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=["points", "box"] if is_range else ["points"], key=f"plot_{selected_channel}_{parent_gate}")
+                             render_live_gate_stats(data_map, selected_samples, curr_threshold,
+                                                    "negative" if is_negative else "positive")
 
                              _, col_add = st.columns([3, 1])
                              if col_add.button("Add This Density Plot to Canvas", key=f"add_analysis_density_{selected_channel}_{parent_gate}"):
