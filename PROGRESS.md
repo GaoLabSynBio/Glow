@@ -48,7 +48,7 @@ before the commit. A failing run must not be committed.
 ## Phase F — Analysis tab (UX_REVIEW §5)
 
 - [x] (02336e5) F1  Summary table: Experiment Name first, Replicate, other condition columns, then metrics; `Sample` hidden by default; CSV download; "group by experiment" toggle (mean ± SD across replicates)   gate: none
-- [ ] F2  Gate creator as one card: channel + parent on one row, draggable threshold line (Plotly editable shape), percentile quick-picks from a chosen control sample, live % positive per sample before saving   gate: after
+- [?] (b5cb584, partial: no draggable line — click-to-set kept, see REVIEW.md) F2  Gate creator as one card: channel + parent on one row, draggable threshold line (Plotly editable shape), percentile quick-picks from a chosen control sample, live % positive per sample before saving   gate: after
 
 ## Phase G — Canvas & polish (UX_REVIEW §7, §8)
 
@@ -95,3 +95,4 @@ before the commit. A failing run must not be committed.
 - 2026-11-15 E2 · committed (40b87a7), pytest 30 passed, apptest passed; awaiting review (gate: after)
 - 2026-11-16 E2 · approved, marked done (40b87a7). Note: a `python3 -` heredoc for file edits needed approval (unavailable unattended); used the Edit tool instead
 - 2026-11-16 F1 · done (02336e5), pytest 34 passed, apptest passed (walk now toggles group-by-experiment); fixed conditions lost on gated_experiment (_temp_live_labels without metadata)
+- 2026-11-16 F2 · committed (b5cb584), pytest 38 passed, apptest passed; awaiting review (gate: after)
