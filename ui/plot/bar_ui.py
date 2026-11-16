@@ -202,7 +202,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
 
         # Show event count for feedback
         event_count = len(filtered_experiment.data)
-        st.info(f"Using {event_count:,} events for plotting.")
+        st.caption(f"Using {event_count:,} events for plotting.")
 
 
     with col_plot:
@@ -259,7 +259,7 @@ def render_bar_ui(filtered_experiment, channels, hue_var, conditions):
                     canvas_title = f"Bar Plot: {selected_channel} by {hue_var}" if hue_var else f"Bar Plot: {selected_channel}"
                     if st.button("Add Bar Plot to Canvas", key="add_bar_to_canvas"):
                         if add_plot_to_canvas(fig, canvas_title):
-                            st.success("Plot added to canvas!")
+                            st.toast("Plot added to canvas.")
 
                     # Close figure to free memory, unless it was stored as a direct reference in Canvas
                     if not getattr(fig, '_glow_is_direct_ref', False):

@@ -4,6 +4,7 @@ import re
 import pandas as pd
 from glow import paths as glow_paths
 from .ui_metadata import render_metadata_upload_section
+from common.progress import file_progress
 from glow.data_loading.sample_metadata import infer_replicates
 
 def auto_format_replicates(df):
@@ -222,7 +223,7 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
     loaded_files = []
 
     if upload_option == "Upload Processed CSV":
-        st.info("Upload a previously processed CSV file (Full or Gated population) to skip gating. Supports .csv, .csv.gz, and .zip")
+        st.caption("Upload a previously processed CSV file (Full or Gated population) to skip gating. Supports .csv, .csv.gz, and .zip")
         uploaded_csv = st.file_uploader("Upload CSV", type=["csv", "gz", "zip"])
 
         if uploaded_csv is not None:
@@ -476,12 +477,14 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                     clean_m[clean_k] = v
                                 sanitized_meta_list.append(clean_m)
 
-                            loaded_files = loader.process_files(sanitized_meta_list, output_dir=str(glow_paths.processed_dir()))
+                            with file_progress(f"Preparing {len(sanitized_meta_list)} files…") as progress:
+                                loaded_files = loader.process_files(
+                                    sanitized_meta_list, output_dir=str(glow_paths.processed_dir()), progress=progress)
                             st.session_state.loaded_files = loaded_files
-                            st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
+                            st.toast(f"Loaded {len(loaded_files)} files with metadata.")
 
     elif upload_option == "Upload Files / Drag & Drop Folder":
-        st.info("You can drag and drop a folder containing FCS files directly into the box below. All files in the folder will be uploaded.")
+        st.caption("You can drag and drop a folder containing FCS files directly into the box below. All files in the folder will be uploaded.")
 
         col_up1, col_up2 = st.columns([1, 1])
         with col_up1:
@@ -646,9 +649,11 @@ def render_file_loader(DataLoader, CYTOFLOW_AVAILABLE):
                                     clean_m[clean_k] = v
                                 sanitized_meta_list.append(clean_m)
 
-                            loaded_files = loader.process_files(sanitized_meta_list, output_dir=str(glow_paths.processed_dir()))
+                            with file_progress(f"Preparing {len(sanitized_meta_list)} files…") as progress:
+                                loaded_files = loader.process_files(
+                                    sanitized_meta_list, output_dir=str(glow_paths.processed_dir()), progress=progress)
                             st.session_state.loaded_files = loaded_files
-                            st.success(f"Successfully loaded {len(loaded_files)} files with metadata.")
+                            st.toast(f"Loaded {len(loaded_files)} files with metadata.")
 
     # Access loaded files from session state
     if 'loaded_files' in st.session_state:

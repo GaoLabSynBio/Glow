@@ -50,7 +50,7 @@ def render_reset_controls(model_type='gating'):
                 success = learner.reset_model()
 
             if success:
-                st.success("Model reset successfully!")
+                st.toast("Model reset.")
                 # Clear UI state - slightly drastic but safe
                 # We should only clear relevant state
                 if model_type == 'gating':
@@ -78,7 +78,7 @@ def render_uncertainty_controls(experiment, x_col, y_col, model_type='gating'):
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🔍 Find Confusion", key=f"find_conf_{model_type}"):
+        if st.button("Find Confusion", key=f"find_conf_{model_type}"):
             with st.spinner("Querying model..."):
                 learner = get_active_learner(model_type)
                 if not learner:
@@ -337,5 +337,5 @@ def _teach_batch(learner, experiment, x_col, y_col, points, label, plot_df=None,
     # Increment plot ID to force clear selection state
     st.session_state.plot_id = st.session_state.get('plot_id', 0) + 1
 
-    st.success(f"Updated model with {len(X_new)} points.")
+    st.toast(f"Updated model with {len(X_new)} points.")
     st.rerun()

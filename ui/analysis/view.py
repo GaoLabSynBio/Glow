@@ -159,7 +159,7 @@ def render_analysis_tab():
         filtered_experiment = experiment.clone() if hasattr(experiment, 'clone') else experiment
         filtered_experiment.data = experiment.data[experiment.data['cells'] & experiment.data['singlets']].copy()
         experiment = filtered_experiment
-        st.info(f"Analysis is being performed on the gated (Live & Singlet) population: {len(experiment.data)} events.")
+        st.caption(f"Analyzing the gated (Live & Singlet) population: {len(experiment.data):,} events.")
 
     # Initialize positive gates storage if not present
     if 'positive_gates' not in st.session_state:
@@ -1023,7 +1023,7 @@ def render_analysis_tab():
                                  mpl_fig.tight_layout()
 
                                  add_plot_to_canvas(mpl_fig, f"Density Plot: {selected_channel} (Subset: {parent_gate})")
-                                 st.success("Plot added to canvas!")
+                                 st.toast("Plot added to canvas.")
                                  plt.close(mpl_fig)
 
                         # Finalize Gate
@@ -1069,7 +1069,7 @@ def render_analysis_tab():
                                  st.session_state.threshold_gate[gate_label] = final_threshold
 
                                  st.session_state.show_gate_creator = False # Hide creator
-                                 st.success(f"Added Gate: {new_gate['label']}")
+                                 st.toast(f"Added gate: {new_gate['label']}")
                                  st.rerun()
 
                              if st.button("Cancel"):
@@ -1347,7 +1347,7 @@ def render_analysis_tab():
 
                             mpl_fig.tight_layout()
                             add_plot_to_canvas(mpl_fig, f"Scatter: {sel_x} vs {sel_y}")
-                            st.success("Added to Canvas!")
+                            st.toast("Plot added to canvas.")
                             plt.close(mpl_fig)
 
                         st.markdown("#### Save Quadrants")
@@ -1671,7 +1671,7 @@ def render_analysis_tab():
 
                             mpl_fig.tight_layout()
                             add_plot_to_canvas(mpl_fig, f"Polygon Scatter: {sel_x} vs {sel_y}")
-                            st.success("Added to Canvas!")
+                            st.toast("Plot added to canvas.")
                             plt.close(mpl_fig)
 
                         st.write("#### Save Polygon Gate")

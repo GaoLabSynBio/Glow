@@ -221,7 +221,17 @@ class DataLoader:
             preview_metadata.append(file_meta)
         return preview_metadata
 
-    def process_files(self, metadata_list, output_dir=None):
+    @staticmethod
+    def _report(progress, done, total, label):
+        """Call an optional progress(done, total, label) callback; never let it break loading."""
+        if progress is None:
+            return
+        try:
+            progress(done, total, label)
+        except Exception as e:
+            log.debug("Progress callback failed: %s", e)
+
+    def process_files(self, metadata_list, output_dir=None, progress=None):
         self.loaded_files_metadata = []
 
         if output_dir and not os.path.exists(output_dir):
@@ -229,9 +239,11 @@ class DataLoader:
 
         internal_keys = ['original_path', 'current_path', 'path', 'display_name', 'condition']
 
-        for meta in metadata_list:
+        total = len(metadata_list)
+        for i, meta in enumerate(metadata_list):
             original = meta['original_path']
             new_name = meta['display_name']
+            self._report(progress, i, total, f"Preparing {new_name}")
 
             final_path = original
 
@@ -255,6 +267,7 @@ class DataLoader:
             sanitized_meta['current_path'] = final_path
             self.loaded_files_metadata.append(sanitized_meta)
 
+        self._report(progress, total, total, "Files prepared")
         return self.loaded_files_metadata
 
     def prepare_fcs_files(self, paths, rename_strategy='folder_name', output_dir=None):
@@ -275,7 +288,12 @@ class DataLoader:
                      experiment.metadata.get('scaling_factor'))
         return experiment
 
-    def load_as_cytoflow_experiment(self, metadata_list=None):
+    def load_as_cytoflow_experiment(self, metadata_list=None, progress=None):
+        """Load files as one cytoflow Experiment.
+
+        progress: optional callback(done, total, label). The fast path reads all files in one
+        ImportOp call, so it reports start/end only; the per-file fallback reports every file.
+        """
         if metadata_list is None:
             metadata_list = self.loaded_files_metadata
 
@@ -339,10 +357,13 @@ class DataLoader:
 
         # Modified Loading Logic: Handle disjoint channels by unioning per-tube Experiments
         if tubes:
+            n_tubes = len(tubes)
             # Attempt standard import first (Optimized)
             try:
+                self._report(progress, 0, n_tubes, f"Reading {n_tubes} FCS files")
                 import_op = cytoflow.ImportOp(tubes=tubes, conditions=import_conditions_schema)
                 experiment = import_op.apply()
+                self._report(progress, n_tubes, n_tubes, "Files read")
                 return self._detect_and_tag_high_res(experiment)
             except Exception as e:
                 # Check for channel mismatch error or generic CytoflowOpError
@@ -354,7 +375,8 @@ class DataLoader:
                     loaded_dfs = []
                     combined_metadata = {}
 
-                    for tube in tubes:
+                    for i, tube in enumerate(tubes):
+                        self._report(progress, i, n_tubes, f"Reading {os.path.basename(str(tube.file))}")
                         try:
                             # Import single tube
                             op = cytoflow.ImportOp(tubes=[tube], conditions=import_conditions_schema)

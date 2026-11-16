@@ -235,7 +235,7 @@ def render_metadata_upload_section(key_prefix="", reset_keys=None):
                                         for k in reset_keys:
                                             if k in st.session_state:
                                                 del st.session_state[k]
-                                        st.success("Merged by key! Metadata updated.")
+                                        st.toast("Metadata merged by key.")
                                         st.rerun()
                                     except Exception as merge_err:
                                         st.error(f"Merge failed: {merge_err}")

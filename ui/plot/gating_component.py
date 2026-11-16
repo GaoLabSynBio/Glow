@@ -211,7 +211,7 @@ def _render_gating_body(filtered_experiment, channels, key_prefix):
             on_click=add_gate_callback, 
             args=(new_gate_channel, gate_key, raw_min_key, raw_max_key)
         ):
-            st.success(f"Added gate on {new_gate_channel}")
+            st.toast(f"Added gate on {new_gate_channel}")
 
     return st.session_state[gate_key], analysis_gates_to_apply
 

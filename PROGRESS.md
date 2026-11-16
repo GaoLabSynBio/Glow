@@ -52,7 +52,7 @@ before the commit. A failing run must not be committed.
 
 ## Phase G — Canvas & polish (UX_REVIEW §7, §8)
 
-- [~] G1  Canvas: text ↑/↓ buttons, delete confirmation, two-pane layout (thumbnail list + selected plot with its controls), "Export all" ZIP   gate: none
+- [x] (bb3963e) G1  Canvas: text ↑/↓ buttons, delete confirmation, two-pane layout (thumbnail list + selected plot with its controls), "Export all" ZIP   gate: none
 - [ ] G2  Messaging pass: one button system (primary = next step, secondary = other, destructive = confirm), sticky infos → captions, `st.progress` during file loading, consistent toast/success usage   gate: none
 - [ ] G3  Wrap-up: README workflow section updated, UX_REVIEW.md items annotated with commit hashes, full `tools/apptest_walk.py` + pytest run, final summary in REVIEW.md   gate: after
 
@@ -96,3 +96,5 @@ before the commit. A failing run must not be committed.
 - 2026-11-16 E2 · approved, marked done (40b87a7). Note: a `python3 -` heredoc for file edits needed approval (unavailable unattended); used the Edit tool instead
 - 2026-11-16 F1 · done (02336e5), pytest 34 passed, apptest passed (walk now toggles group-by-experiment); fixed conditions lost on gated_experiment (_temp_live_labels without metadata)
 - 2026-11-16 F2 · committed (b5cb584), pytest 38 passed, apptest passed; awaiting review (gate: after)
+- 2026-11-16 F2 · approved, marked done (b5cb584)
+- 2026-11-16 G1 · done (bb3963e), pytest 42 passed, apptest passed (walk now exercises canvas select/move/confirmed delete/Export all); fixed duplicate colour-picker keys that crashed the canvas for pairwise plots. Note: `sed -i` and a Write to /tmp needed approval (denied unattended); used the Edit tool instead

@@ -9,6 +9,7 @@ from .ui_file_loader import reset_live_gating, reset_singlet_gating
 import matplotlib.pyplot as plt
 from glow.utils import safe_log10, logicle_transform, raw_unit_factor
 from common.errors import show_error
+from common.progress import file_progress
 from glow import paths as glow_paths
 from glow.data_loading.sample_metadata import label_map_from_data
 from ui.common.metadata_editor import render_metadata_editor
@@ -388,7 +389,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             if df2 is not None:
                                 mf2 = create_canvas_figure(df2, x_axis, y_axis, "Gated Population", is_log=is_log, color_col='Density' if 'Density' in df2 else None)
                                 add_plot_to_canvas(mf2, "Gated Population")
-                            st.success("Plots added to canvas!")
+                            st.toast("Plots added to canvas.")
                     else:
                         st.write("#### Population Density (Singlets)")
                         fig, df_p = make_density_plot(exp.data, x_axis, y_axis, is_log, cmap_selected, "Population Density")
@@ -399,7 +400,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             mpl_fig = create_canvas_figure(df_p, x_axis, y_axis, "Processed Population Density",
                                                            is_log=is_log, color_col='Density' if 'Density' in df_p else None)
                             add_plot_to_canvas(mpl_fig, "Processed Population Density")
-                            st.success("Plot added to canvas!")
+                            st.toast("Plot added to canvas.")
                             plt.close(mpl_fig)
 
             st.divider()
@@ -415,9 +416,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
             st.session_state.pop('base_experiment', None)
         if 'base_experiment' not in st.session_state:
             st.session_state['_base_files_key'] = file_key
-            with st.spinner("Loading Experiment Data..."):
+            with file_progress("Loading experiment data…") as progress:
                 loader = DataLoader()
-                st.session_state.base_experiment = loader.load_as_cytoflow_experiment(st.session_state.loaded_files)
+                st.session_state.base_experiment = loader.load_as_cytoflow_experiment(
+                    st.session_state.loaded_files, progress=progress)
 
                 # Check for Compensated Channels
                 if st.session_state.base_experiment:
@@ -449,7 +451,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                     "decisions below — your loaded files and metadata are kept."
                 )
                 if st.button(
-                    "↩️ Redo gating (keep loaded files)", key="redo_gating_btn",
+                    "Redo gating (keep loaded files)", key="redo_gating_btn",
                     help="Clears accepted Live/Dead and Singlet gates so you can gate again.",
                 ):
                     reset_live_gating()
@@ -502,9 +504,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                     if is_multi_line_meta:
                         if len(unique_cell_lines) > 1:
-                            st.info(f"Detected multiple cell lines in '{cell_line_col}': {', '.join(unique_cell_lines)}")
+                            st.caption(f"Cell lines in '{cell_line_col}': {', '.join(unique_cell_lines)}")
                         else:
-                            st.info(f"Detected cell line in '{cell_line_col}': {', '.join(unique_cell_lines)}")
+                            st.caption(f"Cell line in '{cell_line_col}': {', '.join(unique_cell_lines)}")
                         gating_mode = "Per Cell Line"
 
                         # Selector for current cell line
@@ -1022,7 +1024,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     boundaries=boundaries_to_plot_val
                                 )
                                 add_plot_to_canvas(mpl_fig_val, canvas_title_val)
-                                st.success("Plot added to canvas!")
+                                st.toast("Plot added to canvas.")
                                 plt.close(mpl_fig_val)
 
 
@@ -1089,7 +1091,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                         is_log=is_log, color_col=color_col if continuous_color else None,
                                                         boundaries=boundaries_to_plot, cmap=cmap_selected.lower())
                             add_plot_to_canvas(mpl_fig, canvas_title)
-                            st.success("Plot added to canvas!")
+                            st.toast("Plot added to canvas.")
                             plt.close(mpl_fig)
 
                     # Active Learning Controls (Developer Mode Only)
@@ -1172,14 +1174,14 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             # We use 3 columns now
                             col1, col2, col3 = st.columns([1, 1, 1])
 
-                        btn_label = "✅ Accept Auto-Gate"
+                        btn_label = "Accept Auto-Gate"
                         if active_cell_line:
-                            btn_label = f"✅ Accept Gate for {active_cell_line}"
+                            btn_label = f"Accept Gate for {active_cell_line}"
 
                         if is_accepted:
                             btn_label = "Gate Applied"
 
-                        if col1.button(btn_label, disabled=is_accepted, key=f"accept_btn_{ukey}"):
+                        if col1.button(btn_label, disabled=is_accepted, key=f"accept_btn_{ukey}", type="primary"):
                             # --- Per Cell Line Logic ---
                             if active_cell_line:
                                 if 'cell_line_gates' not in st.session_state:
@@ -1273,7 +1275,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                     st.rerun()
                                 else:
                                     # Store a temporary success message in session state to show AFTER rerun
-                                    st.session_state[f"success_msg_{active_cell_line}"] = f"✅ Gate saved for {active_cell_line}."
+                                    st.session_state[f"success_msg_{active_cell_line}"] = f"Gate saved for {active_cell_line}."
 
                                     # Auto-Advance
                                     if unique_cell_lines:
@@ -1301,7 +1303,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 if done_lines:
                                     st.write(f"**Gated Lines:** {', '.join(done_lines)}")
                                     if active_cell_line in st.session_state.cell_line_gates:
-                                        if st.button(f"↩️ Redo Live/Dead gate for {active_cell_line}", key=f"reset{ukey}"):
+                                        if st.button(f"Redo Live/Dead gate for {active_cell_line}", key=f"reset{ukey}"):
                                             del st.session_state.cell_line_gates[active_cell_line]
 
                                             # Also reset SINGLET gate for this cell line if it exists (Downstream dependency)
@@ -1322,7 +1324,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                         # Global Reset Logic (Mirroring Cell Line behavior)
                         elif st.session_state.get('gate_accepted'):
-                             if st.button("↩️ Redo Live/Dead gating", key="reset_live_global"):
+                             if st.button("Redo Live/Dead gating", key="reset_live_global"):
                                  reset_live_gating()
                                  st.rerun()
 
@@ -1428,7 +1430,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                 st.success("Feedback saved! (Mock mode)")
 
 
-                        if col2.button("❌ Reject / Manual Gate", key=f"reject_btn_{ukey}", disabled=is_accepted):
+                        if col2.button("Adjust gate manually", key=f"reject_btn_{ukey}", disabled=is_accepted):
                             st.session_state.show_manual_gating = True
                             st.rerun()
 
@@ -1453,7 +1455,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                         is_log=is_log, color_col=color_col if continuous_color else None,
                                                         boundaries=boundaries_to_plot, cmap=cmap_selected.lower())
                              add_plot_to_canvas(mpl_fig, ctitle)
-                             st.success("Plot added to canvas!")
+                             st.toast("Plot added to canvas.")
                              plt.close(mpl_fig)
 
                     # Check for Gate Acceptance to show clean-up options
@@ -1477,7 +1479,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                             # Buttons Layout: Apply on top, Text in middle, Undo/Exit below
                             col_top_apply = st.columns(1)[0]
-                            apply_clicked = col_top_apply.button("✅ Apply Manual Gate", type="primary", width="stretch", key="apply_live_gate_top")
+                            apply_clicked = col_top_apply.button("Apply Manual Gate", type="primary", width="stretch", key="apply_live_gate_top")
 
                             vertices_text = st.text_area("Polygon Vertices (x, y per line)", current_poly_str, height=150, key="manual_live_verts_input")
 
@@ -1956,10 +1958,10 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             boundaries=b_list
                                         )
                                         add_plot_to_canvas(mpl_fig_m, "Manual Singlet Gating")
-                                        st.success("Plot added to canvas!")
+                                        st.toast("Plot added to canvas.")
                                         plt.close(mpl_fig_m)
 
-                                    if col_ma.button("✅ Apply Gate", key=f"confirm_manual_singlets_p_{sukey}"):
+                                    if col_ma.button("Apply Gate", type="primary", key=f"confirm_manual_singlets_p_{sukey}"):
                                           # Apply logic
                                           parsed_verts = []
                                           txt_input = st.session_state.get("doublet_verts_input", "")
@@ -2214,9 +2216,9 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 def _reject_s_callback():
                                                     st.session_state.doublet_manual_mode = True
 
-                                                clicked_accept = col_sa.button("✅ Accept Singlets", key=f"accept_mlp_{sukey}", disabled=is_gated, width="stretch", help=f"Accept for {c_type.upper()}")
+                                                clicked_accept = col_sa.button("Accept Singlets", key=f"accept_mlp_{sukey}", disabled=is_gated, width="stretch", type="primary", help=f"Accept for {c_type.upper()}")
 
-                                                col_sr.button("❌ Reject / Manual", key=f"reject_mlp_{ukey}", on_click=_reject_s_callback, disabled=is_gated, width="stretch")
+                                                col_sr.button("Adjust gate manually", key=f"reject_mlp_{ukey}", on_click=_reject_s_callback, disabled=is_gated, width="stretch")
 
                                                 canvas_title_s = "Singlet Detection"
                                                 if active_line_singlets:
@@ -2225,7 +2227,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 if col_sc.button("Add Plot to Canvas", key=f"add_singlet_mlp_gate_{sukey}", width="stretch"):
                                                     mpl_fig = create_canvas_figure(viz_df, d_x, d_y, canvas_title_s, is_log=d_is_log, color_col="Singlet_Cat", color_map=color_map_singlet)
                                                     add_plot_to_canvas(mpl_fig, canvas_title_s)
-                                                    st.success("Plot added to canvas!")
+                                                    st.toast("Plot added to canvas.")
                                                     plt.close(mpl_fig)
 
                                             if st.session_state.get('developer_mode', False):
@@ -2260,7 +2262,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                         st.session_state.doublets_removed = True
                                                         st.rerun()
                                                     else:
-                                                        st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"✅ Singlet saved for {active_line_singlets}."
+                                                        st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"Singlet gate saved for {active_line_singlets}."
                                                         # Auto-Advance
                                                         if unique_cell_lines:
                                                             curr_idx = unique_cell_lines.index(active_line_singlets)
@@ -2297,7 +2299,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     if done_s:
                                                         st.write(f"**Gated Singlets:** {', '.join(done_s)}")
                                                         if active_line_singlets in st.session_state.cell_line_singlet_gates:
-                                                            if st.button(f"↩️ Redo singlet gate for {active_line_singlets}", key=f"reset_mlp_s{active_line_singlets}"):
+                                                            if st.button(f"Redo singlet gate for {active_line_singlets}", key=f"reset_mlp_s{active_line_singlets}"):
                                                                 del st.session_state.cell_line_singlet_gates[active_line_singlets]
                                                                 if 'doublets_removed' in st.session_state:
                                                                     del st.session_state['doublets_removed']
@@ -2468,7 +2470,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             st.divider() # Separate controls
                                             col_da, col_dr, col_dc = st.columns([1, 1, 1])
 
-                                        if col_dr.button("❌ Reject / Manual", key=f"reject_gmm_{ukey}", disabled=is_gated):
+                                        if col_dr.button("Adjust gate manually", key=f"reject_gmm_{ukey}", disabled=is_gated):
                                             st.session_state.doublet_manual_mode = True
                                             st.rerun()
 
@@ -2487,17 +2489,17 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
 
                                             mpl_fig = create_canvas_figure(viz_df_canvas, d_x, d_y, canvas_title_gmm, is_log=d_is_log, color_col=c_col, boundaries=bounds_list)
                                             add_plot_to_canvas(mpl_fig, canvas_title_gmm)
-                                            st.success("Plot added to canvas!")
+                                            st.toast("Plot added to canvas.")
                                             plt.close(mpl_fig)
 
                                         # Actions
 
                                         # Accept Auto
-                                        btn_label_s = "✅ Accept Auto-Singlets"
+                                        btn_label_s = "Accept Auto-Singlets"
                                         if active_line_singlets:
-                                            btn_label_s = f"✅ Accept Singlets for {active_line_singlets}"
+                                            btn_label_s = f"Accept Singlets for {active_line_singlets}"
 
-                                        if col_da.button(btn_label_s, key=f"accept_singlets{sukey}", disabled=is_gated):
+                                        if col_da.button(btn_label_s, key=f"accept_singlets{sukey}", disabled=is_gated, type="primary"):
                                             # --- Per Cell Line Singlet Logic ---
                                             if active_line_singlets:
                                                 if 'cell_line_singlet_gates' not in st.session_state:
@@ -2528,7 +2530,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                     st.session_state.doublets_removed = True
                                                     st.rerun()
                                                 else:
-                                                    st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"✅ Singlet gate saved for {active_line_singlets}."
+                                                    st.session_state[f"success_msg_singlet_{active_line_singlets}"] = f"Singlet gate saved for {active_line_singlets}."
                                                     st.rerun()
                                                 return
 
@@ -2585,7 +2587,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                             st.rerun()
 
                                         # Reject -> Enable Manual
-                                        if col_dr.button("❌ Reject / Manual Gate", key=f"reject_singlets{sukey}", disabled=is_gated):
+                                        if col_dr.button("Adjust gate manually", key=f"reject_singlets{sukey}", disabled=is_gated):
                                             st.session_state.doublet_manual_mode = True
                                             st.rerun()
 
@@ -2600,7 +2602,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                                                 if done_s:
                                                     st.write(f"**Gated Singlets:** {', '.join(done_s)}")
                                                     if active_line_singlets in st.session_state.cell_line_singlet_gates:
-                                                        if st.button(f"↩️ Redo singlet gate for {active_line_singlets}", key=f"reset_s{active_line_singlets}"):
+                                                        if st.button(f"Redo singlet gate for {active_line_singlets}", key=f"reset_s{active_line_singlets}"):
                                                             del st.session_state.cell_line_singlet_gates[active_line_singlets]
                                                             if 'doublets_removed' in st.session_state:
                                                                 del st.session_state['doublets_removed']
@@ -2991,7 +2993,7 @@ def render_gating_section(DataLoader, GatingManager, ActiveLearningLogger, CYTOF
                             # Compensation Option
                             do_compensation = st.checkbox("Run Compensation before Analysis (Optional)", key="enable_comp_step")
 
-                            if st.button("✅ Finalize Gating & Proceed to Analysis", type="primary", key="proceed_analysis_main"):
+                            if st.button("Finalize Gating & Proceed to Analysis", type="primary", key="proceed_analysis_main"):
                                 # --- Validation for Multi-Line Gating ---
                                 if is_multi_line_meta:
                                     all_lines = set(unique_cell_lines)

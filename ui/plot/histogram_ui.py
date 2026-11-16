@@ -421,7 +421,7 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                 canvas_title = f"Ridgeline: {selected_channel} by {hue_var}" if hue_var else f"{selected_channel}"
                                 if st.button("Add Merged Plot to Canvas", key="add_merged_ridgeline_to_canvas"):
                                     if add_plot_to_canvas(fig, canvas_title):
-                                        st.success("Plot added to canvas!")
+                                        st.toast("Plot added to canvas.")
 
                             except Exception as e:
                                 st.error(f"Error generating Ridgeline plot: {e}")
@@ -456,7 +456,7 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                 canvas_title = f"Ridgeline (Mpl): {selected_channel}"
                                 if st.button("Add Merged Plot to Canvas", key="add_mpl_ridge_canvas"):
                                     if add_plot_to_canvas(fig, canvas_title):
-                                        st.success("Plot added to canvas!")
+                                        st.toast("Plot added to canvas.")
 
                                 plt.close(fig)
                             except Exception as e:
@@ -488,7 +488,7 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                             canvas_title = f"Histogram: {selected_channel} by {hue_var}" if hue_var else f"Histogram: {selected_channel}"
                             if st.button("Add Merged Plot to Canvas", key="add_merged_hist_to_canvas"):
                                 if add_plot_to_canvas(fig, canvas_title):
-                                    st.success("Plot added to canvas!")
+                                    st.toast("Plot added to canvas.")
 
                             if not getattr(fig, '_glow_is_direct_ref', False):
                                 plt.close(fig)
@@ -523,7 +523,7 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                                 download_btn(fig, f"hist_ind_{i}")
                                 if st.button(f"Add \"{group}\" Histogram to Canvas", key=f"add_hist_ind_{i}_to_canvas"):
                                     if add_plot_to_canvas(fig, f"Histogram: {selected_channel} ({group})"):
-                                        st.success("Plot added to canvas!")
+                                        st.toast("Plot added to canvas.")
 
                                 if not getattr(fig, '_glow_is_direct_ref', False):
                                     plt.close(fig)

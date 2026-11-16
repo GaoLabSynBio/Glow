@@ -135,7 +135,7 @@ with st.sidebar.expander("Advanced", expanded=False):
     st.toggle("Developer Mode", key="developer_mode", value=False,
               help="Show advanced tools and validation plots.")
 
-with st.sidebar.popover("🔄 Start new experiment", width="stretch"):
+with st.sidebar.popover("Start new experiment", width="stretch"):
     st.warning("This clears all loaded data, gates and settings.")
     if st.button("Yes, clear everything", key="refresh_experiment", type="primary"):
         clear_all_cache()

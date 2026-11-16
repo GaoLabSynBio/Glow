@@ -19,6 +19,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 
 DATA_DIR = os.path.join(REPO, "data", "uploaded_raw", "My_Experiment_1")
 FAILURES = []
+EMOJI_PREFIXES = set("✅❌↩🔄🔍🗑💾⬆⬇")
 
 
 def check(cond, msg):
@@ -127,7 +128,10 @@ def main():
     check(meta.get("is_scaled", False) == meta.get("is_high_res", False), "is_scaled matches is_high_res")
 
     # --- Step 2: live gate
-    acc = button(at, "✅ Accept") or button(at, "Accept")
+    check(not any(b.label[:1] in EMOJI_PREFIXES for b in at.button), "no emoji-prefixed buttons on gating page")
+    check(button(at, "Adjust gate manually") is not None, "'Adjust gate manually' button present")
+    acc = button(at, "Accept")
+    check(acc is not None and acc.proto.type == "primary", "live-gate Accept is the primary button")
     check(acc is not None, "live-gate Accept button present")
     if acc:
         acc.click(); run(at, "accepted live gate")

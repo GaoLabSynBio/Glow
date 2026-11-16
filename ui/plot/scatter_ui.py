@@ -246,7 +246,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 download_btn(fig_summary, "scatter_summary")
                                 if st.button("Add Summary Plot to Canvas", key="add_scatter_summary_to_canvas"):
                                     if add_plot_to_canvas(fig_summary, base_title + " (summary)"):
-                                        st.success("Plot added to canvas!")
+                                        st.toast("Plot added to canvas.")
 
                                 # Close figures to free memory
                                 if not getattr(fig_summary, '_glow_is_direct_ref', False):
@@ -259,7 +259,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 download_btn(fig_facets, "scatter_facets")
                                 if st.button("Add Facet Plot to Canvas", key="add_scatter_facets_to_canvas"):
                                     if add_plot_to_canvas(fig_facets, base_title + " (facets)"):
-                                        st.success("Plot added to canvas!")
+                                        st.toast("Plot added to canvas.")
 
                                 if not getattr(fig_facets, '_glow_is_direct_ref', False):
                                     plt.close(fig_facets)
@@ -268,7 +268,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 download_btn(res, "scatter_plot")
                                 if st.button("Add Plot to Canvas", key="add_scatter_to_canvas"):
                                     if add_plot_to_canvas(res, base_title):
-                                        st.success("Plot added to canvas!")
+                                        st.toast("Plot added to canvas.")
 
                                 if not getattr(res, '_glow_is_direct_ref', False):
                                     plt.close(res)
@@ -290,7 +290,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                             st.plotly_chart(fig, width="stretch")
                             if st.button("Add Plot to Canvas", key="add_plotly_scatter"):
                                  add_plot_to_canvas(fig, base_title)
-                                 st.success("Added to Canvas!")
+                                 st.toast("Plot added to canvas.")
 
 
                     if show_individual and hue_var and not show_trend:
@@ -315,7 +315,7 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                                 download_btn(fig, f"scatter_ind_{i}")
                                 if st.button(f"Add \"{group}\" to Canvas", key=f"add_scatter_ind_{i}_to_canvas"):
                                     if add_plot_to_canvas(fig, base_title + f" ({group})"):
-                                        st.success("Plot added to canvas!")
+                                        st.toast("Plot added to canvas.")
 
                                 if not getattr(fig, '_glow_is_direct_ref', False):
                                     plt.close(fig)

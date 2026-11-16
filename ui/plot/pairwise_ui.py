@@ -154,4 +154,4 @@ def render_pairwise_ui(experiment, channels, conditions, scale='log'):
             if st.button("Add to Canvas", key="btn_add_pairwise_canvas"):
                 title = st.session_state.get('pairwise_title', "Pairwise Plot")
                 add_plot_to_canvas(fig, title)
-                st.success("Plot added to canvas!")
+                st.toast("Plot added to canvas.")

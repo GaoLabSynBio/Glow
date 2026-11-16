@@ -203,7 +203,7 @@ def render_compensation_tab():
                     )
                     st.session_state.spillover_matrix = matrix
                     st.session_state.comp_channels = selected_channels
-                    st.success("Calculation Complete!")
+                    st.toast("Compensation matrix calculated.")
                 except Exception as e:
                     st.error(f"Calculation Failed: {e}")
 
@@ -359,7 +359,7 @@ def render_compensation_tab():
                         st.error(f"Export failed: {e}")
 
         st.divider()
-        if st.button("✅ Accept & Apply to Analysis Dataset", type="primary"):
+        if st.button("Accept & Apply to Analysis Dataset", type="primary"):
             with st.spinner("Applying Compensation..."):
                 target_exp = st.session_state.get('analysis_experiment')
                 if target_exp is None:
