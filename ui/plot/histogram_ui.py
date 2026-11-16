@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import numpy as np
 from scipy.stats import gaussian_kde
 from glow.plotting import plots
-from glow.canvas.functions import add_plot_to_canvas
+from .base import add_plot_to_canvas, render_full_toggle, preview_subsample
 from common.widgets import download_svg_button as download_btn
 from common.errors import show_error
 from .gating_component import render_gating_component, apply_gates_to_dataframe
@@ -179,10 +179,9 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
 
         st.write("") # Spacer
 
-        if st.button("Generate Plot", type="primary", key="btn_hist"):
-            st.session_state.hist_generated = True
+        render_full = render_full_toggle("hist")
 
-        if st.session_state.get('hist_generated'):
+        if True:
             from glow.plotting import histogram, plots as main_plots
 
             with st.spinner("Generating plots..."):
@@ -198,6 +197,8 @@ def render_histogram_ui(filtered_experiment, channels, hue_var, conditions, scal
                     if filtered_df.empty:
                         st.warning("No events remain after applying gates. Please adjust your gates.")
                         return
+
+                    filtered_df = preview_subsample(filtered_df, render_full)
 
                     if scale == 'log':
                         # Check for positive values

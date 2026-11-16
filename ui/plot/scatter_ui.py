@@ -2,7 +2,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import copy
 from glow.plotting import plots
-from glow.canvas.functions import add_plot_to_canvas
+from .base import add_plot_to_canvas, render_full_toggle, preview_subsample
 from common.widgets import download_svg_button as download_btn
 from common.errors import show_error
 from .gating_component import render_gating_component, apply_gates_to_dataframe
@@ -151,10 +151,9 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
 
         st.write("") # Spacer
 
-        if st.button("Generate Plot", type="primary", key="btn_scatter"):
-            st.session_state.scatter_generated = True
+        render_full = render_full_toggle("scatter")
 
-        if st.session_state.get('scatter_generated'):
+        if True:
             from glow.plotting import scatter, plots as main_plots
 
             base_title = f"Scatter: {x_channel} vs {y_channel}"
@@ -180,6 +179,8 @@ def render_scatter_ui(filtered_experiment, channels, hue_var, facet_var, conditi
                     if filtered_df.empty:
                         st.warning("No events remain after applying gates. Please adjust your gates.")
                         return
+
+                    filtered_df = preview_subsample(filtered_df, render_full)
 
                     if scale == 'log':
                         # Check for positive values to avoid matplotlib crash

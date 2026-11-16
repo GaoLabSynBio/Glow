@@ -27,3 +27,34 @@ def render_data_selection(experiment):
         st.caption(f"Using full dataset ({len(experiment.data)} events).")
 
     return filtered_experiment, conditions
+
+
+PREVIEW_MAX_EVENTS = 50_000
+
+
+def render_full_toggle(key):
+    """Preview/full switch shown above a live plot. Returns True when the full data should be used."""
+    full = st.toggle("Render full data", value=False, key=f"render_full_{key}",
+                     help=f"Live preview uses at most {PREVIEW_MAX_EVENTS:,} events. "
+                          "Turn on for the final plot, canvas and export.")
+    st.session_state["plot_preview_active"] = False
+    return full
+
+
+def preview_subsample(df, full):
+    """Subsample df to PREVIEW_MAX_EVENTS (fixed seed) unless full rendering was requested."""
+    if full or len(df) <= PREVIEW_MAX_EVENTS:
+        return df
+    st.session_state["plot_preview_active"] = True
+    st.caption(f"Preview: {PREVIEW_MAX_EVENTS:,} of {len(df):,} events. "
+               "Switch on 'Render full data' before adding to canvas.")
+    return df.sample(PREVIEW_MAX_EVENTS, random_state=0)
+
+
+def add_plot_to_canvas(fig, title):
+    """Canvas add that refuses subsampled previews."""
+    from glow.canvas.functions import add_plot_to_canvas as _add
+    if st.session_state.get("plot_preview_active"):
+        st.warning("This is a subsampled preview. Turn on 'Render full data' to add it to the canvas.")
+        return False
+    return _add(fig, title)
